@@ -1,0 +1,231 @@
+/* frontend/src/components/results.css */
+
+/* Root container des ResultsView */
+.results {
+  width: 100%;
+  max-width: 1200px;
+  margin: 18px auto 0 auto; /* top auto bottom */
+  padding: 0 12px;
+}
+
+/* Header */
+.resultsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.resultsH1 {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.resultsMeta {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+/* Grid */
+.resultsGrid {
+  width: 100%;
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.group {
+  width: 100%;
+}
+
+.groupTitle {
+  font-size: 13px;
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+
+.groupList {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+}
+
+/* Card */
+.card {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.30);
+  overflow: hidden;
+}
+
+.cardSummary {
+  cursor: pointer;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  list-style: none;
+}
+
+.cardSummary::-webkit-details-marker { display: none; }
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  opacity: 0.9;
+}
+
+.cardAssessment {
+  font-size: 12px;
+  opacity: 0.85;
+  text-align: right;
+}
+
+.cardMsg {
+  padding: 0 12px 10px 12px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.cardBody {
+  padding: 10px 12px 12px 12px;
+  display: grid;
+  gap: 10px;
+}
+
+/* Criteria */
+.crit {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px;
+}
+
+.critTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.critLeft {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.critIcon {
+  width: 20px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.ok { color: #9cffc7; }
+.bad { color: #ffb4b4; }
+.neutral { color: rgba(255, 255, 255, 0.7); }
+
+.critLabel {
+  font-size: 12.5px;
+  font-weight: 600;
+  opacity: 0.95;
+}
+
+.critValue {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.critSubs {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.critSub {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.critArrow { opacity: 0.8; }
+.critSubKey { opacity: 0.8; }
+.critSubVal { opacity: 0.95; }
+
+/* CRV */
+.crv {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px;
+}
+
+.crvTitle {
+  font-size: 12.5px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  opacity: 0.95;
+}
+
+.crvRow {
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.crvRow:first-of-type { border-top: none; }
+
+.crvHeader {
+  font-size: 12.5px;
+  font-weight: 600;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.crvTargets {
+  margin-top: 8px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.crvTarget {
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  font-size: 12px;
+  display: flex;
+  gap: 6px;
+}
+
+.crvK { opacity: 0.75; }
+.crvV { font-weight: 600; }
+
+.crvMeta {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.crvError {
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.85;
+}
