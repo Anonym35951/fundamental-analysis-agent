@@ -1,4 +1,4 @@
-//frontend/src/components/ParallaxCard.tsx
+// frontend/src/components/ParallaxCard.tsx
 import React, { useMemo, useRef, useState } from "react";
 
 type Props = {
@@ -26,7 +26,9 @@ export default function ParallaxCard({
 
   const prefersReducedMotion = useMemo(() => {
     if (typeof window === "undefined") return false;
-    return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+    return (
+      window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false
+    );
   }, []);
 
   const apply = (next: typeof vars) => {
@@ -46,26 +48,24 @@ export default function ParallaxCard({
     if (!el) return;
 
     const rect = el.getBoundingClientRect();
-    const px = (e.clientX - rect.left) / rect.width;  // 0..1
+    const px = (e.clientX - rect.left) / rect.width; // 0..1
     const py = (e.clientY - rect.top) / rect.height; // 0..1
 
     const dx = px - 0.5; // -0.5..0.5
     const dy = py - 0.5;
 
     const next = {
-      ry: dx * tilt * 2,          // rotateY
-      rx: -dy * tilt * 2,         // rotateX (invert for natural feel)
-      tx: dx * lift * 2,          // translateX
-      ty: dy * lift * 2,          // translateY
+      ry: dx * tilt * 2,
+      rx: -dy * tilt * 2,
+      tx: dx * lift * 2,
+      ty: dy * lift * 2,
     };
 
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => apply(next));
   };
 
-  const onEnter = () => {
-    setIsHover(true);
-  };
+  const onEnter = () => setIsHover(true);
 
   const onLeave = () => {
     setIsHover(false);
@@ -90,3 +90,7 @@ export default function ParallaxCard({
       onPointerLeave={onLeave}
       onPointerMove={onMove}
     >
+      {children}
+    </div>
+  );
+}
