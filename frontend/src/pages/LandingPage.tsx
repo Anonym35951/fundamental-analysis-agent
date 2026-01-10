@@ -4,7 +4,6 @@ import {
   startFullAnalysis,
   getProgress,
   getResult,
-  runSingleAnalysis,
   startSingleAnalysisJob,
   getSingleProgress,
   getSingleResult,
@@ -71,7 +70,6 @@ export default function LandingPage() {
   const [result, setResult] = useState<FullResult | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
   const [freq, setFreq] = useState<Freq>("all");
@@ -83,13 +81,12 @@ export default function LandingPage() {
   const activeJobModeRef = useRef<AnalysisMode>("full");
 
   async function onStart() {
-    setErr(null);
     setResult(null);
     setProgress(null);
     setJobId(null);
 
     const clean = symbol.trim().toUpperCase();
-    if (!clean) return setErr("Bitte ein Symbol eingeben.");
+    if (!clean) return;
 
     setLoading(true);
 
@@ -106,7 +103,7 @@ export default function LandingPage() {
       const data = await startFullAnalysis(clean);
       setJobId(data.job_id);
     } catch (e: any) {
-      setErr(e?.message ?? "Start fehlgeschlagen");
+      console.error(e);
       setLoading(false);
     }
   }
@@ -135,7 +132,6 @@ export default function LandingPage() {
             setLoading(false);
           } else if (p.status === "error") {
             intervalRef.current && clearInterval(intervalRef.current);
-            setErr(p.error ?? "Analyse-Fehler");
             setLoading(false);
           }
           return;
@@ -151,7 +147,6 @@ export default function LandingPage() {
           setLoading(false);
         } else if (p.status === "error") {
           intervalRef.current && clearInterval(intervalRef.current);
-          setErr(p.error ?? "Analyse-Fehler");
           setLoading(false);
         }
       } catch (e: any) {
@@ -159,7 +154,7 @@ export default function LandingPage() {
         const msg = String(e?.message ?? "");
         if (msg.includes("404")) return;
 
-        setErr("Progress polling fehlgeschlagen");
+        console.error(e);
         setLoading(false);
       }
     };

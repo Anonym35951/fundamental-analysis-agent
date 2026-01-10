@@ -1,5 +1,3 @@
-import React from "react";
-
 export function highlight(text: string, query: string) {
   if (!query) return text;
 
