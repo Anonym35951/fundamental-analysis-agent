@@ -77,7 +77,7 @@ export default function LandingPage() {
 
   const intervalRef = useRef<number | null>(null);
 
-  // ✅ NEU: Der Mode des *aktuell gestarteten Jobs* (nicht Dropdown-Status!)
+  // ✅ Der Mode des *aktuell gestarteten Jobs* (nicht Dropdown-Status!)
   const activeJobModeRef = useRef<AnalysisMode>("full");
 
   async function onStart() {
@@ -111,7 +111,12 @@ export default function LandingPage() {
   // 🔁 Polling: NUR abhängig vom jobId (nicht vom Dropdown!)
   useEffect(() => {
     if (!jobId) return;
-    if (intervalRef.current) window.clearInterval(intervalRef.current);
+
+    // vorheriges Intervall sauber stoppen
+    if (intervalRef.current !== null) {
+      window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
 
     const poll = async () => {
       try {
@@ -123,15 +128,19 @@ export default function LandingPage() {
           setProgress(p);
 
           if (p.status === "done") {
-            intervalRef.current && clearInterval(intervalRef.current);
+            if (intervalRef.current !== null) {
+              window.clearInterval(intervalRef.current);
+              intervalRef.current = null;
+            }
+
             const r = await getSingleResult(activeMode, jobId);
-
-            // ✅ Backend ist Source of Truth
             setResult(r);
-
             setLoading(false);
           } else if (p.status === "error") {
-            intervalRef.current && clearInterval(intervalRef.current);
+            if (intervalRef.current !== null) {
+              window.clearInterval(intervalRef.current);
+              intervalRef.current = null;
+            }
             setLoading(false);
           }
           return;
@@ -142,15 +151,21 @@ export default function LandingPage() {
         setProgress(p);
 
         if (p.status === "done") {
-          intervalRef.current && clearInterval(intervalRef.current);
+          if (intervalRef.current !== null) {
+            window.clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
           setResult(await getResult(jobId));
           setLoading(false);
         } else if (p.status === "error") {
-          intervalRef.current && clearInterval(intervalRef.current);
+          if (intervalRef.current !== null) {
+            window.clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
           setLoading(false);
         }
       } catch (e: any) {
-        // ✅ 404 beim Initial-Poll / Race Conditions ignorieren (verhindert UI-error Blips)
+        // ✅ 404 beim Initial-Poll / Race Conditions ignorieren
         const msg = String(e?.message ?? "");
         if (msg.includes("404")) return;
 
@@ -161,7 +176,14 @@ export default function LandingPage() {
 
     poll();
     intervalRef.current = window.setInterval(poll, 700);
-    return () => intervalRef.current && clearInterval(intervalRef.current);
+
+    // ✅ Cleanup muss void zurückgeben
+    return () => {
+      if (intervalRef.current !== null) {
+        window.clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
   }, [jobId]);
 
   // 🔎 Filter
@@ -223,7 +245,7 @@ export default function LandingPage() {
               fontWeight: 700,
               letterSpacing: "-0.02em",
               marginBottom: 6,
-              textShadow: "0 1px 20px rgba(255,255,255,0.06)",
+              textShadow: "0 1px 20px rgba(255, 255, 255, 0.06)",
             }}
           >
             Clarity over Noise
