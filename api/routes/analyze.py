@@ -3,14 +3,28 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import Callable, Dict
 import inspect
 import traceback
+import threading
 
-from agent.ActionModule import AgentAction
 from api.services.job_manager import job_manager
 from api.utils.json_sanitize import make_json_safe
+from agent.ActionModule import AgentAction
 
 router = APIRouter(prefix="/analyze", tags=["analyze"])
 
-action = AgentAction()
+
+# =============================
+# LAZY ACTION (🔥 WICHTIG)
+# =============================
+
+_action_instance: AgentAction | None = None
+
+
+def get_action() -> AgentAction:
+    global _action_instance
+    if _action_instance is None:
+        _action_instance = AgentAction()
+    return _action_instance
+
 
 # -----------------------------
 # Helpers
@@ -20,59 +34,62 @@ def _norm_symbol(symbol: str) -> str:
 
 
 # =============================
-# SYNC ENDPOINTS (BLEIBEN)
+# SYNC ENDPOINTS
 # =============================
 
 @router.get("/wachstumswerte")
 def wachstumswerte(symbol: str, frequency: str = "annual"):
-    return make_json_safe(action.analyze_wachstumswerte(_norm_symbol(symbol), frequency))
+    return make_json_safe(
+        get_action().analyze_wachstumswerte(_norm_symbol(symbol), frequency)
+    )
 
 
 @router.get("/dividendenwerte")
 def dividendenwerte(symbol: str):
-    return make_json_safe(action.analyze_dividend_companies(_norm_symbol(symbol)))
+    return make_json_safe(
+        get_action().analyze_dividend_companies(_norm_symbol(symbol))
+    )
 
 
 @router.get("/average-grower")
 def average_grower(symbol: str):
-    return make_json_safe(action.analyze_average_grower(_norm_symbol(symbol)))
+    return make_json_safe(
+        get_action().analyze_average_grower(_norm_symbol(symbol))
+    )
 
 
 @router.get("/typische-zykliker")
 def typische_zykliker(symbol: str, frequency: str = "annual"):
-    return make_json_safe(action.analyze_typical_cyclers(_norm_symbol(symbol), frequency))
+    return make_json_safe(
+        get_action().analyze_typical_cyclers(_norm_symbol(symbol), frequency)
+    )
 
 
 @router.get("/turnarounds")
 def turnarounds(symbol: str, frequency: str = "annual"):
-    return make_json_safe(action.analyze_cycler_turnarounds(_norm_symbol(symbol), frequency))
+    return make_json_safe(
+        get_action().analyze_cycler_turnarounds(_norm_symbol(symbol), frequency)
+    )
 
 
 @router.get("/optionality")
 def optionality(symbol: str, frequency: str = "annual"):
-    return make_json_safe(action.analyze_optionality(_norm_symbol(symbol), frequency))
+    return make_json_safe(
+        get_action().analyze_optionality(_norm_symbol(symbol), frequency)
+    )
 
 
 @router.get("/asset-play")
 def asset_play(symbol: str, frequency: str = "annual"):
-    return make_json_safe(action.analyze_asset_play(_norm_symbol(symbol), frequency))
+    return make_json_safe(
+        get_action().analyze_asset_play(_norm_symbol(symbol), frequency)
+    )
 
 
 # =============================
-# JOB-BASED SINGLE ANALYSES ✅
+# JOB-BASED SINGLE ANALYSES
 # =============================
 
-ANALYSIS_REGISTRY: Dict[str, Callable[..., dict]] = {
-    "wachstumswerte": action.analyze_wachstumswerte,
-    "dividendenwerte": action.analyze_dividend_companies,
-    "average-grower": action.analyze_average_grower,
-    "typische-zykliker": action.analyze_typical_cyclers,
-    "turnarounds": action.analyze_cycler_turnarounds,
-    "optionality": action.analyze_optionality,
-    "asset-play": action.analyze_asset_play,
-}
-
-# ✅ Damit die Keys identisch zur Full Analysis aussehen:
 DISPLAY_NAME: Dict[str, str] = {
     "wachstumswerte": "Wachstumswerte",
     "dividendenwerte": "Dividendenwerte",
@@ -84,17 +101,31 @@ DISPLAY_NAME: Dict[str, str] = {
 }
 
 
+def get_analysis_registry() -> Dict[str, Callable[..., dict]]:
+    action = get_action()
+    return {
+        "wachstumswerte": action.analyze_wachstumswerte,
+        "dividendenwerte": action.analyze_dividend_companies,
+        "average-grower": action.analyze_average_grower,
+        "typische-zykliker": action.analyze_typical_cyclers,
+        "turnarounds": action.analyze_cycler_turnarounds,
+        "optionality": action.analyze_optionality,
+        "asset-play": action.analyze_asset_play,
+    }
+
+
 @router.post("/{mode}/start")
 def start_single_analysis(
     mode: str,
     symbol: str = Query(...),
     frequency: str = Query("annual"),
 ):
-    if mode not in ANALYSIS_REGISTRY:
+    registry = get_analysis_registry()
+
+    if mode not in registry:
         raise HTTPException(status_code=404, detail="Unknown analysis mode")
 
     symbol = _norm_symbol(symbol)
-
     pretty_name = DISPLAY_NAME.get(mode, mode)
     key = f"{pretty_name}|{frequency}"
 
@@ -104,48 +135,32 @@ def start_single_analysis(
         try:
             job_manager.set_current(job_id, "Starte Analyse…")
 
-            fn = ANALYSIS_REGISTRY[mode]
-
-            # ✅ NICHT TypeError catchen (kann aus der Analyse selbst kommen)
-            # Stattdessen prüfen wir sauber, welche Parameter akzeptiert werden.
+            fn = registry[mode]
             sig = inspect.signature(fn)
-            params = sig.parameters
-
             kwargs = {}
-            if "frequency" in params:
+
+            if "frequency" in sig.parameters:
                 kwargs["frequency"] = frequency
-            if "use_cache" in params:
+            if "use_cache" in sig.parameters:
                 kwargs["use_cache"] = True
 
             raw_result = fn(symbol, **kwargs) if kwargs else fn(symbol)
-
-            # ✅ WICHTIG: ZUERST sanitizen (hier passieren oft {}-Ergebnisse)
             safe_result = make_json_safe(raw_result)
 
-            # 🛡️ SAFETY: leere / None Ergebnisse NACH Sanitizing abfangen
-            if safe_result is None:
+            if not safe_result:
                 safe_result = {
                     "overall_assessment": "Keine Daten",
-                    "message": "Analyse lieferte kein Ergebnis",
-                }
-
-            if isinstance(safe_result, dict) and not safe_result:
-                safe_result = {
-                    "overall_assessment": "Keine Daten",
-                    "message": "Analyse lieferte ein leeres Ergebnis (nach JSON-Sanitize)",
+                    "message": "Analyse lieferte kein verwertbares Ergebnis",
                 }
 
             job_manager.set_current(job_id, "Speichere Ergebnis…")
             job_manager.add_result(job_id, key, safe_result)
-
             job_manager.set_done(job_id)
 
         except Exception as e:
-            # Debug im Backend-Log behalten
             traceback.print_exc()
             job_manager.set_error(job_id, str(e))
 
-    import threading
     threading.Thread(target=run, daemon=True).start()
 
     return {
