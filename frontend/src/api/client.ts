@@ -1,5 +1,5 @@
-//frontend/src/api/client.ts
-const API_BASE = "https://fundamental-analysis-agent-5.onrender.com";
+// richtig: zeigt auf Backend (Web Service)
+const API_BASE = "https://fundamental-analysis-agent.onrender.com";
 
 // =====================================================
 // FULL ANALYSIS (Job + Progress) – UNVERÄNDERT
