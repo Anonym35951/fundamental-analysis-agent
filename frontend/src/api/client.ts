@@ -1,8 +1,11 @@
+// frontend/src/api/client.ts
+
 // richtig: zeigt auf Backend (Web Service)
-const API_BASE = "https://fundamental-analysis-agent.onrender.com";
+// const API_BASE = "https://fundamental-analysis-agent.onrender.com";
+const API_BASE = "http://127.0.0.1:8000";
 
 // =====================================================
-// FULL ANALYSIS (Job + Progress) – UNVERÄNDERT
+// FULL ANALYSIS (Job + Progress)
 // =====================================================
 export async function startFullAnalysis(symbol: string) {
   const res = await fetch(
@@ -10,7 +13,7 @@ export async function startFullAnalysis(symbol: string) {
     { method: "POST" }
   );
   if (!res.ok) throw new Error("Failed to start analysis");
-  return res.json(); // { job_id, symbol, total }
+  return res.json();
 }
 
 export async function getProgress(jobId: string) {
@@ -38,97 +41,17 @@ export type AnalysisMode =
   | "optionality"
   | "asset-play";
 
-type SingleCallResult = {
-  results: Record<string, any>;
-  total: number;
-};
-
 // =====================================================
-// HELPERS
+// 🆕 SYMBOL LIST (Autocomplete)
 // =====================================================
-async function getJson(url: string) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+export async function getSymbols(): Promise<{ symbol: string; sectors: string[] }[]> {
+  const res = await fetch(`${API_BASE}/analyze/symbols`);
+  if (!res.ok) throw new Error("Failed to load symbols");
   return res.json();
 }
 
 // =====================================================
-// 🔁 SYNC SINGLE ANALYSES (BESTEHEND)
-// =====================================================
-async function fetchWithFrequencies(
-  symbol: string,
-  basePath: string,
-  analysisName: string,
-  supportsQuarterly: boolean
-): Promise<SingleCallResult> {
-  const results: Record<string, any> = {};
-
-  const annual = await getJson(
-    `${API_BASE}${basePath}?symbol=${encodeURIComponent(symbol)}&frequency=annual`
-  );
-  results[`${analysisName}|annual`] = annual;
-
-  if (supportsQuarterly) {
-    const quarterly = await getJson(
-      `${API_BASE}${basePath}?symbol=${encodeURIComponent(symbol)}&frequency=quarterly`
-    );
-    results[`${analysisName}|quarterly`] = quarterly;
-  }
-
-  return { results, total: Object.keys(results).length };
-}
-
-export async function runSingleAnalysis(
-  symbol: string,
-  mode: Exclude<AnalysisMode, "full">
-): Promise<SingleCallResult> {
-  const s = symbol.trim().toUpperCase();
-
-  switch (mode) {
-    case "wachstumswerte":
-      return fetchWithFrequencies(s, "/analyze/wachstumswerte", "Wachstumswerte", true);
-
-    case "typische-zykliker":
-      return fetchWithFrequencies(s, "/analyze/typische-zykliker", "Typische Zykliker", true);
-
-    case "turnarounds":
-      return fetchWithFrequencies(s, "/analyze/turnarounds", "Zyklische Turnarounds", true);
-
-    case "optionality": {
-      const annual = await getJson(
-        `${API_BASE}/analyze/optionality?symbol=${encodeURIComponent(s)}&frequency=annual`
-      );
-      return { results: { "Optionality|annual": annual }, total: 1 };
-    }
-
-    case "dividendenwerte": {
-      const annual = await getJson(
-        `${API_BASE}/analyze/dividendenwerte?symbol=${encodeURIComponent(s)}`
-      );
-      return { results: { "Dividendenwerte|annual": annual }, total: 1 };
-    }
-
-    case "average-grower": {
-      const annual = await getJson(
-        `${API_BASE}/analyze/average-grower?symbol=${encodeURIComponent(s)}`
-      );
-      return { results: { "Average Grower|annual": annual }, total: 1 };
-    }
-
-    case "asset-play": {
-      const annual = await getJson(
-        `${API_BASE}/analyze/asset-play?symbol=${encodeURIComponent(s)}&frequency=annual`
-      );
-      return { results: { "Asset Play|annual": annual }, total: 1 };
-    }
-
-    default:
-      throw new Error("Unknown analysis mode");
-  }
-}
-
-// =====================================================
-// 🆕 JOB-BASED SINGLE ANALYSES (MIT PROGRESS)
+// JOB-BASED SINGLE ANALYSES
 // =====================================================
 export async function startSingleAnalysisJob(
   symbol: string,
@@ -140,7 +63,7 @@ export async function startSingleAnalysisJob(
     { method: "POST" }
   );
   if (!res.ok) throw new Error("Failed to start single analysis");
-  return res.json(); // { job_id, symbol, mode }
+  return res.json();
 }
 
 export async function getSingleProgress(

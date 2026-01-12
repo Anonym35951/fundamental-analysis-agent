@@ -1719,7 +1719,8 @@ class AgentAction:
         "NVO": ["Pharma"],
         "NFLX": ["Media", "Film", "Streaming"],
         "AAPL": ["Tech", "Digital Media"],
-        "MO": ["Tabak"]
+        "MO": ["Tabak"],
+        "BYD": ["EV"]
     }
 
     # ActionModule – Branchen → relevante historische Multiples für CRV

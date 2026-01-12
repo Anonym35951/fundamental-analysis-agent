@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import threading
 from fastapi import APIRouter, Query, HTTPException
-from agent.ActionModule import AgentAction
+from agent.AgentAction import AgentAction
 from api.services.job_manager import JobManager
 
 router = APIRouter(prefix="/full", tags=["full-analysis"])

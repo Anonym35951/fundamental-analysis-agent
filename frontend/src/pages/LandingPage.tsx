@@ -8,6 +8,7 @@ import {
   getSingleProgress,
   getSingleResult,
   type AnalysisMode,
+  getSymbols, // ✅ NEU
 } from "../api/client";
 import ResultsView from "../components/ResultsView";
 import Background from "../components/Background";
@@ -79,6 +80,28 @@ export default function LandingPage() {
 
   // ✅ Der Mode des *aktuell gestarteten Jobs* (nicht Dropdown-Status!)
   const activeJobModeRef = useRef<AnalysisMode>("full");
+
+  // ============================
+  // ✅ NEU: SYMBOL AUTOCOMPLETE
+  // ============================
+  const [allSymbols, setAllSymbols] = useState<{ symbol: string; sectors: string[] }[]>([]);
+  const [showSymbolDropdown, setShowSymbolDropdown] = useState(false);
+
+  useEffect(() => {
+    // einmalig laden
+    getSymbols()
+      .then(setAllSymbols)
+      .catch((e) => console.error("Failed to load symbols", e));
+  }, []);
+
+  const filteredSymbols = useMemo(() => {
+    const q = symbol.trim().toLowerCase();
+    if (!q) return allSymbols.slice(0, 20); // leer: die ersten N anzeigen
+    return allSymbols
+      .filter((x) => x.symbol.toLowerCase().includes(q))
+      .slice(0, 20);
+  }, [symbol, allSymbols]);
+  // ============================
 
   async function onStart() {
     setResult(null);
@@ -280,19 +303,72 @@ export default function LandingPage() {
           </div>
 
           <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-            <input
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              placeholder="Symbol (z.B. BABA)"
-              style={{
-                flex: 1,
-                padding: "12px 14px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.14)",
-                background: "rgba(255,255,255,0.06)",
-                color: "white",
-              }}
-            />
+            {/* ✅ NUR INPUT erweitert: Wrapper + Dropdown */}
+            <div style={{ position: "relative", flex: 1 }}>
+              <input
+                value={symbol}
+                onChange={(e) => {
+                  setSymbol(e.target.value);
+                  setShowSymbolDropdown(true);
+                }}
+                onFocus={() => setShowSymbolDropdown(true)}
+                onBlur={() => setTimeout(() => setShowSymbolDropdown(false), 120)}
+                placeholder="Symbol (z.B. BABA)"
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "white",
+                }}
+              />
+
+              {showSymbolDropdown && filteredSymbols.length > 0 && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 8px)",
+                    left: 0,
+                    right: 0,
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    background: "rgba(10,10,12,0.96)",
+                    backdropFilter: "blur(10px)",
+                    zIndex: 30,
+                    maxHeight: 320,
+                    overflowY: "auto",
+                  }}
+                >
+                  {filteredSymbols.map((item) => (
+                    <div
+                      key={item.symbol}
+                      onMouseDown={(e) => {
+                        // onBlur vermeiden
+                        e.preventDefault();
+                        setSymbol(item.symbol);
+                        setShowSymbolDropdown(false);
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        cursor: "pointer",
+                        display: "flex",
+                        gap: 10,
+                        alignItems: "baseline",
+                        borderBottom: "1px solid rgba(255,255,255,0.08)",
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, letterSpacing: "0.02em" }}>{item.symbol}</div>
+                      <div style={{ opacity: 0.7, fontSize: 12, textAlign: "left" }}>
+                        {item.sectors?.join(", ")}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button onClick={onStart} disabled={loading}>
               {loading ? "Läuft…" : "Start"}
             </button>

@@ -7,7 +7,7 @@ import threading
 
 from api.services.job_manager import job_manager
 from api.utils.json_sanitize import make_json_safe
-from agent.ActionModule import AgentAction
+from agent.AgentAction import AgentAction
 
 router = APIRouter(prefix="/analyze", tags=["analyze"])
 
@@ -18,6 +18,13 @@ router = APIRouter(prefix="/analyze", tags=["analyze"])
 
 _action_instance: AgentAction | None = None
 
+@router.get("/symbols")
+def get_symbols():
+    data = getattr(get_action(), "COMPANY_SECTORS", {}) or {}
+    return [
+        {"symbol": sym, "sectors": sectors}
+        for sym, sectors in sorted(data.items())
+    ]
 
 def get_action() -> AgentAction:
     global _action_instance

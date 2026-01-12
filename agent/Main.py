@@ -1,6 +1,6 @@
 # agent/Main.py
 
-from agent.ActionModule import AgentAction
+from agent.AgentAction import AgentAction
 from agent.AgentOrchestrator import AgentOrchestrator
 import logging
 logging.getLogger("agent").setLevel(logging.CRITICAL)

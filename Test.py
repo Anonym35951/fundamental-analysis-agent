@@ -16,7 +16,7 @@ import unittest
 from agent.DataLoader import DataLoader
 from agent.DataPreprocessor import DataPreprocessor
 from agent.Model import Model
-from agent.ActionModule import AgentAction
+from agent.AgentAction import AgentAction
 import time
 
 def plot_elliott_waves(data, symbol, interval):
