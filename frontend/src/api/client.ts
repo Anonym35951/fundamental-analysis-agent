@@ -1,8 +1,8 @@
 // frontend/src/api/client.ts
 
 // richtig: zeigt auf Backend (Web Service)
-// const API_BASE = "https://fundamental-analysis-agent.onrender.com";
-const API_BASE = "http://127.0.0.1:8000";
+ const API_BASE = "https://fundamental-analysis-agent.onrender.com";
+//const API_BASE = "http://127.0.0.1:8000";
 
 // =====================================================
 // FULL ANALYSIS (Job + Progress)
