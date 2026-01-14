@@ -1,4 +1,4 @@
-//frontend/src/components/ResultsView.tsx
+// frontend/src/components/ResultsView.tsx
 import type { FullResult } from "../types/api";
 import { highlight } from "../utils/highlight";
 import "./results.css";
@@ -23,27 +23,42 @@ function getIcon(meets: any) {
 
 function formatVal(v: any) {
   if (v === null || v === undefined) return "—";
-  if (typeof v === "number") return Number.isFinite(v) ? v.toFixed(4).replace(/\.?0+$/, "") : String(v);
+  if (typeof v === "number")
+    return Number.isFinite(v) ? v.toFixed(4).replace(/\.?0+$/, "") : String(v);
   if (typeof v === "string") return v;
   if (Array.isArray(v)) return v.join(", ");
   return String(v);
 }
 
-function CriterionRow({ label, obj, query }: { label: string; obj: any; query?: string }) {
+function CriterionRow({
+  label,
+  obj,
+  query,
+}: {
+  label: string;
+  obj: any;
+  query?: string;
+}) {
   const meets = obj?.meets_criterion;
   const icon = getIcon(meets);
   const value = obj?.value;
 
   const subEntries =
     obj && typeof obj === "object"
-      ? Object.entries(obj).filter(([k]) => !["meets_criterion", "value"].includes(k))
+      ? Object.entries(obj).filter(
+          ([k]) => !["meets_criterion", "value"].includes(k)
+        )
       : [];
 
   return (
     <div className="crit">
       <div className="critTop">
         <div className="critLeft">
-          <span className={`critIcon ${meets === true ? "ok" : meets === false ? "bad" : "neutral"}`}>
+          <span
+            className={`critIcon ${
+              meets === true ? "ok" : meets === false ? "bad" : "neutral"
+            }`}
+          >
             {icon}
           </span>
           <span className="critLabel">
@@ -64,7 +79,10 @@ function CriterionRow({ label, obj, query }: { label: string; obj: any; query?: 
             <div key={k} className="critSub">
               <span className="critArrow">↳</span>
               <span className="critSubKey">
-                {query ? highlight(k.replaceAll("_", " "), query) : k.replaceAll("_", " ")}:
+                {query
+                  ? highlight(k.replaceAll("_", " "), query)
+                  : k.replaceAll("_", " ")}
+                :
               </span>
               <span className="critSubVal">
                 {query ? highlight(String(v), query) : String(v)}
@@ -96,7 +114,10 @@ function CRVBlock({ crv, query }: { crv: any; query?: string }) {
                 {query ? highlight(multiple, query) : multiple}
               </div>
               <div className="crvError">
-                Fehler: {query ? highlight(String(data.error), query) : String(data.error)}
+                Fehler:{" "}
+                {query
+                  ? highlight(String(data.error), query)
+                  : String(data.error)}
               </div>
             </div>
           );
@@ -108,7 +129,9 @@ function CRVBlock({ crv, query }: { crv: any; query?: string }) {
         return (
           <div key={multiple} className="crvRow">
             <div className="crvHeader">
-              <span className={positive ? "ok" : "bad"}>{positive ? "✔" : "✘"}</span>{" "}
+              <span className={positive ? "ok" : "bad"}>
+                {positive ? "✔" : "✘"}
+              </span>{" "}
               {query ? highlight(multiple, query) : multiple}
             </div>
 
@@ -147,9 +170,25 @@ function AnalysisCard({
   const keys =
     payload && typeof payload === "object"
       ? Object.keys(payload).filter(
-          (k) => !["symbol", "frequency", "overall_assessment", "message", "crv"].includes(k)
+          (k) =>
+            ![
+              "symbol",
+              "frequency",
+              "overall_assessment",
+              "message",
+              "crv",
+            ].includes(k)
         )
       : [];
+
+  const hasRenderableCriteria = keys.some(
+    (k) => typeof payload[k] === "object"
+  );
+
+  // ✅ NUR Dividenden / Average Grower
+  const isDividendAnalysis =
+    name.toLowerCase().includes("dividenden") ||
+    name.toLowerCase().includes("average");
 
   return (
     <details className="card" open>
@@ -167,19 +206,34 @@ function AnalysisCard({
       )}
 
       <div className="cardBody">
-        {!onlyCrv &&
-          keys.map((k) => {
-            const v = payload[k];
-            const label = k.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        {!hasRenderableCriteria && !payload?.crv && isDividendAnalysis ? (
+          <div style={{ fontSize: 13, opacity: 0.75, padding: "6px 2px" }}>
+            💡 Dieses Unternehmen zahlt aktuell keine Dividende.
+          </div>
+        ) : (
+          <>
+            {!onlyCrv &&
+              keys.map((k) => {
+                const v = payload[k];
+                const label = k
+                  .replaceAll("_", " ")
+                  .replace(/\b\w/g, (c) => c.toUpperCase());
 
-            if (onlyFailed && v?.meets_criterion !== false) return null;
+                if (onlyFailed && v?.meets_criterion !== false) return null;
 
-            return typeof v === "object" ? (
-              <CriterionRow key={k} label={label} obj={v} query={query} />
-            ) : null;
-          })}
+                return typeof v === "object" ? (
+                  <CriterionRow
+                    key={k}
+                    label={label}
+                    obj={v}
+                    query={query}
+                  />
+                ) : null;
+              })}
 
-        {payload?.crv && <CRVBlock crv={payload.crv} query={query} />}
+            {payload?.crv && <CRVBlock crv={payload.crv} query={query} />}
+          </>
+        )}
       </div>
     </details>
   );
