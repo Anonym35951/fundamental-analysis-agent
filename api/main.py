@@ -9,7 +9,7 @@ app = FastAPI(title="AIAgent API", version="0.1")
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://fundamental-analysis-agent-6.onrender.com",
+    "https://fundamental-analysis-agent-9.onrender.com",
 ]
 
 app.add_middleware(
