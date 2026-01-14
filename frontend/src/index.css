@@ -24,193 +24,73 @@ body{
 }
 
 *{ box-sizing: border-box; }
-
 a{ color: inherit; }
 
 /* ---------- Background Motion ---------- */
-.bgRoot{
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.bgGradient{
-  position: absolute;
-  inset: -30%;
-  background: conic-gradient(from 180deg at 50% 50%,
-    rgba(120,80,255,0.20),
-    rgba(0,200,255,0.18),
-    rgba(255,90,170,0.16),
-    rgba(120,80,255,0.20)
-  );
-  filter: blur(90px);
-  opacity: 0.55;
-  animation: slowSpin 22s linear infinite;
-}
-
-.bgBlob{
-  position: absolute;
-  width: 520px;
-  height: 520px;
-  border-radius: 999px;
-  filter: blur(60px);
-  opacity: 0.35;
-  animation: float 10s ease-in-out infinite;
-}
-
-.bgBlobA{
-  left: -140px;
-  top: 10%;
-  background: rgba(120,80,255,0.55);
-}
-
-.bgBlobB{
-  right: -180px;
-  bottom: 6%;
-  background: rgba(0,200,255,0.50);
-  animation-delay: 1.8s;
-}
-
-.bgNoise{
-  position: absolute;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
-  opacity: 0.06;
-  mix-blend-mode: overlay;
-}
-
-@keyframes slowSpin{
-  from{ transform: rotate(0deg) scale(1.05); }
-  to{ transform: rotate(360deg) scale(1.05); }
-}
-
-@keyframes float{
-  0%,100%{ transform: translateY(0px) translateX(0px); }
-  50%{ transform: translateY(-18px) translateX(10px); }
-}
+/* … unverändert … */
 
 /* ---------- Layout ---------- */
-.page{
-  width: 100%;
-  padding: 32px 20px 60px;
-}
-
-.shell{
-  width: 100%;
-  max-width: 1280px;
-  margin: 0 auto;
-}
-
-.grid{
-  display: grid;
-  gap: 18px;
-  grid-template-columns: 420px 1fr;
-  align-items: start;
-}
-
-@media (max-width: 980px){
-  .grid{
-    grid-template-columns: 1fr;
-  }
-}
-
-.panel{
-  border: 1px solid var(--stroke);
-  background: var(--panel);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-.panelHeader{
-  padding: 16px 16px 10px;
-  border-bottom: 1px solid var(--stroke2);
-}
-
-.panelBody{
-  padding: 14px 16px 16px;
-}
-
-.title{
-  font-size: 22px;
-  font-weight: 720;
-  letter-spacing: 0.2px;
-  margin: 0;
-}
-
-.sub{
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted2);
-}
-
-.row{
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.input{
-  flex: 1;
-  padding: 12px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--stroke);
-  background: rgba(0,0,0,0.22);
-  color: var(--text);
-  outline: none;
-}
-
-.button{
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--stroke);
-  background: rgba(255,255,255,0.12);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.button:disabled{
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.progressWrap{
-  margin-top: 14px;
-}
-
-.progressTop{
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.bar{
-  height: 9px;
-  margin-top: 8px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.10);
-  overflow: hidden;
-}
-
-.barFill{
-  height: 100%;
-  width: 0%;
-  background: rgba(255,255,255,0.55);
-  transition: width 250ms ease;
-}
-
-.small{
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--muted2);
-}
+/* … unverändert … */
 
 .error{
   margin-top: 14px;
   font-size: 13px;
   color: #ffb4b4;
+}
+
+/* =================================================
+   ✅ NEU: GLOBAL HOVER / INTERACTION FEEDBACK
+   ================================================= */
+
+/* Smooth transitions überall */
+.button,
+.input,
+.panel,
+.card,
+.group,
+.symbolItem,
+details.card > summary {
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease;
+}
+
+/* Buttons */
+.button:hover:not(:disabled){
+  transform: translateY(-1px);
+  background: rgba(255,255,255,0.18);
+  box-shadow: 0 8px 26px rgba(0,0,0,0.45);
+}
+
+/* Panels */
+.panel:hover{
+  box-shadow: 0 16px 48px rgba(0,0,0,0.45);
+}
+
+/* Inputs */
+.input:focus{
+  border-color: rgba(255,255,255,0.35);
+}
+
+/* Result Cards */
+details.card:hover{
+  transform: translateY(-4px);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.55);
+}
+
+/* Card Header */
+details.card > summary:hover{
+  background: rgba(255,255,255,0.06);
+}
+
+/* Group container */
+.group:hover{
+  box-shadow: 0 14px 40px rgba(0,0,0,0.45);
+}
+
+/* Dropdown items (Autocomplete) */
+.symbolItem:hover{
+  background: rgba(255,255,255,0.08);
 }

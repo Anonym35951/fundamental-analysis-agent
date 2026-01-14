@@ -82,13 +82,16 @@ export default function LandingPage() {
   const activeJobModeRef = useRef<AnalysisMode>("full");
 
   // ============================
-  // ✅ NEU: SYMBOL AUTOCOMPLETE
+  // ✅ SYMBOL AUTOCOMPLETE
   // ============================
   const [allSymbols, setAllSymbols] = useState<{ symbol: string; sectors: string[] }[]>([]);
   const [showSymbolDropdown, setShowSymbolDropdown] = useState(false);
 
+  // ✅ NEU: zuletzt analysiertes Unternehmen
+  const [lastAnalyzedCompany, setLastAnalyzedCompany] =
+    useState<{ symbol: string; sectors: string[] } | null>(null);
+
   useEffect(() => {
-    // einmalig laden
     getSymbols()
       .then(setAllSymbols)
       .catch((e) => console.error("Failed to load symbols", e));
@@ -96,12 +99,9 @@ export default function LandingPage() {
 
   const filteredSymbols = useMemo(() => {
     const q = symbol.trim().toLowerCase();
-    if (!q) return allSymbols.slice(0, 20); // leer: die ersten N anzeigen
-    return allSymbols
-      .filter((x) => x.symbol.toLowerCase().includes(q))
-      .slice(0, 20);
+    if (!q) return allSymbols.slice(0, 20);
+    return allSymbols.filter((x) => x.symbol.toLowerCase().includes(q)).slice(0, 20);
   }, [symbol, allSymbols]);
-  // ============================
 
   async function onStart() {
     setResult(null);
@@ -110,6 +110,12 @@ export default function LandingPage() {
 
     const clean = symbol.trim().toUpperCase();
     if (!clean) return;
+
+    // ✅ NEU: Company merken
+    const match = allSymbols.find((s) => s.symbol === clean);
+    setLastAnalyzedCompany(
+      match ? { symbol: match.symbol, sectors: match.sectors } : { symbol: clean, sectors: [] }
+    );
 
     setLoading(true);
 
@@ -374,6 +380,16 @@ export default function LandingPage() {
             </button>
           </div>
         </div>
+
+        {/* ✅ NEU: Sichtbares analysiertes Unternehmen */}
+        {lastAnalyzedCompany && result && (
+          <div style={{ marginBottom: 24 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 700 }}>{lastAnalyzedCompany.symbol}</h2>
+            {lastAnalyzedCompany.sectors.length > 0 && (
+              <div style={{ opacity: 0.7, fontSize: 13 }}>{lastAnalyzedCompany.sectors.join(" · ")}</div>
+            )}
+          </div>
+        )}
 
         {result && (
           <div className="twoColResults" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
