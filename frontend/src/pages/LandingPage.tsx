@@ -20,6 +20,32 @@ type Progress = ApiProgress;
 type Health = "all" | "good" | "bad" | "neutral";
 type Freq = "all" | "annual" | "quarterly";
 
+// ✅ NEU: Fallback-Liste im Frontend (verhindert Deadlock, wenn Backend-Liste nicht erreichbar/noch nicht geladen)
+const LOCAL_SYMBOLS_FALLBACK: { symbol: string; sectors: string[] }[] = [
+  { symbol: "ILMN", sectors: ["Biotech", "Genomics"] },
+  { symbol: "GOOGL", sectors: ["Internet Services", "Advertising", "Technology"] },
+  { symbol: "TSLA", sectors: ["EV", "Energy", "Robotics", "AI"] },
+  { symbol: "AMD", sectors: ["Semiconductors"] },
+  { symbol: "PYPL", sectors: ["FinTech", "Digital Payments"] },
+  { symbol: "NVDA", sectors: ["Semiconductors", "Tech"] },
+  { symbol: "NKE", sectors: ["Sporting Goods"] },
+  { symbol: "UNH", sectors: ["Healthcare"] },
+  { symbol: "XPEV", sectors: ["EV", "AI", "Robotics"] },
+  { symbol: "OCGN", sectors: ["Biotech", "Healthcare", "Pharma"] },
+  { symbol: "UAA", sectors: ["Sporting Goods"] },
+  { symbol: "BABA", sectors: ["E-Commerce", "Cloud Computing", "Digital Media", "FinTech", "Logistics"] },
+  { symbol: "LUMN", sectors: ["Telecommunications"] },
+  { symbol: "TTWO", sectors: ["Gaming", "Game Publisher"] },
+  { symbol: "BIDU", sectors: ["Search Engine", "Cloud", "E-Commerce"] },
+  { symbol: "JD", sectors: ["AI", "Robotics", "E-Commerce"] },
+  { symbol: "CRSP", sectors: ["Pharma", "Biotech"] },
+  { symbol: "NVO", sectors: ["Pharma"] },
+  { symbol: "NFLX", sectors: ["Media", "Film", "Streaming"] },
+  { symbol: "AAPL", sectors: ["Tech", "Digital Media"] },
+  { symbol: "MO", sectors: ["Tabak"] },
+  { symbol: "BYD", sectors: ["EV"] },
+];
+
 function splitKey(key: string) {
   const [name, freq] = key.split("|");
   return {
@@ -102,8 +128,14 @@ export default function LandingPage() {
   const [symbolError, setSymbolError] = useState<string | null>(null);
 
   useEffect(() => {
+    // ✅ NEU: sofort Fallback setzen (damit Validierung/Autocomplete ohne Backend funktioniert)
+    setAllSymbols(LOCAL_SYMBOLS_FALLBACK);
+
+    // ✅ danach versuchen, echte Liste vom Backend zu laden (überschreibt Fallback wenn erfolgreich)
     getSymbols()
-      .then(setAllSymbols)
+      .then((list) => {
+        if (Array.isArray(list) && list.length > 0) setAllSymbols(list);
+      })
       .catch((e) => console.error("Failed to load symbols", e));
   }, []);
 

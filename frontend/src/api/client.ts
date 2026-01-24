@@ -2,7 +2,7 @@
 
 // richtig: zeigt auf Backend (Web Service)
 const API_BASE = "https://fundamental-analysis-agent.onrender.com";
-//const API_BASE = "http://127.0.0.1:8000";
+// const API_BASE = "http://127.0.0.1:8000";
 
 // =====================================================
 // FULL ANALYSIS (Job + Progress)
@@ -42,12 +42,34 @@ export type AnalysisMode =
   | "asset-play";
 
 // =====================================================
-// 🆕 SYMBOL LIST (Autocomplete)
+// 🆕 SYMBOL LIST (Autocomplete / Validation)
 // =====================================================
-export async function getSymbols(): Promise<{ symbol: string; sectors: string[] }[]> {
+export type SymbolMeta = {
+  symbol: string;
+  sectors: string[];
+};
+
+// 👉 Backend-Quelle (wie bisher)
+export async function getSymbols(): Promise<SymbolMeta[]> {
   const res = await fetch(`${API_BASE}/analyze/symbols`);
   if (!res.ok) throw new Error("Failed to load symbols");
   return res.json();
+}
+
+// =====================================================
+// 🆕 LOCAL FALLBACK SYMBOL LIST
+// (wird z.B. beim App-Start oder bei Offline-Problemen genutzt)
+// =====================================================
+import { LOCAL_SYMBOLS } from "../data/symbols";
+
+// Helper: bevorzugt Backend, fällt sauber zurück
+export async function getSymbolsSafe(): Promise<SymbolMeta[]> {
+  try {
+    return await getSymbols();
+  } catch {
+    console.warn("⚠️ Backend symbols unavailable – using local fallback");
+    return LOCAL_SYMBOLS;
+  }
 }
 
 // =====================================================
@@ -59,7 +81,9 @@ export async function startSingleAnalysisJob(
   frequency: "annual" | "quarterly" = "annual"
 ) {
   const res = await fetch(
-    `${API_BASE}/analyze/${mode}/start?symbol=${encodeURIComponent(symbol)}&frequency=${frequency}`,
+    `${API_BASE}/analyze/${mode}/start?symbol=${encodeURIComponent(
+      symbol
+    )}&frequency=${frequency}`,
     { method: "POST" }
   );
   if (!res.ok) throw new Error("Failed to start single analysis");
