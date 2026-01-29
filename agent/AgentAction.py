@@ -1720,7 +1720,8 @@ class AgentAction:
         "NFLX": ["Media", "Film", "Streaming"],
         "AAPL": ["Tech", "Digital Media"],
         "MO": ["Tabak"],
-        "BYD": ["EV"]
+        "BYD": ["EV"],
+        "SAP": ["Cloud Computing"]
     }
 
     # ActionModule – Branchen → relevante historische Multiples für CRV

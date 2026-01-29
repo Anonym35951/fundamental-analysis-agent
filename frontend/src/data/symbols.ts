@@ -26,4 +26,5 @@ export const LOCAL_SYMBOLS: SymbolMeta[] = Object.entries({
   AAPL: ["Tech", "Digital Media"],
   MO: ["Tabak"],
   BYD: ["EV"],
+  SAP: ["Cloud Computing"]
 }).map(([symbol, sectors]) => ({ symbol, sectors }));
