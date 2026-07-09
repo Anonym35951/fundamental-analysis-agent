@@ -1,11 +1,25 @@
-//main.tsx
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import * as Sentry from "@sentry/react";
+import "./index.css";
+import App from "./App";
+import { ToastProvider } from "./components/ui/Toast";
+import { CompareProvider } from "./hooks/useCompare";
 
-createRoot(document.getElementById('root')!).render(
+// Error-Tracking: aktiviert sich nur, wenn VITE_SENTRY_DSN gesetzt ist.
+if (import.meta.env.VITE_SENTRY_DSN) {
+  Sentry.init({
+    dsn: import.meta.env.VITE_SENTRY_DSN,
+    sendDefaultPii: false,
+  });
+}
+
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
-  </StrictMode>,
-)
+    <ToastProvider>
+      <CompareProvider>
+        <App />
+      </CompareProvider>
+    </ToastProvider>
+  </StrictMode>
+);
