@@ -29,7 +29,7 @@ function PrivacyPage() {
   return (
     <div style={pageWrapper}>
       <h1 style={heading}>Datenschutzerklärung</h1>
-      <p style={{ color: theme.colors.textSecondary }}>Stand: Juni 2026</p>
+      <p style={{ color: theme.colors.textSecondary }}>Stand: Juli 2026</p>
 
       <h2 style={sectionHeading}>1. Verantwortlicher</h2>
       <p>
@@ -91,6 +91,17 @@ function PrivacyPage() {
           Abruf öffentlicher Unternehmens- und Marktdaten zu von dir
           ausgewählten Aktien-Symbolen genutzt. Dabei werden keine
           personenbezogenen Daten an diese Anbieter übermittelt.
+        </li>
+        <li>
+          <strong>Plausible Analytics</strong> – datenschutzfreundlicher,
+          cookieloser Analyse-Dienst zur Auswertung der Website-Nutzung.
+          Verarbeitet keine personenbezogenen Daten und erkennt einzelne
+          Besucher nicht wieder; wird erst nach deiner Zustimmung im
+          Cookie-Banner geladen. Details siehe{" "}
+          <a href="/legal/cookies" style={{ color: "inherit" }}>
+            Cookies &amp; Analyse
+          </a>
+          . Rechtsgrundlage: Einwilligung (Art. 6 Abs. 1 lit. a DSGVO).
         </li>
       </ul>
 

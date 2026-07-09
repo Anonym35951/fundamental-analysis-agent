@@ -17,7 +17,7 @@
 Das Produkt ist technisch deutlich reifer als der typische Pre-Launch-SaaS: Auth, Billing, Webhooks, IDOR-Schutz, Rate-Limiting und Fehlerkapselung sind sauber gebaut und im Live-Test bestätigt (Admin-Routen ohne Token → 401, keine Fehlerdetails nach außen, keine Secrets in Git). Das Frontend ist auf Desktop/Tablet/Mobile live getestet ohne Layout-Brüche oder horizontales Scrollen auf den öffentlichen Seiten. **Die Launch-Hindernisse sind nicht die Kern-Engine, sondern:** (1) rechtliche Platzhalter in Impressum/Datenschutz, (2) komplett fehlende Produktions-Konfiguration (Stripe Test-Modus, localhost-URLs, CORS), (3) **5 Monate uncommittete Arbeit im Working Tree** (letzter Commit 2026-01-29, 231 geänderte Pfade inkl. aller kritischen Berechnungs-Fixes), (4) ein wörtlicher Widerspruch zwischen Landing-Versprechen („Keine Kursziele") und Produktrealität (CRV-Panel, „Kaufzone", „KEIN KAUF"), (5) schwaches Marketing (kein öffentliches Pricing, kein Social Proof) und (6) zwei nachweislich falsche Admin-Metriken (Churn ≈ immer 0, MRR-Schätzung).
 
 **Wichtigste Launch-Risiken (Top 10):**
-1. Uncommittete Fixrunde (231 Pfade) — ein `git checkout .` oder Rechnerdefekt verwirft alle kritischen Korrekturen
+1. ~~Uncommittete Fixrunde (231 Pfade)~~ — **erledigt 2026-07-09:** in 4 Commits committed und zu `origin/main` gepusht (`874f226`…`93a833f`)
 2. Impressum/Datenschutz mit Platzhalter-Adressen — Abmahnrisiko ab Tag 1 (live im Browser bestätigt)
 3. Produktions-Env nicht konfiguriert — E-Mail-Links, Stripe-Redirects und CORS wären in Produktion nachweislich kaputt
 4. Stripe im Test-Modus — es kann kein echter Umsatz entstehen
@@ -34,7 +34,7 @@ Das Produkt ist technisch deutlich reifer als der typische Pre-Launch-SaaS: Auth
 
 ### [P0-1] Uncommittete Fixrunde committen (231 Pfade, letzter Commit 29.01.2026)
 
-**Status:** Offen
+**Status:** ✅ Erledigt (2026-07-09)
 **Bereich:** Technik / Repo-Sicherheit
 **Betroffene Dateien/Komponenten:**
 - Gesamter Working Tree (`git status`: 2224 Einträge, davon 231 echte Änderungen außerhalb der Cache-Löschungen)
@@ -61,11 +61,13 @@ Working Tree committed (sinnvoll in mehrere thematische Commits aufgeteilt: Cach
 **Hinweise für Sonnet:**
 Vor dem Commit prüfen, dass `.gitignore` die Cache-Verzeichnisse (`**/cache/`) und `.env` weiterhin ausschließt. Die im Index als gelöscht markierten `agent/cache/*.json` gehören zur beabsichtigten Cache-Bereinigung — mitcommitten. `API Test.py` (Root) sollte dabei aus dem Index entfernt werden (Alt-Audit P3-1).
 
+**Umsetzungsnotiz (2026-07-09):** In 4 thematischen Commits erledigt: (1) `874f226` Cache-Untracking (`cache/`, `agent/cache/` per `git rm -r --cached`, Dateien lokal erhalten) + `.gitignore`-Ergänzung um `.claude/worktrees/` (65-MB-verschachteltes Git-Worktree-Artefakt, das sonst mit eingecheckt worden wäre), (2) `15c948b` Backend (agent/, api/, alembic/, scripts/, requirements.txt, pytest.ini; `Test.py`/`agent/LokalTest.py` entfernt), (3) `0b7abd2` Frontend (kompletter Umbau vom Prototyp zur SaaS-App), (4) `93a833f` CI/Doku/Dev-Tooling. Vor jedem Commit `pytest agent/tests/` (28/28 grün) und `npm run build` (grün) verifiziert; Diffs auf Secret-Muster gescannt (keine Treffer). Gepusht zu `origin/main` (9d9a5d3..93a833f) nach expliziter Nutzerbestätigung. `API Test.py` wurde NICHT entfernt (unverändert, außerhalb des Scopes dieses Commits) — bleibt als offener P3-Punkt.
+
 ---
 
 ### [P0-2] Ladungsfähige Anschrift in Impressum und Datenschutzerklärung eintragen
 
-**Status:** Offen (seit Erst-Audit; live im Browser bestätigt am 2026-07-09)
+**Status:** Offen — **blockiert auf Nutzer-Input** (Nutzer hat am 2026-07-09 explizit „später" gewählt, als nach der Adresse gefragt wurde; Platzhalter bewusst unverändert gelassen)
 **Bereich:** Rechtliches / Vertrauen
 **Betroffene Dateien/Komponenten:**
 - `frontend/src/pages/legal/ImprintPage.tsx:32-37`
@@ -334,17 +336,19 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 
 ### [P1-8] Datenschutzerklärung: Plausible ergänzen + Datumsangaben konsistent
 
-**Status:** Offen (neu in diesem Audit)
+**Status:** ✅ Erledigt (2026-07-09)
 **Bereich:** Rechtliches
 **Betroffene Dateien/Komponenten:** `frontend/src/pages/legal/PrivacyPage.tsx` (Drittanbieter-Abschnitt `:78-95`, „Stand: Juni 2026"), `frontend/src/pages/legal/CookiesPage.tsx` (dokumentiert Plausible bereits)
 
-**Problem:** Die Datenschutzerklärung listet Stripe/SMTP/Finanzdatenquellen als Verarbeiter, erwähnt Plausible Analytics aber nicht — obwohl es per Cookie-Banner eingebunden wird und die CookiesPage es beschreibt. Zudem „Stand: Juni 2026" vs. „Juli 2026" auf den anderen Legal-Seiten.
+**Problem:** Die Datenschutzerklärung listet Stripe/SMTP/Finanzdatenquellen als Verarbeiter, erwähnte Plausible Analytics aber nicht — obwohl es per Cookie-Banner eingebunden wird und die CookiesPage es beschreibt. Zudem „Stand: Juni 2026" vs. „Juli 2026" auf den anderen Legal-Seiten.
 
 **Warum relevant:** Unvollständige Verarbeiter-Liste ist ein DSGVO-Mangel; inkonsistente Stände wirken ungepflegt.
 
 **Akzeptanzkriterien:**
-- Plausible im Drittanbieter-Abschnitt der PrivacyPage (Zweck, Rechtsgrundlage Einwilligung, keine Cookies/PII, Anbieter + Serverstandort)
-- Einheitliches „Stand:"-Datum auf allen Legal-Seiten
+- Plausible im Drittanbieter-Abschnitt der PrivacyPage (Zweck, Rechtsgrundlage Einwilligung, keine Cookies/PII, Anbieter + Serverstandort) ✅
+- Einheitliches „Stand:"-Datum auf allen Legal-Seiten ✅
+
+**Umsetzungsnotiz (2026-07-09):** `PrivacyPage.tsx` „Stand:" auf „Juli 2026" korrigiert (jetzt konsistent mit `TermsPage.tsx`/`CookiesPage.tsx`); neuer Listenpunkt „Plausible Analytics" im Drittanbieter-Abschnitt ergänzt (Zweck, cookielos, keine PII, Einwilligungs-Rechtsgrundlage Art. 6 Abs. 1 lit. a DSGVO, Link zur Cookies-Seite). `npx tsc -b` grün, live im Preview verifiziert (Snapshot bestätigt korrekten Text + funktionierenden Link, keine Konsolenfehler). `ImprintPage.tsx` unverändert (P0-2 wartet weiter auf die Adresse).
 
 ---
 
