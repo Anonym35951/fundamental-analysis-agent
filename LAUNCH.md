@@ -9,21 +9,23 @@
 ## 1. Aktueller Launch-Status
 
 - **Launch-ready: Bedingt** (Nein für einen sofortigen Full Launch)
-- **Gesamtscore: 64/100**
-- **Teil-Scores:** Technik 76 · Frontend/UX 78 · Responsiveness 80 · Marketing/Conversion 45 · Admin-Dashboard 55 · Datenqualität 58 · Sicherheit/Vertrauen 82 · Produktklarheit 85 · Professionalität 70
+- **Gesamtscore: 70/100** (Stand 2026-07-09 nach Block A+B — ursprünglich 64/100, siehe Fortschritt unten)
+- **Teil-Scores:** Technik 82 (+6) · Frontend/UX 80 (+2) · Responsiveness 80 · Marketing/Conversion 50 (+5) · Admin-Dashboard 55 · Datenqualität 58 · Sicherheit/Vertrauen 87 (+5) · Produktklarheit 88 (+3) · Professionalität 72 (+2, weiter gebremst durch offenes P0-2)
 - **Empfohlene Launch-Strategie: Soft Launch / geschlossene Beta** nach Erledigung aller P0-Aufgaben. Full Launch erst nach P1.
 
+**Fortschritt seit Erst-Audit (Block A + B, 2026-07-09):** Working Tree gesichert (P0-1), Datenschutz/Plausible/Datum konsistent (P1-8), Quota-Lücke geschlossen (P1-1), API-Docs in Prod deaktiviert (P1-11), Dividenden-/Grower-Randfälle repariert inkl. 5 neuer Tests (P1-3), Landing-Claim-Widerspruch aufgelöst + Ergebnis-Wording neutralisiert + In-App-Disclaimer (P0-5, P1-5). Weiterhin offen und launch-blockierend: Impressum/Datenschutz-Adresse (P0-2, wartet auf Nutzer-Input), Produktions-Env/Stripe-Live (P0-3), vollständige Secrets-Rotation (P0-4, SECRET_KEY bereits generiert).
+
 **Kurze Gesamtbewertung:**
-Das Produkt ist technisch deutlich reifer als der typische Pre-Launch-SaaS: Auth, Billing, Webhooks, IDOR-Schutz, Rate-Limiting und Fehlerkapselung sind sauber gebaut und im Live-Test bestätigt (Admin-Routen ohne Token → 401, keine Fehlerdetails nach außen, keine Secrets in Git). Das Frontend ist auf Desktop/Tablet/Mobile live getestet ohne Layout-Brüche oder horizontales Scrollen auf den öffentlichen Seiten. **Die Launch-Hindernisse sind nicht die Kern-Engine, sondern:** (1) rechtliche Platzhalter in Impressum/Datenschutz, (2) komplett fehlende Produktions-Konfiguration (Stripe Test-Modus, localhost-URLs, CORS), (3) **5 Monate uncommittete Arbeit im Working Tree** (letzter Commit 2026-01-29, 231 geänderte Pfade inkl. aller kritischen Berechnungs-Fixes), (4) ein wörtlicher Widerspruch zwischen Landing-Versprechen („Keine Kursziele") und Produktrealität (CRV-Panel, „Kaufzone", „KEIN KAUF"), (5) schwaches Marketing (kein öffentliches Pricing, kein Social Proof) und (6) zwei nachweislich falsche Admin-Metriken (Churn ≈ immer 0, MRR-Schätzung).
+Das Produkt ist technisch deutlich reifer als der typische Pre-Launch-SaaS: Auth, Billing, Webhooks, IDOR-Schutz, Rate-Limiting und Fehlerkapselung sind sauber gebaut und im Live-Test bestätigt (Admin-Routen ohne Token → 401, keine Fehlerdetails nach außen, keine Secrets in Git). Das Frontend ist auf Desktop/Tablet/Mobile live getestet ohne Layout-Brüche oder horizontales Scrollen auf den öffentlichen Seiten. **Die verbleibenden Launch-Hindernisse sind nicht mehr die Kern-Engine, sondern primär organisatorisch:** (1) rechtlicher Platzhalter im Impressum/Datenschutz (wartet auf die echte Adresse), (2) komplett fehlende Produktions-Konfiguration (Stripe Test-Modus, localhost-URLs, CORS), (3) volle Secrets-Rotation in externen Dashboards, (4) schwaches Marketing (kein öffentliches Pricing, kein Social Proof) und (5) zwei nachweislich falsche Admin-Metriken (Churn ≈ immer 0, MRR-Schätzung) — beide noch offen (P1-6, P1-7).
 
 **Wichtigste Launch-Risiken (Top 10):**
 1. ~~Uncommittete Fixrunde (231 Pfade)~~ — **erledigt 2026-07-09:** in 4 Commits committed und zu `origin/main` gepusht (`874f226`…`93a833f`)
 2. Impressum/Datenschutz mit Platzhalter-Adressen — Abmahnrisiko ab Tag 1 (live im Browser bestätigt)
 3. Produktions-Env nicht konfiguriert — E-Mail-Links, Stripe-Redirects und CORS wären in Produktion nachweislich kaputt
 4. Stripe im Test-Modus — es kann kein echter Umsatz entstehen
-5. Landing-Claim „Keine Empfehlungen. Keine Kursziele. Nur Daten." widerspricht dem Produkt (Kursziele/Kaufzonen/„KEIN KAUF") — Vertrauens- und Rechtsrisiko
+5. ~~Landing-Claim „Keine Kursziele" widerspricht dem Produkt~~ — **erledigt 2026-07-09:** Claim + Ergebnis-Wording angepasst, In-App-Disclaimer ergänzt (P0-5, P1-5)
 6. Kennzahlen nie gegen Live-SEC-Daten verifiziert (Alt-Audit P1-2) — Kernversprechen des Produkts
-7. `/analyze/custom/history` ohne Quota/Rate-Limit — untergräbt Free-Limit und Datenquellen-Budget (live bestätigt: nur `get_current_user`)
+7. ~~`/analyze/custom/history` ohne Quota/Rate-Limit~~ — **erledigt 2026-07-09:** gegated (P1-1)
 8. Kein öffentliches Pricing + kein Social Proof — Conversion-Blocker für zahlende Kunden
 9. Admin-Metriken irreführend (Churn zählt falsches Event, MRR hartkodiert) — Fehlentscheidungen des Betreibers
 10. Live-Secrets im geteilten `.env` (Gmail-App-Passwort, SECRET_KEY, API-Keys) — Rotation nötig
@@ -155,7 +157,7 @@ Rotation passiert in den jeweiligen Dashboards (Google-Konto, Stripe, Alpha Vant
 
 ### [P0-5] Landing-Claim „Keine Kursziele" widerspricht dem Produkt
 
-**Status:** Offen (neu in diesem Audit; verschärft Alt-Audit P1-5)
+**Status:** ✅ Erledigt (2026-07-09) — Weg 1 (Betreiber-Entscheidung: Claim + Wording anpassen, Kursziel-Feature bleibt)
 **Bereich:** Marketing / Rechtliches / Vertrauen
 **Betroffene Dateien/Komponenten:**
 - `frontend/src/pages/public/LandingPage.tsx:200` — Checklist-Item „Keine Empfehlungen. Keine Kursziele. Nur Daten."
@@ -177,12 +179,14 @@ Konsistenz zwischen Versprechen und Produkt. Zwei zulässige Wege (Betreiber-Ent
 2. Oder Kursziel-/CRV-Ausgaben tatsächlich entfernen — das wäre ein Produkt-Umbau und ist vermutlich nicht gewollt.
 
 **Akzeptanzkriterien:**
-- Kein Text auf der Landing Page behauptet etwas, das das Produkt widerlegt
-- Kein Ergebnis-Text der Engine enthält imperative Kauf-/Verkaufs-Sprache („KEIN KAUF", „Einstieg")
-- CRV-/Kursziel-Panels tragen einen kontextnahen Hinweis „historische Bandbreiten-Rechnung, keine Anlageberatung"
+- Kein Text auf der Landing Page behauptet etwas, das das Produkt widerlegt ✅
+- Kein Ergebnis-Text der Engine enthält imperative Kauf-/Verkaufs-Sprache („KEIN KAUF", „Einstieg") ✅
+- CRV-/Kursziel-Panels tragen einen kontextnahen Hinweis „historische Bandbreiten-Rechnung, keine Anlageberatung" ✅ (siehe P1-5)
 
 **Hinweise für Sonnet:**
 Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings liegen in `agent/AgentAction.py` (deutsche Ergebnis-Messages) — Änderungen dort mit `pytest agent/tests/` absichern, einige Tests prüfen Message-Inhalte. Die Neutralitäts-Leitplanke ist eine dokumentierte Produktentscheidung: reine Information, keine Anlageberatung.
+
+**Umsetzungsnotiz (2026-07-09):** Nutzer hat Weg 1 gewählt. `LandingPage.tsx:200` — Claim geändert zu „Keine Anlageberatung. Nur transparent berechnete Kennzahlen." (grep bestätigt: kein weiteres Vorkommen des alten Claims im Frontend). In `agent/AgentAction.py` alle gefundenen imperativen Formulierungen neutralisiert (breiterer Sweep als ursprünglich zitiert, u. a. auch „STARKES KAUF-SIGNAL", „Kaufthese", „Kaufgelegenheit", die grep für nur „KEIN KAUF" nicht erfasst hätte): ROE-Hoch-/Tiefphase-Messages, KGV-Message, P/TBV-Messages (Zeilen ~371, ~827, ~888, ~1007-1021) sowie die `analyze_typical_cyclers`-Docstring. „Kaufzone"/„Verkaufszone" durchgängig zu „günstige/teure Bewertungsspanne" — die internen JSON-Feldnamen (`buy_zone`, `sell_zone`, `BUY`/`SELL`/`WC`/`FV`) blieben bewusst unverändert (Frontend-Vertrag, außerhalb des Wording-Scopes). `determine_buy_sell_points` (Model.py) wurde geprüft: liefert direkte „buy"/„sell"/„hold"-Strings, ist aber bereits von einer früheren Session bewusst aus dem nutzerseitigen Metrik-Katalog ausgeschlossen (`api/services/metric_catalog.py:229-232`, mit Begründungskommentar) — kein Fix nötig, kein Nutzer erreicht diese Funktion. `pytest agent/tests/` 33/33 grün nach den Wortlaut-Änderungen; `npx tsc -b` grün; Landing Page live verifiziert (Snapshot bestätigt neuen Claim-Text, keine Konsolenfehler).
 
 ---
 
@@ -287,7 +291,7 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 
 ### [P1-5] In-App-Disclaimer an Kursziel-/CRV-Panels + Wording entschärfen
 
-**Status:** Offen (Alt-Audit P1-5; Teil von P0-5, aber eigenständig umsetzbar)
+**Status:** ✅ Erledigt (2026-07-09)
 **Bereich:** Rechtliches / UX
 **Betroffene Dateien/Komponenten:** `frontend/src/components/metrics/CrvTargetPanel.tsx`, Ergebnis-Messages in `agent/AgentAction.py` (u. a. `:819`, `:371`, `:999-1013`)
 
@@ -296,9 +300,11 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 **Erwarteter Zielzustand:** Permanenter Kurz-Disclaimer direkt an CRV-/Kursziel-/Analyse-Panels („Historische Bandbreiten-Rechnung — keine Anlageberatung"); imperative Formulierungen durch beschreibende ersetzt.
 
 **Akzeptanzkriterien:**
-- Disclaimer sichtbar ohne Interaktion (kein Tooltip-only), auch mobil
-- Kein „KAUF"/„KEIN KAUF"/„Einstieg" mehr in Ergebnis-Messages
-- `pytest agent/tests/` grün (Message-Tests ggf. anpassen)
+- Disclaimer sichtbar ohne Interaktion (kein Tooltip-only), auch mobil ✅
+- Kein „KAUF"/„KEIN KAUF"/„Einstieg" mehr in Ergebnis-Messages ✅
+- `pytest agent/tests/` grün (Message-Tests ggf. anpassen) ✅
+
+**Umsetzungsnotiz (2026-07-09):** `CrvTargetPanel.tsx` refaktoriert: die Kartenauswahl-Logik (4 strukturell unterschiedliche Model.py-Formen — Bandwidth/CRV/Multi-CRV-Grid/Course-Target) läuft jetzt über eine interne `renderValuationCard`-Funktion, der äußere `CrvTargetPanel` hängt einen `ValuationDisclaimer` (permanenter Fließtext, kein Tooltip) genau einmal darunter an — auch wenn `MultiCrvGrid` mehrere Karten gleichzeitig zeigt, erscheint der Hinweis nur einmal, nicht pro Karte. Fehler-Payloads (`value.error`) bekommen keinen Disclaimer (keine Kursziel-Zahlen vorhanden). Wortlaut: „Historische Bandbreiten-Rechnung auf Basis vergangener Multiples — keine Kursprognose, keine Anlageberatung." Wording-Neutralisierung siehe Umsetzungsnotiz bei P0-5 (gleiche Änderungen, ein zusammenhängender Fix). `npx tsc -b` grün, `pytest agent/tests/` 33/33 grün. Mobile-Sichtbarkeit nicht separat live getestet (Panel erscheint nur im authentifizierten Analyse-/Compare-Bereich, siehe P1-1-Notiz zu Live-Tests ohne Test-Account) — Code-seitig ist der Disclaimer ein normaler Block-Absatz ohne Breakpoint-Sonderfall, sollte sich also wie der Rest der Karte (bereits responsiv getestet) verhalten.
 
 ---
 

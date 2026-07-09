@@ -38,6 +38,26 @@ const sectionLabelStyle = {
   marginBottom: "8px",
 };
 
+const disclaimerStyle = {
+  marginTop: "10px",
+  color: theme.colors.textMuted,
+  fontSize: "0.74rem",
+  lineHeight: 1.5,
+};
+
+/** Permanent, non-dismissable note directly on every valuation-band/price-
+ * target card (not just on the legal pages) — these figures are historical
+ * multiple ranges, not price forecasts, and this component is the one place
+ * in the app that most reads like investment advice. See LAUNCH.md P1-5. */
+function ValuationDisclaimer() {
+  return (
+    <div style={disclaimerStyle}>
+      Historische Bandbreiten-Rechnung auf Basis vergangener Multiples — keine
+      Kursprognose, keine Anlageberatung.
+    </div>
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -225,14 +245,10 @@ function CourseTargetCard({ title, targets }: { title?: string; targets: Record<
   );
 }
 
-/** Dedicated renderer for CRV / bandwidth / course-target valuation
- * results, shared between the Analyze custom-analysis result list and the
- * Compare page's "Bewertung (komplex)" section. Detects which of the 4
- * structurally distinct agent/Model.py shapes it received and renders
- * accordingly. */
-export default function CrvTargetPanel({ value }: CrvTargetPanelProps) {
-  if (!isRecord(value)) return null;
-
+/** Detects which of the 4 structurally distinct agent/Model.py shapes
+ * `value` is and renders the matching card, or null if none match / it's an
+ * error payload (errors render their own message, no disclaimer needed). */
+function renderValuationCard(value: Record<string, unknown>) {
   if (typeof value.error === "string") {
     return <div style={{ color: theme.colors.dangerText, fontSize: "0.88rem", lineHeight: 1.6 }}>{value.error}</div>;
   }
@@ -272,4 +288,26 @@ export default function CrvTargetPanel({ value }: CrvTargetPanelProps) {
   }
 
   return null;
+}
+
+/** Dedicated renderer for CRV / bandwidth / course-target valuation
+ * results, shared between the Analyze custom-analysis result list and the
+ * Compare page's "Bewertung (komplex)" section. */
+export default function CrvTargetPanel({ value }: CrvTargetPanelProps) {
+  if (!isRecord(value)) return null;
+
+  const card = renderValuationCard(value);
+  if (!card) return null;
+
+  // Disclaimer sits once below whichever card shape rendered (including the
+  // multi-multiple grid) - not duplicated per sub-card, and skipped
+  // entirely for error payloads, which carry no target figures.
+  const isErrorPayload = typeof value.error === "string";
+
+  return (
+    <div>
+      {card}
+      {!isErrorPayload ? <ValuationDisclaimer /> : null}
+    </div>
+  );
 }

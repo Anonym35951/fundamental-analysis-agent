@@ -197,7 +197,7 @@ function LandingPage() {
                 <CheckCircle2 size={16} color={theme.colors.success} /> Jede Formel offen einsehbar
               </span>
               <span style={checklistItem}>
-                <CheckCircle2 size={16} color={theme.colors.success} /> Keine Empfehlungen. Keine Kursziele. Nur Daten.
+                <CheckCircle2 size={16} color={theme.colors.success} /> Keine Anlageberatung. Nur transparent berechnete Kennzahlen.
               </span>
             </div>
           </motion.div>

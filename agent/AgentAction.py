@@ -371,7 +371,7 @@ class AgentAction:
                 "value": round(current_tbv, 2),
                 "historical_median": round(historical_tbv_median, 2),
                 "meets_criterion": price_tbv_met,
-                "message": f"P/TBV {current_tbv} {'unter' if price_tbv_met else 'über'} historischem Median {round(historical_tbv_median, 2)} {'und in Kaufzone [1.0, 1.5]' if price_tbv_met else ''}."
+                "message": f"P/TBV {current_tbv} {'unter' if price_tbv_met else 'über'} historischem Median {round(historical_tbv_median, 2)} {'und innerhalb der günstigen Bewertungsspanne [1.0, 1.5]' if price_tbv_met else ''}."
             }
             if not price_tbv_met:
                 all_criteria_met = False
@@ -777,10 +777,10 @@ class AgentAction:
     - Cashflow-Marge: Hoher Puffer (≥15%).
     - KGV: Niedrig oder negativ in konjunkturellen Tiefs (≤12 oder <0).
     - Vorräte/Umsatz: Warnsignal bei >100%.
-    - P/TBV: Kaufzone [1.0–1.5], Verkaufszone [3–4].
+    - P/TBV: günstige Bewertungsspanne [1.0–1.5], teure Bewertungsspanne [3–4].
     - EV/Sales: Korrelation mit Branchenzyklen (aktuell als Platzhalter; zukünftig historische Analyse).
     - EV/EBITDA: Tiefpunkte für Kauf (≤10).
-    - Historische Bandbreitenbewegung: P/TBV und P/EBIT in Kaufzone (synchronisiert).
+    - Historische Bandbreitenbewegung: P/TBV und P/EBIT in der günstigen Bewertungsspanne (synchronisiert).
     - CRV: Chance-Risiko-Verhältnis ≥3:1.
 
     Args:
@@ -813,8 +813,8 @@ class AgentAction:
 
             else:
                 roe = roe_data["ROE"]
-                roe_too_high = roe >= 0.15  # ≥15% → bereits Hochphase → KEIN Kauf
-                roe_ok_for_buy = roe < 0.15  # <15% → typisch für Tiefphase → gut!
+                roe_too_high = roe >= 0.15  # ≥15% → bereits Hochphase, Kriterium nicht erfüllt
+                roe_ok_for_buy = roe < 0.15  # <15% → typisch für Tiefphase
 
                 meets_criterion = roe_ok_for_buy  # ← entscheidend!
 
@@ -824,15 +824,15 @@ class AgentAction:
                     "meets_criterion": bool(meets_criterion),
                     "message": (
                         f"ROE {roe:.2%} → "
-                        f"{'Hochphase (≥15%) – bereits teuer, KEIN KAUF' if roe_too_high else 'Tiefphase (<15%) – ideal für Zykliker-Einstieg'}"
+                        f"{'Hochphase (≥15%) – historisch teuer bewertet' if roe_too_high else 'Tiefphase (<15%) – historisch günstig bewertet'}"
                     )
                 }
 
                 if not meets_criterion:
                     all_criteria_met = False
-                    messages.append("ROE ≥15% → Hochphase erreicht, Kaufkriterium NICHT erfüllt")
+                    messages.append("ROE ≥15% → Hochphase erreicht, Kriterium NICHT erfüllt")
                 else:
-                    messages.append("ROE <15% → perfekte Tiefphase, unterstützt starke Kaufthese")
+                    messages.append("ROE <15% → perfekte Tiefphase, unterstützt die Tiefphasen-Einschätzung")
 
             # 2. Cashflow-Marge – starker Puffer in guten Zeiten (≥15%)
             cfm_data = self.model.calculate_cashflow_margin(symbol, frequency=frequency)
@@ -885,7 +885,7 @@ class AgentAction:
                     "meets_criterion": bool(kgv_met),
                     "message": (
                         f"KGV {kgv_display} → "
-                        f"{'in Tiefphase (negativ oder ≤12) – typische Kaufgelegenheit bei Zyklikern' if kgv_met else 'zu hoch – keine klassische Zyklus-Tiefphase'}"
+                        f"{'in Tiefphase (negativ oder ≤12) – historisch günstige Bewertung bei Zyklikern' if kgv_met else 'zu hoch – keine klassische Zyklus-Tiefphase'}"
                     )
                 }
                 if not kgv_met:
@@ -928,7 +928,7 @@ class AgentAction:
                     all_criteria_met = False
                     messages.append(f"Vorräte/Umsatz {ratio_percent:.1f}% > 100% → Warnsignal!")
 
-            # 5. P/TBV – Kernindikator für Zykliker: Kaufzone [1.0–1.5] + historische Regression-to-the-Mean
+            # 5. P/TBV – Kernindikator für Zykliker: günstige Bewertungsspanne [1.0–1.5] + historische Regression-to-the-Mean
             # Wir nutzen evaluate_tbv_bandwidth für Historie + Touches
             # Aber den aktuellen P/TBV holen wir aus der robustesten Quelle: get_current_tbv_and_price
             tbv_eval = self.model.evaluate_tbv_bandwidth(symbol, min_years=min_history_years, use_cache=use_cache)
@@ -1004,9 +1004,9 @@ class AgentAction:
                     "current_price": round(current_price, 2) if isinstance(current_price, (int, float)) else None,
                     "tbv_per_share": round(tbv_per_share, 4) if isinstance(tbv_per_share, (int, float)) else 0.0,
                     "message": (
-                        f"P/TBV {pb_display} ({'in Kaufzone' if in_buy_zone else 'überbewertet' if in_sell_zone else 'neutral'}) – "
+                        f"P/TBV {pb_display} ({'in der günstigen Bewertungsspanne' if in_buy_zone else 'überbewertet' if in_sell_zone else 'neutral'}) – "
                         f"Historie: {history_years:.1f} Jahre, {touches}x ≈TBV → "
-                        f"{'STARKES KAUF-SIGNAL (echter Zykliker in Tiefphase)' if tbv_met else 'kein Kauf: fehlende Historie, kein Touch oder außerhalb Zone'}"
+                        f"{'Kriterium klar erfüllt (echter Zykliker in Tiefphase)' if tbv_met else 'Kriterium nicht erfüllt: fehlende Historie, kein Touch oder außerhalb der Bewertungsspanne'}"
                     )
                 }
 
@@ -1015,10 +1015,10 @@ class AgentAction:
                     if not in_buy_zone:
                         if has_current_pb:
                             messages.append(
-                                f"P/TBV {pb_display} außerhalb Kaufzone [1.0–1.5] → {'Überbewertung' if in_sell_zone else 'zu teuer'}"
+                                f"P/TBV {pb_display} außerhalb der günstigen Bewertungsspanne [1.0–1.5] → {'Überbewertung' if in_sell_zone else 'zu teuer'}"
                             )
                         else:
-                            messages.append("P/TBV aktuell nicht verfügbar → Kaufzone nicht prüfbar")
+                            messages.append("P/TBV aktuell nicht verfügbar → günstige Bewertungsspanne nicht prüfbar")
                     if not has_regression_proof:
                         messages.append(f"Nur {touches}x ≈TBV in Historie → kein klarer Zykliker")
                     if not has_history:
