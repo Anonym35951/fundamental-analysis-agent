@@ -7,6 +7,7 @@ import { createCheckoutSession } from "../../api/billing";
 import { theme } from "../../components/ui/theme";
 import Modal from "../../components/ui/Modal";
 import ParticleBeamBackground from "../../components/landing/ParticleBeamBackground";
+import { FREE_PLAN, PRO_PLAN } from "../../config/pricingPlans";
 
 type BillingInterval = "month" | "year";
 
@@ -241,24 +242,16 @@ function BillingPage() {
         <div style={pricingGrid} data-tour="billing-plans">
           <div style={freeCard}>
             <div style={planNameRow}>
-              <div style={planName}>Free</div>
-              <div style={planTagMuted}>Einstieg</div>
+              <div style={planName}>{FREE_PLAN.name}</div>
+              <div style={planTagMuted}>{FREE_PLAN.tag}</div>
             </div>
 
-            <div style={planPrice}>0 €</div>
+            <div style={planPrice}>{FREE_PLAN.priceLabel}</div>
 
-            <p style={planDescription}>
-              Für den Einstieg in die Plattform und erste strukturierte
-              Analysen.
-            </p>
+            <p style={planDescription}>{FREE_PLAN.description}</p>
 
             <div style={featureList}>
-              {[
-                "50 Analyse-Einheiten pro Monat",
-                "Alle Kennzahlen und Analysemodi verfügbar",
-                "1 gespeicherte eigene Analyse-Definition",
-                "Analyse-Historie und Favoriten",
-              ].map((item) => (
+              {FREE_PLAN.features.map((item) => (
                 <div key={item} style={featureItem}>
                   <Check
                     size={15}
@@ -291,7 +284,7 @@ function BillingPage() {
                 }}
               >
                 <Crown size={20} color="#ffffff" />
-                Pro
+                {PRO_PLAN.name}
               </div>
               <div
                 style={{
@@ -301,42 +294,34 @@ function BillingPage() {
                   color: "#ffffff",
                 }}
               >
-                Empfohlen
+                {PRO_PLAN.tag}
               </div>
             </div>
 
             <div style={proPriceBlock}>
               {isYearly ? (
                 <div style={proYearlyPriceWrap}>
-                  <span style={proYearlyOldPrice}>600 €</span>
-                  <span style={proMainPrice}>500 € / Jahr</span>
+                  <span style={proYearlyOldPrice}>{PRO_PLAN.yearlyOldPriceLabel}</span>
+                  <span style={proMainPrice}>{PRO_PLAN.yearlyPriceLabel}</span>
                 </div>
               ) : (
-                <div style={proMainPrice}>50 € / Monat</div>
+                <div style={proMainPrice}>{PRO_PLAN.monthlyPriceLabel}</div>
               )}
 
               {isYearly ? (
                 <div style={proSavingsRow}>
-                  <span style={proSavingsBadge}>2 Monate gratis</span>
-                  <span style={proSavingsText}>100 € günstiger pro Jahr</span>
+                  <span style={proSavingsBadge}>{PRO_PLAN.savingsBadge}</span>
+                  <span style={proSavingsText}>{PRO_PLAN.savingsText}</span>
                 </div>
               ) : (
-                <div style={proMonthlyHint}>Monatlich flexibel kündbar</div>
+                <div style={proMonthlyHint}>{PRO_PLAN.monthlyHint}</div>
               )}
             </div>
 
-            <p style={planDescriptionBright}>
-              Für Nutzer, die professioneller, regelmäßiger und mit mehr
-              Freiheit analysieren möchten.
-            </p>
+            <p style={planDescriptionBright}>{PRO_PLAN.description}</p>
 
             <div style={featureList}>
-              {[
-                "Unbegrenzte Analysen — kein Monatslimit",
-                "Alle Kennzahlen und Analysemodi verfügbar",
-                "Beliebig viele gespeicherte eigene Analyse-Definitionen",
-                "Analyse-Historie und Favoriten",
-              ].map((item) => (
+              {PRO_PLAN.features.map((item) => (
                 <div key={item} style={featureItemBright}>
                   <Check
                     size={15}
@@ -350,8 +335,7 @@ function BillingPage() {
 
             {!isLoadingUser && !isPro ? (
               <div style={proSelectionNote}>
-                Ausgewählt:{" "}
-                {isYearly ? "Jährlich · Spare 16,7 %" : "Monatlich"}
+                Ausgewählt: {isYearly ? PRO_PLAN.yearlySelectionNote : "Monatlich"}
               </div>
             ) : null}
 

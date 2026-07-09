@@ -5,6 +5,7 @@ import AuthLayout from "./layouts/AuthLayout";
 import AppLayout from "./layouts/AppLayout";
 
 import LandingPage from "./pages/public/LandingPage";
+import PricingPage from "./pages/public/PricingPage";
 
 import LoginPage from "./pages/auth/LoginPage";
 import RegisterPage from "./pages/auth/RegisterPage";
@@ -61,6 +62,7 @@ function App() {
             />
 
             <Route path="/landing" element={<LandingPage />} />
+            <Route path="/pricing" element={<PricingPage />} />
 
             <Route path="/legal/privacy" element={<PrivacyPage />} />
             <Route path="/legal/terms" element={<TermsPage />} />

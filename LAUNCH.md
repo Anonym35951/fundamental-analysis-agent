@@ -9,24 +9,24 @@
 ## 1. Aktueller Launch-Status
 
 - **Launch-ready: Bedingt** (Nein für einen sofortigen Full Launch)
-- **Gesamtscore: 74/100** (Stand 2026-07-09 nach Block A+B+C — ursprünglich 64/100, siehe Fortschritt unten)
-- **Teil-Scores:** Technik 84 (+8) · Frontend/UX 80 (+2) · Responsiveness 80 · Marketing/Conversion 50 (+5) · Admin-Dashboard 72 (+17) · Datenqualität 70 (+12) · Sicherheit/Vertrauen 87 (+5) · Produktklarheit 88 (+3) · Professionalität 72 (+2, weiter gebremst durch offenes P0-2)
+- **Gesamtscore: 77/100** (Stand 2026-07-09 nach Block A+B+C+D — ursprünglich 64/100, siehe Fortschritt unten)
+- **Teil-Scores:** Technik 84 (+8) · Frontend/UX 81 (+3) · Responsiveness 79 (-1, neuer Mobile-Hero-Befund) · Marketing/Conversion 68 (+23) · Admin-Dashboard 72 (+17) · Datenqualität 70 (+12) · Sicherheit/Vertrauen 87 (+5) · Produktklarheit 88 (+3) · Professionalität 72 (+2, weiter gebremst durch offenes P0-2)
 - **Empfohlene Launch-Strategie: Soft Launch / geschlossene Beta** nach Erledigung aller P0-Aufgaben. Full Launch erst nach P1.
 
-**Fortschritt seit Erst-Audit (Block A + B + C, 2026-07-09):** Working Tree gesichert (P0-1), Datenschutz/Plausible/Datum konsistent (P1-8), Quota-Lücke geschlossen (P1-1), API-Docs in Prod deaktiviert (P1-11), Dividenden-/Grower-Randfälle repariert inkl. 5 neuer Tests (P1-3), Landing-Claim-Widerspruch aufgelöst + Ergebnis-Wording neutralisiert + In-App-Disclaimer (P0-5, P1-5), Admin-Metriken Churn + MRR korrigiert + interne Accounts aus allen Aktivitätsmetriken gefiltert inkl. neuem API-Test-Harness mit 13 Tests (P1-6, P1-7, P2-16). Produktions-Deploy auf Render am 2026-07-09 versucht und live am fehlenden Env-Setup gescheitert (bestätigt genau P0-3). Weiterhin offen und launch-blockierend: Impressum/Datenschutz-Adresse (P0-2, wartet auf Nutzer-Input), Produktions-Env/Stripe-Live (P0-3, Env-Var-Checkliste bereitgestellt), vollständige Secrets-Rotation (P0-4, SECRET_KEY bereits generiert).
+**Fortschritt seit Erst-Audit (Block A + B + C + D, 2026-07-09):** Working Tree gesichert (P0-1), Datenschutz/Plausible/Datum konsistent (P1-8), Quota-Lücke geschlossen (P1-1), API-Docs in Prod deaktiviert (P1-11), Dividenden-/Grower-Randfälle repariert inkl. 5 neuer Tests (P1-3), Landing-Claim-Widerspruch aufgelöst + Ergebnis-Wording neutralisiert + In-App-Disclaimer (P0-5, P1-5), Admin-Metriken Churn + MRR korrigiert + interne Accounts aus allen Aktivitätsmetriken gefiltert inkl. neuem API-Test-Harness mit 13 Tests (P1-6, P1-7, P2-16), öffentliche Pricing-Seite mit gemeinsamer Plan-Datenquelle + Cookie-Banner-Überlappung auf Desktop behoben (P1-4, P2-14 teilweise). Produktions-Deploy auf Render am 2026-07-09 versucht und live am fehlenden Env-Setup gescheitert (bestätigt genau P0-3). Weiterhin offen und launch-blockierend: Impressum/Datenschutz-Adresse (P0-2, wartet auf Nutzer-Input), Produktions-Env/Stripe-Live (P0-3, Env-Var-Checkliste bereitgestellt, als Nächstes gemeinsam mit Vercel-Frontend-URL), vollständige Secrets-Rotation (P0-4, SECRET_KEY bereits generiert).
 
 **Kurze Gesamtbewertung:**
-Das Produkt ist technisch deutlich reifer als der typische Pre-Launch-SaaS: Auth, Billing, Webhooks, IDOR-Schutz, Rate-Limiting und Fehlerkapselung sind sauber gebaut und im Live-Test bestätigt (Admin-Routen ohne Token → 401, keine Fehlerdetails nach außen, keine Secrets in Git). Das Frontend ist auf Desktop/Tablet/Mobile live getestet ohne Layout-Brüche oder horizontales Scrollen auf den öffentlichen Seiten. Die Admin-Metriken (Churn, MRR, DAU/WAU/MAU) sind jetzt korrekt und testabgesichert. **Die verbleibenden Launch-Hindernisse sind nicht mehr die Kern-Engine, sondern primär organisatorisch:** (1) rechtlicher Platzhalter im Impressum/Datenschutz (wartet auf die echte Adresse), (2) komplett fehlende Produktions-Konfiguration (Stripe Test-Modus, localhost-URLs, CORS, Env-Vars auf Render — Deploy-Absturz am 2026-07-09 live bestätigt), (3) volle Secrets-Rotation in externen Dashboards und (4) schwaches Marketing (kein öffentliches Pricing, kein Social Proof).
+Das Produkt ist technisch deutlich reifer als der typische Pre-Launch-SaaS: Auth, Billing, Webhooks, IDOR-Schutz, Rate-Limiting und Fehlerkapselung sind sauber gebaut und im Live-Test bestätigt (Admin-Routen ohne Token → 401, keine Fehlerdetails nach außen, keine Secrets in Git). Das Frontend ist auf Desktop/Tablet/Mobile live getestet ohne Layout-Brüche oder horizontales Scrollen auf den öffentlichen Seiten. Die Admin-Metriken (Churn, MRR, DAU/WAU/MAU) sind jetzt korrekt und testabgesichert. Pro-Preis ist jetzt ohne Login in einem Klick auffindbar. **Die verbleibenden Launch-Hindernisse sind nicht mehr die Kern-Engine, sondern primär organisatorisch:** (1) rechtlicher Platzhalter im Impressum/Datenschutz (wartet auf die echte Adresse), (2) komplett fehlende Produktions-Konfiguration (Stripe Test-Modus, keine Vercel-URL, CORS, Env-Vars auf Render — Deploy-Absturz am 2026-07-09 live bestätigt), (3) volle Secrets-Rotation in externen Dashboards und (4) fehlender Social Proof.
 
 **Wichtigste Launch-Risiken (Top 10):**
 1. ~~Uncommittete Fixrunde (231 Pfade)~~ — **erledigt 2026-07-09:** in 4 Commits committed und zu `origin/main` gepusht (`874f226`…`93a833f`)
 2. Impressum/Datenschutz mit Platzhalter-Adressen — Abmahnrisiko ab Tag 1 (live im Browser bestätigt)
-3. Produktions-Env nicht konfiguriert — **live bestätigt 2026-07-09:** Manual Deploy auf Render stürzt beim Start mit `ValidationError: 14 validation errors for Settings` ab (alle Pflicht-Env-Vars fehlen)
+3. Produktions-Env nicht konfiguriert — **live bestätigt 2026-07-09:** Manual Deploy auf Render stürzt beim Start mit `ValidationError: 14 validation errors for Settings` ab (alle Pflicht-Env-Vars fehlen); dazu fehlt noch eine feste Vercel-Frontend-URL für `FRONTEND_URL`/`CORS_ORIGINS`/Stripe-Redirects
 4. Stripe im Test-Modus — es kann kein echter Umsatz entstehen
 5. ~~Landing-Claim „Keine Kursziele" widerspricht dem Produkt~~ — **erledigt 2026-07-09:** Claim + Ergebnis-Wording angepasst, In-App-Disclaimer ergänzt (P0-5, P1-5)
 6. Kennzahlen nie gegen Live-SEC-Daten verifiziert (Alt-Audit P1-2) — Kernversprechen des Produkts
 7. ~~`/analyze/custom/history` ohne Quota/Rate-Limit~~ — **erledigt 2026-07-09:** gegated (P1-1)
-8. Kein öffentliches Pricing + kein Social Proof — Conversion-Blocker für zahlende Kunden
+8. ~~Kein öffentliches Pricing~~ — **erledigt 2026-07-09:** `/pricing`-Route + Header-/Footer-/Hero-Links (P1-4); kein Social Proof bleibt offen (P2)
 9. ~~Admin-Metriken irreführend (Churn zählt falsches Event, MRR hartkodiert)~~ — **erledigt 2026-07-09:** Churn/MRR korrigiert, interne Accounts gefiltert (P1-6, P1-7, P2-16)
 10. Live-Secrets im geteilten `.env` (Gmail-App-Passwort, SECRET_KEY, API-Keys) — Rotation nötig
 
@@ -267,7 +267,7 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 
 ### [P1-4] Öffentliche Pricing-Kommunikation (Landing-Abschnitt oder Pricing-Seite)
 
-**Status:** Offen (neu in diesem Audit)
+**Status:** ✅ Erledigt (2026-07-09)
 **Bereich:** Marketing / Conversion
 **Betroffene Dateien/Komponenten:** `frontend/src/pages/public/LandingPage.tsx` (kein Pricing-Abschnitt vorhanden — live bestätigt), `frontend/src/pages/app/BillingPage.tsx:256-340` (Preise nur nach Login: Free 0 € / Pro 50 €/Monat bzw. 500 €/Jahr)
 
@@ -280,12 +280,14 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 **Erwarteter Zielzustand:** Öffentlich sichtbarer Pricing-Abschnitt (auf der Landing und/oder als `/pricing`-Route im `PublicLayout`): Free vs. Pro nebeneinander, Preis, Leistungsumfang, Jahres-Rabatt („2 Monate gratis"), CTA pro Plan. Konsistent mit `BillingPage.tsx`.
 
 **Akzeptanzkriterien:**
-- Preis von Pro ohne Login auffindbar (max. 1 Klick von der Landing)
-- Feature-Vergleich Free vs. Pro identisch mit der internen BillingPage (eine gemeinsame Quelle für die Plan-Daten anlegen, keine Kopie)
-- Footer-/Header-Link auf das Pricing
-- Mobile getestet (375px, kein horizontales Scrollen)
+- Preis von Pro ohne Login auffindbar (max. 1 Klick von der Landing) ✅
+- Feature-Vergleich Free vs. Pro identisch mit der internen BillingPage (eine gemeinsame Quelle für die Plan-Daten anlegen, keine Kopie) ✅
+- Footer-/Header-Link auf das Pricing ✅
+- Mobile getestet (375px, kein horizontales Scrollen) ✅
 
 **Hinweise für Sonnet:** `BillingPage.tsx` referenziert in einem Kommentar bereits ein „reference pricing-page layout" (Zeile ~593) — als visuelle Basis nutzen. Kein Export-Feature u. Ä. erfinden; Leistungsumfang exakt aus der BillingPage übernehmen.
+
+**Umsetzungsnotiz (2026-07-09):** Neue Datei `frontend/src/config/pricingPlans.ts` als einzige Quelle für `FREE_PLAN`/`PRO_PLAN` (Preise, Feature-Liste, Rabatt-Texte). `BillingPage.tsx` auf diese Konstanten umgestellt (vorher inline dupliziert). Neue öffentliche Route `/pricing` (`PricingPage.tsx`, im `PublicLayout`) mit Monats-/Jahres-Toggle, identischem Feature-Vergleich, CTAs zu `/register` (Checkout selbst bleibt wie vorgesehen erst nach Login möglich). Link in `Header.tsx` (nur `variant="public"`, eingeloggt ausgeblendet) und `Footer.tsx` ergänzt; zusätzlich ein Inline-Link „Was kostet Pro? Preise ansehen →" direkt im Hero der Landing Page (`LandingPage.tsx`) — damit ist der Pro-Preis in einem Klick von der Startseite erreichbar, nicht erst über den Footer. Ein Theming-Bug beim Bauen abgefangen: die Pro-Karte sollte ursprünglich `theme.colors.chrome` als Hintergrund nutzen, das sich zwischen Light/Dark-Mode umkehrt (hell/dunkel) — mit fest weißem Text wäre das im Dark Mode unlesbar geworden; stattdessen denselben fest-dunklen Gradient wie `BillingPage.tsx::proCard` übernommen. Live verifiziert (Desktop 1280×800 und Mobile 375×812): kein horizontales Scrollen, keine Konsolenfehler, Pro-Karte in beiden Farb-Kontexten lesbar, CTA-Buttons auf der Pricing-Seite selbst nicht vom Cookie-Banner verdeckt (siehe P2-14 für die separate Landing-Hero-Überlappung). `npx tsc -b`/`npm run build` grün.
 
 ---
 
@@ -437,11 +439,14 @@ Neue P2-Aufgaben aus diesem Audit:
 
 ### [P2-14] Cookie-Banner überdeckt den primären CTA beim Erstbesuch
 
-**Status:** Offen · **Bereich:** Marketing/UX
+**Status:** ⚠️ Teilweise erledigt (2026-07-09) — Desktop gelöst, Mobile strukturell nicht vollständig lösbar ohne Hero-Umbau (siehe Notiz)
+**Bereich:** Marketing/UX
 **Betroffene Dateien/Komponenten:** `frontend/src/components/consent/CookieConsentBanner.tsx`
 **Problem/Beweis:** Live-Test Desktop 1280×800: Der Banner (unten links) überlappt beim Erstbesuch den „Kostenlos starten"-CTA der Hero-Section teilweise. Genau im wichtigsten Conversion-Moment konkurriert der Banner mit dem CTA.
 **Zielzustand:** Banner kompakter/rechtsbündig positionieren oder Hero-CTA-Bereich freihalten (z. B. Banner als schmale Bottom-Bar).
 **Akzeptanzkriterien:** Bei 1280×800 und 375×812 überlappt der Banner keinen CTA; Screenshot-Vergleich.
+
+**Umsetzungsnotiz (2026-07-09):** Banner umgebaut von einer bis zu 180px hohen, unten-links positionierten Karte zu einer schmalen, vollbreiten Bottom-Bar (77px auf Mobile, ~90px auf Desktop) + kürzerer Mobile-Copy (`useIsMobile()`) + 1,2 s Anzeige-Verzögerung (Plausible lädt ohnehin erst nach explizitem "Zustimmen", DSGVO-unkritisch — lässt den ersten Blick auf den Hero-CTA ungestört). **Desktop 1280×800 live vermessen: kein Overlap mehr, +53px Abstand zwischen CTA-Unterkante und Banner-Oberkante (vorher: Überlappung).** **Mobile 375×812 live vermessen: weiterhin vollständige Überlappung** (`ctaBottom: 829px` bei nur `812px` Viewporthöhe — der Hero-CTA liegt auf diesem Viewport bereits `ohne jeden Banner` unterhalb des sichtbaren Bereichs, da Headline + Subtext + Eyebrow-Badge auf 375px Breite allein schon mehr als eine Bildschirmhöhe beanspruchen). Das ist kein Banner-Problem mehr, sondern ein eigenständiges Hero-Höhen-Problem auf schmalen Viewports, das nur durch Kürzen/Verkleinern des Hero-Inhalts auf Mobile lösbar wäre — bewusst nicht im Rahmen dieses als "klein" eingestuften Fixes mitgemacht (Content-/Typografie-Entscheidung mit größerer Tragweite). **Empfehlung:** neuer, separater P2-Punkt "Hero-Höhe auf Mobile reduzieren" anlegen, falls das behoben werden soll.
 
 ### [P2-15] three.js-Intro ohne Mobile-/Low-Power-Gating
 
@@ -509,7 +514,7 @@ Neue P2-Aufgaben aus diesem Audit:
 
 ### Desktop (1280×800) — getestet ✅
 - Landing, Login, Register, Legal: sauber. Hero, Karten-Sektionen, Footer korrekt.
-- **Risiko:** Cookie-Banner überdeckt Hero-CTA (→ P2-14).
+- ~~**Risiko:** Cookie-Banner überdeckt Hero-CTA~~ — ✅ behoben 2026-07-09 (→ P2-14; auf Mobile 375px weiterhin ein separates Hero-Höhen-Problem, siehe P2-14-Notiz).
 
 ### Tablet (768×1024) — getestet ✅
 - Landing skaliert korrekt, CTAs nebeneinander, kein Overflow (753px Scrollbreite bei 768px Viewport).
@@ -522,6 +527,7 @@ Neue P2-Aufgaben aus diesem Audit:
 - **Task:** Mode-Chip-Leiste der Landing (`AudienceTabs.tsx:63`, `overflowX:auto`) schneidet den letzten Chip sichtbar ab („Wachstums…") ohne Scroll-Affordance — Fade-Out-Kante oder Scroll-Indikator ergänzen.
 - **Task (ungetestet, Code-Risiko):** `ComparePivotTable.tsx:47` — breite Vergleichstabellen scrollen horizontal im Container (sticky erste Spalte vorhanden — Mitigation ok, aber mit 4+ Firmen auf 375px real testen, sobald Login-Test möglich).
 - **Task:** three.js-Intro nach Login ungegated (→ P2-15).
+- **Neu (2026-07-09):** Landing-Hero allein (Eyebrow-Badge + 3-zeilige Headline + Subtext + CTA-Row) überschreitet auf 375×812 die Viewporthöhe — der primäre CTA („Kostenlos starten") liegt bereits ohne jeden Cookie-Banner unterhalb des sichtbaren Bereichs (`ctaBottom: 829px` bei `812px` Viewport, live vermessen). Kein Launch-Blocker (Nutzer können scrollen), aber schwächt den ersten Eindruck auf kleinen Screens. Optionaler P2-Task: Hero-Vertikalabstände/Schriftgrößen auf Mobile straffen.
 
 ---
 
@@ -537,7 +543,7 @@ Neue P2-Aufgaben aus diesem Audit:
 
 ## 7. Marketing & Conversion Tasks
 
-1. **Pricing öffentlich machen** (→ P1-4) — wichtigster Conversion-Hebel.
+1. ~~**Pricing öffentlich machen** (→ P1-4)~~ — ✅ erledigt 2026-07-09.
 2. **Landing-Claim korrigieren** (→ P0-5) — Vertrauens-Grundlage.
 3. **Vertrauens-Elemente ergänzen (P1-Empfehlung):** Die Seite hat null Social Proof (keine Testimonials, Logos, Nutzerzahlen — bewusst ehrlich, aber leer). Ohne echte Kunden ersetzbar durch: konkrete Produkt-Beweise (Screenshot/Demo-GIF einer echten Analyse, interaktives Beispiel mit einem bekannten Ticker), „Made in Germany / DSGVO / keine Cookies"-Badge-Zeile, Gründer-Note mit Namen und Gesicht. KEINE erfundenen Testimonials.
 4. **Zielgruppen-Ansprache:** Die AudienceTabs (Wachstumswerte/Dividenden/…) sind gut — pro Tab noch 1 Satz „für wen": Selbstentscheider, die SEC-Daten lesen wollen, ohne 10-Ks zu wälzen.
@@ -591,13 +597,13 @@ Neue P2-Aufgaben aus diesem Audit:
 6. P1-11: `/docs` env-gesteuert deaktivieren (Mini-Diff)
 7. P1-3: Dividenden-/Grower-Randfälle degradieren (Engine + Tests; größtes Code-Stück in diesem Block)
 
-**Block C — Admin-Wahrheit (Code, ~1 Tag):**
-8. P1-6 + P1-7 zusammen: Churn- und MRR-Query in `admin_stats.py` (gleiche Datei, gemeinsame Tests)
-9. P2-16 direkt mitnehmen (gleiche Queries: interne Accounts filtern)
+**Block C — Admin-Wahrheit (Code, ~1 Tag): ✅ erledigt 2026-07-09**
+8. ~~P1-6 + P1-7 zusammen: Churn- und MRR-Query in `admin_stats.py` (gleiche Datei, gemeinsame Tests)~~ ✅
+9. ~~P2-16 direkt mitnehmen (gleiche Queries: interne Accounts filtern)~~ ✅
 
-**Block D — Conversion (Code, ~1–2 Tage):**
-10. P1-4: Öffentliches Pricing (Landing-Abschnitt/Route, gemeinsame Plan-Daten-Quelle mit BillingPage)
-11. P2-14: Cookie-Banner-Position (klein, gleiche Ecke des Codes)
+**Block D — Conversion (Code, ~1–2 Tage): ✅ erledigt 2026-07-09**
+10. ~~P1-4: Öffentliches Pricing (Landing-Abschnitt/Route, gemeinsame Plan-Daten-Quelle mit BillingPage)~~ ✅
+11. ~~P2-14: Cookie-Banner-Position (klein, gleiche Ecke des Codes)~~ ⚠️ Desktop erledigt, Mobile-Restfund dokumentiert (siehe P2-14)
 
 **Block E — Betrieb & Launch (Betreiber + Sonnet unterstützend):**
 12. P0-3: Prod-Env/Stripe-Live/Migrationen/Admin (LAUNCH_CHECKLIST.md abarbeiten)

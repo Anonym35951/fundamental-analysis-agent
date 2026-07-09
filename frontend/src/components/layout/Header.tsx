@@ -82,6 +82,12 @@ function Header({ variant = "public", onLogout }: HeaderProps) {
           {/* PUBLIC (logged out) + AUTH */}
           {(variant === "auth" || (variant === "public" && !hasToken)) && (
             <>
+              {variant === "public" ? (
+                <Link to="/pricing" style={pillLinkGhost}>
+                  Preise
+                </Link>
+              ) : null}
+
               <Link to="/login" style={pillLinkGhost}>
                 Login
               </Link>

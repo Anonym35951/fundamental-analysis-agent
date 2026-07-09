@@ -57,6 +57,10 @@ function Footer({ variant = "public" }: FooterProps) {
               Kennzahlen-Glossar
             </a>
 
+            <Link to="/pricing" style={linkStyle}>
+              Preise
+            </Link>
+
             <Link to="/legal/privacy" style={linkStyle}>
               Datenschutz
             </Link>

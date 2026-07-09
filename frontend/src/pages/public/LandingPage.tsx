@@ -189,6 +189,10 @@ function LandingPage() {
               </motion.div>
             </div>
 
+            <Link to="/pricing" style={pricingInlineLink}>
+              Was kostet Pro? Preise ansehen →
+            </Link>
+
             <div style={checklistRow}>
               <span style={checklistItem}>
                 <CheckCircle2 size={16} color={theme.colors.success} /> Direkt aus SEC-Filings — nicht aus Dritt-Aggregatoren
@@ -482,6 +486,16 @@ const secondaryCta: React.CSSProperties = {
   padding: "15px 24px",
   borderRadius: theme.radius.pill,
   border: `1px solid ${theme.glass.subtle.border}`,
+};
+
+const pricingInlineLink: React.CSSProperties = {
+  display: "block",
+  textAlign: "center",
+  color: theme.colors.textSecondary,
+  fontSize: "0.9rem",
+  fontWeight: 600,
+  textDecoration: "none",
+  marginBottom: "24px",
 };
 
 const checklistRow: React.CSSProperties = {
