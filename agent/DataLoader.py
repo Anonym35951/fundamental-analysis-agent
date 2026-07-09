@@ -417,29 +417,31 @@ class DataLoader:
                 self.logger.info(f"Cache-Daten für {symbol} ({interval}) geladen.")
                 return cached_data
 
-        try:
-            # Verwende yfinance für API-Aufruf
-            ticker = yf.Ticker(symbol)
-            df = ticker.history(period="max" if not start_date else None, start=start_date, end=end_date,
-                                interval=interval)
-            if df.empty:
-                self.logger.warning(f"Keine Kursdaten für {symbol} ({interval}) verfügbar.")
-                return None
-            # Zeitzone entfernen und Index als DateTime setzen
-            df.index = pd.to_datetime(df.index).tz_convert(None)
-            # Nur benötigte Spalten behalten
-            required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-            df = df[[col for col in required_columns if col in df.columns]]
-            # Cache die Daten
-            self._cache_data(df, symbol, cache_key)
-            self.logger.info(f"Kursdaten für {symbol} ({interval}) erfolgreich abgerufen und gecacht.")
-            return df
-        except ValueError as e:
-            self.logger.error(f"Datumsfehler beim Abruf der Kursdaten für {symbol} ({interval}): {e}")
+        # Bewusst kein try/except um den Netzwerk-Call: @retry oben braucht
+        # eine tatsächlich propagierende Exception, um bei transienten
+        # Yahoo-Fehlern (429s, Timeouts - insbesondere von Cloud-/
+        # Rechenzentrums-IPs wie Render) erneut zu versuchen, statt beim
+        # ersten Fehlschlag sofort None zurückzugeben (LAUNCH_AUDIT.md
+        # P2-12 - dieselbe Ursache, die für get_current_price_per_share schon
+        # behoben wurde). "Keine Daten" (df.empty) bleibt bewusst KEIN
+        # Retry-Fall: das ist eine gültige Antwort (z. B. Symbol ohne
+        # Historie), kein transienter Fehler, den ein erneuter Versuch
+        # beheben würde.
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="max" if not start_date else None, start=start_date, end=end_date,
+                            interval=interval)
+        if df.empty:
+            self.logger.warning(f"Keine Kursdaten für {symbol} ({interval}) verfügbar.")
             return None
-        except Exception as e:
-            self.logger.error(f"API-Fehler beim Abruf der Kursdaten für {symbol} ({interval}): {e}")
-            return None
+        # Zeitzone entfernen und Index als DateTime setzen
+        df.index = pd.to_datetime(df.index).tz_convert(None)
+        # Nur benötigte Spalten behalten
+        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        df = df[[col for col in required_columns if col in df.columns]]
+        # Cache die Daten
+        self._cache_data(df, symbol, cache_key)
+        self.logger.info(f"Kursdaten für {symbol} ({interval}) erfolgreich abgerufen und gecacht.")
+        return df
 
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))

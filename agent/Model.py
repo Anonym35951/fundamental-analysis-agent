@@ -4756,7 +4756,15 @@ class Model:
 
         tbv_per_share = (tbv_total / shares) if shares else 0.0
 
-        price_df = self.dataloader.get_max_historical_stock_data(symbol, interval="1d", use_cache=use_cache)
+        # get_max_historical_stock_data lässt Exceptions jetzt propagieren,
+        # damit sein eigener @retry greift (LAUNCH_AUDIT.md P2-12) - diese
+        # Methode hat (anders als die meisten in Model.py) kein umschließendes
+        # try/except, deshalb hier explizit abfangen statt der Aufrufkette
+        # ungeschützt zu überlassen.
+        try:
+            price_df = self.dataloader.get_max_historical_stock_data(symbol, interval="1d", use_cache=use_cache)
+        except Exception as e:
+            return {"error": f"Keine aktuellen Kursdaten für {symbol} verfügbar: {e}"}
         if price_df is None or price_df.empty:
             return {"error": f"Keine aktuellen Kursdaten für {symbol} verfügbar"}
         current_price = float(price_df["Close"].iloc[-1])
@@ -4900,7 +4908,12 @@ class Model:
 
         ebit_per_share = (ebit_total / shares) if shares else 0.0
 
-        price_df = self.dataloader.get_max_historical_stock_data(symbol, interval="1d", use_cache=use_cache)
+        # Siehe Kommentar in evaluate_tbv_bandwidth: get_max_historical_stock_data
+        # hat kein eigenes umschließendes try/except mehr, deshalb hier fangen.
+        try:
+            price_df = self.dataloader.get_max_historical_stock_data(symbol, interval="1d", use_cache=use_cache)
+        except Exception as e:
+            return {"error": f"Keine aktuellen Kursdaten für {symbol} verfügbar: {e}"}
         if price_df is None or price_df.empty:
             return {"error": f"Keine aktuellen Kursdaten für {symbol} verfügbar"}
         current_price = float(price_df["Close"].iloc[-1])

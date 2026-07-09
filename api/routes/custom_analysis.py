@@ -113,6 +113,15 @@ def _evaluate_criterion(operator: str, threshold: float, value) -> bool | None:
 
 
 def _wrap_metric_result(raw, criterion: dict | None) -> dict:
+    # A bare None (e.g. get_max_historical_stock_data giving up after
+    # exhausting its retries, or legitimately finding no data) matched none
+    # of the branches below and fell through to {"value": None} with no
+    # "error" and no "series" - the frontend then reads an empty series as
+    # "not chart-eligible" and silently reclassifies the metric as a plain
+    # (empty) table row instead of excluding it / showing an error.
+    if raw is None:
+        return {"value": None, "error": _GENERIC_METRIC_ERROR}
+
     # Historical metrics return a pandas DataFrame; flatten to the generic
     # {date, value}[] series shape the frontend's Sparkline/TimeSeriesChart
     # components expect, picking the first non-index column as "value".

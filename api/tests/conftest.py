@@ -33,19 +33,29 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from api.models.base import Base
-# Modelle importieren, damit Base.metadata ihre Tabellen kennt (sonst legt
-# create_all nur die Tabellen der bereits importierten Module an). Keine
+# Modelle importieren, damit Base.metadata ihre Tabellen kennt. Keine
 # ORM-relationship()-Verknüpfungen zwischen User/ProductEvent (nur eine
 # rohe FK-Spalte) - andere Modelle müssen hier nicht registriert werden.
-from api.models import user, product_event  # noqa: F401
+from api.models.user import User
+from api.models.product_event import ProductEvent
 
 
 @pytest.fixture
 def db():
     """Frische In-Memory-SQLite-DB pro Test - kein Netzwerk, keine echte
-    Postgres-Instanz nötig, keine Testdaten überleben zwischen Tests."""
+    Postgres-Instanz nötig, keine Testdaten überleben zwischen Tests.
+
+    create_all() bekommt bewusst eine explizite tables=[...]-Liste statt
+    "alles in Base.metadata": Base.metadata ist ein prozessweit geteiltes
+    Singleton, das sich mit jedem `from api.models.X import Y` in JEDER
+    Testdatei füllt (auch in anderen als dieser) - importiert z. B. ein Test
+    `api/routes/custom_analysis.py`, registriert das transitiv auch
+    `AnalysisHistory` (Postgres-`JSONB`-Spalte), was create_all() auf SQLite
+    zum Absturz bringt. Die explizite Liste macht diese Fixture unabhängig
+    davon, was anderswo im selben Testlauf sonst noch importiert wurde.
+    """
     engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(engine, tables=[User.__table__, ProductEvent.__table__])
     session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = session_local()
     try:
