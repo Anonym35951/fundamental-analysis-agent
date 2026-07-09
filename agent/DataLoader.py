@@ -82,7 +82,12 @@ class DataLoader:
         self.base_url = "https://www.alphavantage.co/query?"
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
-        self.sec_source = SecSource(user_agent=self.user_agent)
+        # cache_dir explizit durchreichen: SecSource würde sonst immer unter dem
+        # relativen Default "cache/sec" schreiben und einen CACHE_DIR-Mount ignorieren.
+        self.sec_source = SecSource(
+            user_agent=self.user_agent,
+            cache_dir=os.path.join(self.cache_dir, "sec"),
+        )
         self._prune_cache()
 
     def _prune_cache(self):

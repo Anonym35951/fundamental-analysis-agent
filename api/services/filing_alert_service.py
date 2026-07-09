@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from datetime import datetime
 
@@ -51,7 +52,13 @@ def check_new_filings(db: Session) -> int:
     if not symbols:
         return 0
 
-    sec_source = SecSource(user_agent=settings.EMAIL_FROM)
+    # Gleiche CACHE_DIR-Kopplung wie DataLoader (agent/DataLoader.py): sonst
+    # schreibt dieser Worker am Persistent-Disk-Mount vorbei in den ephemeren
+    # Default "cache/sec".
+    sec_source = SecSource(
+        user_agent=settings.EMAIL_FROM,
+        cache_dir=os.path.join(os.environ.get("CACHE_DIR", "cache"), "sec"),
+    )
     alerts_sent = 0
 
     for index, symbol in enumerate(symbols):
