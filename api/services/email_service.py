@@ -1,6 +1,7 @@
 import html
 import logging
 import smtplib
+import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Callable, Literal
@@ -8,6 +9,29 @@ from typing import Callable, Literal
 from api.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class _IPv4SMTP(smtplib.SMTP):
+    """smtplib.SMTP resolves the host via getaddrinfo() with the default
+    (dual-stack) address family and connects to whichever address comes
+    first - on some hosting platforms (observed on Render) the returned
+    IPv6 address isn't actually routable and connect() fails immediately
+    with OSError: [Errno 101] Network is unreachable, even though IPv4
+    works fine. Forcing AF_INET here sidesteps that; STARTTLS/cert
+    verification is unaffected since it uses self._host (the original
+    hostname string) for SNI, not the resolved IP."""
+
+    def _get_socket(self, host, port, timeout):
+        addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+        family, socktype, proto, _, sockaddr = addr_info[0]
+        sock = socket.socket(family, socktype, proto)
+        # Mirrors socket.create_connection's own sentinel check - timeout
+        # defaults to the private socket._GLOBAL_DEFAULT_TIMEOUT object
+        # (meaning "leave the platform default"), not None.
+        if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+            sock.settimeout(timeout)
+        sock.connect(sockaddr)
+        return sock
 
 
 def send_email_safely(send_fn: Callable[..., bool], *args, **kwargs) -> None:
@@ -42,7 +66,7 @@ def _send_email(
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+        with _IPv4SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
             server.starttls()
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.send_message(msg)
