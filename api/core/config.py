@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     LOG_LEVEL: str = "INFO"
     SQL_ECHO: bool = False
+    # "production" hides interactive API docs (/docs, /redoc, /openapi.json) —
+    # see api/main.py. Any other value (default) keeps them on for local dev.
+    ENVIRONMENT: str = "development"
 
     # Error-Tracking (leer = deaktiviert)
     SENTRY_DSN: str = ""

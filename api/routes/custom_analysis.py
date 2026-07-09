@@ -15,7 +15,12 @@ from api.services.metric_catalog import get_catalog_entries, call_metric
 from api.services.custom_analysis_limit import check_can_save_definition
 from api.services.event_service import log_event
 from api.utils.json_sanitize import make_json_safe
-from api.core.dependencies import get_current_user, require_analysis_access_for_units, get_db
+from api.core.dependencies import (
+    get_current_user,
+    require_analysis_access,
+    require_analysis_access_for_units,
+    get_db,
+)
 from api.core.database import SessionLocal
 from api.models.user import User
 from api.models.analysis_history import AnalysisHistory
@@ -50,18 +55,25 @@ def list_custom_metrics():
 
 
 @router.get("/history")
+@limiter.limit("30/minute")
 def get_metric_history(
+    request: Request,
     key: str,
     symbol: str,
     frequency: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_analysis_access),
 ):
     """Synchronous single-metric lookup for an arbitrary symbol, used by the
     chart-layer builder to overlay metrics/symbols that aren't part of the
     current analysis job. Reuses the same dispatch/normalization the
-    multi-metric custom-analysis job uses, just without spawning a job."""
+    multi-metric custom-analysis job uses, just without spawning a job.
+
+    Gated like every other computation endpoint (require_analysis_access:
+    verified email + Free-tier monthly quota) plus a rate limit — this used
+    to only depend on get_current_user, making it the one uncapped,
+    unverified compute path left after the metric_routes.py quota fix."""
     if key not in get_catalog_entries_keys():
         raise HTTPException(status_code=400, detail=f"Unbekannte Metrik: {key}")
 

@@ -43,7 +43,16 @@ if settings.SENTRY_DSN:
     )
     logger.info("Sentry error tracking enabled")
 
-app = FastAPI(title="AIAgent API", version="0.1")
+# In Produktion enumerieren /docs, /redoc und /openapi.json sonst die
+# komplette API-Oberfläche (inkl. aller /admin/*-Routen) für jeden Besucher.
+_is_production = settings.ENVIRONMENT == "production"
+app = FastAPI(
+    title="ComAnalysis API",
+    version="0.1",
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
+)
 
 app.state.limiter = limiter
 

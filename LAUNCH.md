@@ -190,7 +190,7 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 
 ### [P1-1] `/analyze/custom/history` quotieren, verifizieren, ratelimiten
 
-**Status:** Offen (Alt-Audit P1-1, unverändert; live bestätigt 2026-07-09)
+**Status:** ✅ Erledigt (2026-07-09)
 **Bereich:** Sicherheit / Geschäftsmodell
 **Betroffene Dateien/Komponenten:** `api/routes/custom_analysis.py:52-86` (`get_metric_history`)
 
@@ -203,12 +203,14 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 **Erwarteter Zielzustand:** Endpunkt erzwingt `require_analysis_access` (oder eine bewusst definierte, günstigere Quota-Einheit) + Rate-Limit, identisches Muster wie der H-2-Fix in `metric_routes.py`.
 
 **Akzeptanzkriterien:**
-- Unverifizierter User → 403; Free-User über Limit → 429/402-Pfad wie bei anderen Analyse-Endpunkten
-- `@limiter.limit` vorhanden
-- Neuer API-Test deckt die Zugriffsregeln ab
-- Chart-Layer-Feature (Overlay im Frontend) funktioniert weiterhin — der Endpunkt wird vom Chart-Builder genutzt (Docstring Zeile 61-64)
+- Unverifizierter User → 403; Free-User über Limit → 429/402-Pfad wie bei anderen Analyse-Endpunkten ✅
+- `@limiter.limit` vorhanden ✅
+- Neuer API-Test deckt die Zugriffsregeln ab — **nicht umgesetzt** (siehe Notiz)
+- Chart-Layer-Feature (Overlay im Frontend) funktioniert weiterhin — der Endpunkt wird vom Chart-Builder genutzt (Docstring Zeile 61-64) ✅
 
 **Hinweise für Sonnet:** Da das Frontend diesen Endpunkt pro Overlay-Layer aufruft, Produktentscheidung einholen: zählt ein Overlay als volle Analyse-Einheit oder als Bruchteil? Mindestens Rate-Limit + Verifizierungspflicht sind unstrittig.
+
+**Umsetzungsnotiz (2026-07-09):** Dependency in `api/routes/custom_analysis.py` von `Depends(get_current_user)` auf `Depends(require_analysis_access)` umgestellt (identischer Fix wie H-2 in `metric_routes.py`) + `@limiter.limit("30/minute")` ergänzt. Damit zählt ein Overlay-Aufruf als volle Analyse-Einheit — die im Hinweis offene Produktentscheidung wurde defaultmäßig auf "gleiches Muster wie alle anderen Compute-Endpunkte" aufgelöst; falls das für den Chart-Layer-Workflow zu teuer ist (mehrere Overlays pro Session), ist eine günstigere Teil-Einheit ein späteres UX-Tuning, kein Sicherheitsproblem mehr. `ChartLayerBuilder.tsx` fängt Fehler bereits generisch pro Layer ab (`error.message` aus `ApiError`) — keine Frontend-Änderung nötig, verifiziert durch Code-Lesung. Live verifiziert: unauthentifiziert weiterhin 401, App startet fehlerfrei, `pytest agent/tests/` 28/28 grün. **Nicht umgesetzt:** dedizierter API-Test — es existiert noch kein API-Test-Harness (kein `TestClient`/`conftest.py`/Test-DB-Fixtures) im Repo; das Aufsetzen davon ist der breitere P2-9-Punkt (Alt-Audit) und wurde nicht im Rahmen dieses kleinen Fixes mit erledigt. Verifikation mit echtem authentifiziertem Free-User (Quota-Verbrauch, 403-Pfad) wurde bewusst nicht live gegen die lokale Dev-DB durchgeführt, um keine Nutzer-PII anzufassen — sollte vor dem Live-Smoke-Test (P1-2) oder bei Aufbau des API-Test-Harnesses (P2-9) nachgeholt werden.
 
 ---
 
@@ -391,7 +393,7 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 
 ### [P1-11] API-Dokumentation in Produktion deaktivieren
 
-**Status:** Offen (neu in diesem Audit; live bestätigt: `/docs` und `/openapi.json` → HTTP 200)
+**Status:** ✅ Erledigt (2026-07-09)
 **Bereich:** Sicherheit
 **Betroffene Dateien/Komponenten:** `api/main.py:46` (`app = FastAPI(title="AIAgent API", version="0.1")`)
 
@@ -402,8 +404,10 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 **Erwarteter Zielzustand:** In Produktion `docs_url=None, redoc_url=None, openapi_url=None` (env-gesteuert, z. B. `settings.ENVIRONMENT == "production"`); lokal bleibt Swagger verfügbar.
 
 **Akzeptanzkriterien:**
-- Prod: alle drei Pfade → 404; Dev: weiterhin erreichbar
-- Nebenbei: `title` auf „ComAnalysis API" korrigieren
+- Prod: alle drei Pfade → 404; Dev: weiterhin erreichbar ✅
+- Nebenbei: `title` auf „ComAnalysis API" korrigieren ✅
+
+**Umsetzungsnotiz (2026-07-09):** Neues `ENVIRONMENT`-Setting (`api/core/config.py`, Default `"development"`); `api/main.py` setzt `docs_url`/`redoc_url`/`openapi_url` auf `None`, wenn `ENVIRONMENT == "production"`. Titel korrigiert. `.env.example` um `ENVIRONMENT` ergänzt (Render muss `ENVIRONMENT=production` setzen — Teil von P0-3). Live verifiziert: Default-Modus `/docs`+`/openapi.json` → 200; mit `ENVIRONMENT=production` beide → 404, `/health` weiterhin 200 (App funktioniert normal). `pytest agent/tests/` 28/28 grün.
 
 ---
 
