@@ -535,9 +535,9 @@ Neue P2-Aufgaben aus diesem Audit:
 
 ---
 
-### [P2-22] Live-Kurs-Polling schlägt in Produktion fehl (Yahoo blockt vermutlich Cloud-IPs)
+### [P2-22] Live-Kurs-Polling funktioniert online unzuverlässig (Yahoo blockt vermutlich Cloud-IPs)
 
-**Status:** ✅ Erledigt (2026-07-09) — Retry-Fix live verifiziert, Live-Kurse werden auf `www.comanalysis.de` jetzt korrekt angezeigt. War also überwiegend transientes Rate-Limiting, kein harter IP-Block. Fallback-Datenquelle (Alpha Vantage) bewusst zurückgestellt — nur bei erneutem Auftreten nachrüsten.
+**Status:** ⚠️ Wieder offen (2026-07-09) — Retry-Fix hat kurzzeitig geholfen, Betreiber berichtet beim weiteren Testen: **funktioniert weiterhin nicht zuverlässig** (mal geht's, mal nicht). Genau das vom Retry-Fix selbst schon vorhergesagte Szenario: der Fix hilft nur gegen *transiente* Fehler, nicht gegen ein wiederkehrendes/teilweises Blocking der Render-IP durch Yahoo.
 **Bereich:** Datenqualität / Technik
 **Betroffene Dateien/Komponenten:** `agent/DataLoader.py:get_current_price_per_share`, `frontend/src/hooks/useLivePrice.ts`, `frontend/src/components/shared/LivePriceBadge.tsx`, `api/routes/metric_routes.py:47-75`
 
@@ -545,12 +545,15 @@ Neue P2-Aufgaben aus diesem Audit:
 
 **Umsetzungsnotiz (2026-07-09):** `get_current_price_per_share` lässt Exceptions jetzt propagieren, damit `@retry` (3 Versuche, 2s Wartezeit) tatsächlich greift. Alle 9 Aufrufstellen (direkt und transitiv über `get_current_tbv_and_price`) wurden einzeln geprüft — jede hat ein eigenes umschließendes `try/except`, das die letzte Exception weiterhin sicher zu einem Error-Dict/einer generischen API-Fehlermeldung macht (kein Crash-Risiko). 3 neue Tests in `agent/tests/test_live_price_retry.py` (Erfolg ohne Retry, Erfolg nach 2 transienten Fehlern, `RetryError` nach 3 endgültigen Fehlschlägen). `pytest` 49/49 grün.
 
-**Ausdrücklich NICHT gelöst:** Der Retry-Fix hilft nur bei *transienten* Fehlern (kurzes Rate-Limit-Fenster). Falls Yahoo die Render-IP-Range dauerhaft/hart blockt, schlagen auch alle 3 Retry-Versuche fehl — das Grundproblem ist mit App-seitigen Mitteln kaum lösbar (kein offizieller, garantiert erlaubter Yahoo-API-Zugang). Mögliche spätere Härtung: Fallback auf eine andere, bereits integrierte Quelle bei Yahoo-Ausfall (z. B. Alpha Vantage `GLOBAL_QUOTE`), und/oder den Fehler in `LivePriceBadge`/`useLivePrice` wenigstens im Dev-/Debug-Modus sichtbar machen statt ihn komplett zu verschlucken.
+**Weiterhin NICHT gelöst (bestätigt 2026-07-09):** Der Retry-Fix hilft nur bei *transienten* Fehlern (kurzes Rate-Limit-Fenster) — genau wie in der ursprünglichen Umsetzungsnotiz erwartet, reicht das offenbar nicht aus. Live-Beobachtung des Betreibers: Preise erscheinen mal, mal nicht — Muster eines wiederkehrenden/teilweisen Yahoo-Blockings der Render-IP, nicht eines rein transienten Einzelfehlers, der mit 3 Versuchen à 2s zuverlässig überbrückt werden könnte.
+
+**Nächster Schritt (noch nicht umgesetzt):** Fallback-Datenquelle für den Live-Preis einbauen, wenn Yahoo/yfinance fehlschlägt. Alpha Vantage ist bereits als Datenquelle im Projekt integriert (`ALPHA_VANTAGE_API_KEY` vorhanden) und bietet mit `GLOBAL_QUOTE` einen passenden Endpunkt für den aktuellen Kurs. Ansatz: in `get_current_price_per_share` (oder auf Route-Ebene in `api/routes/metric_routes.py::current_price`) nach endgültigem Scheitern der Yahoo-Retries auf Alpha Vantage zurückfallen, bevor ein Fehler an den Client geht. Zusätzlich sinnvoll: den Fehlerfall in `LivePriceBadge.tsx`/`useLivePrice.ts` nicht mehr komplett verschlucken (aktuell `null`), sondern zumindest im Server-Log konsistent nachvollziehbar machen, wie oft/wann welche Quelle greift, um die tatsächliche Zuverlässigkeit über Zeit zu beobachten.
 
 **Akzeptanzkriterien:**
 - `@retry` greift nachweislich bei transienten Fehlern (Test vorhanden) ✅
 - Kein neues Crash-Risiko an den 9 Aufrufstellen ✅
-- Live-Kurs-Badge zeigt online tatsächlich einen Preis ✅ — vom Betreiber live auf `www.comanalysis.de` bestätigt
+- Live-Kurs-Badge zeigt online **zuverlässig** (nicht nur gelegentlich) einen Preis — **weiterhin offen**, vom Betreiber als unzuverlässig bestätigt
+- Fallback auf Alpha Vantage bei Yahoo-Fehlschlag implementiert und getestet — **offen**
 
 ---
 
