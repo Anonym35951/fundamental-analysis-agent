@@ -78,6 +78,17 @@ function PrivacyPage() {
       <h2 style={sectionHeading}>4. Eingesetzte Drittanbieter</h2>
       <ul style={list}>
         <li>
+          <strong>Render</strong> – Hosting von Backend (API) und Datenbank.
+          Serverstandort: EU (Frankfurt).
+        </li>
+        <li>
+          <strong>Vercel</strong> – Hosting der Weboberfläche (Frontend) über
+          ein globales Content-Delivery-Network. Vercel Inc. hat seinen Sitz
+          in den USA; die Auslieferung erfolgt auch über Standorte außerhalb
+          der EU. Für die damit verbundene Datenübermittlung gelten
+          EU-Standardvertragsklauseln (Art. 46 DSGVO).
+        </li>
+        <li>
           <strong>Stripe</strong> – Zahlungsabwicklung und
           Abonnementverwaltung.
         </li>

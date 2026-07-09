@@ -125,6 +125,12 @@ Alle 🔴-Punkte der `LAUNCH_CHECKLIST.md` abgehakt: Live-Stripe-Keys + neu ange
 **Hinweise für Sonnet:**
 Fast alles davon sind Dashboard-Aktionen des Betreibers (Stripe/Render/Vercel), kein Code. Sonnet kann unterstützen (Checkliste führen, Env-Referenz abgleichen), aber nicht selbst ausführen. Wichtig: Test- und Live-Modus in Stripe haben getrennte Produktkataloge — Preise (50 €/Monat, 500 €/Jahr) müssen im Live-Modus neu angelegt werden.
 
+**Fortschritt (2026-07-09, in Arbeit):**
+- Vercel-Projekt angelegt (`https://fundamental-analysis-agent.vercel.app`). Zwei Stolpersteine live aufgetreten und behoben: (1) Root Directory war nicht auf `frontend` gesetzt → Vercel versuchte, den Root-Level-`api/`-Ordner (Python-Backend) als Serverless Function zu bauen → `FUNCTION_INVOCATION_FAILED`. (2) Nach Korrektur der Root Directory blieb das Framework Preset auf „FastAPI" hängen (von der ersten Analyse übernommen) → suchte einen FastAPI-Entrypoint innerhalb von `frontend/`. Fix: Preset manuell auf „Vite" umgestellt.
+- **DSGVO-Entscheidung getroffen:** Datenbank + Backend-Region auf Render **Frankfurt (EU)**, um Drittland-Datentransfer-Fragen (Schrems II) von vornherein zu vermeiden, statt einen zusätzlichen Anbieter zu prüfen. Backend-Service-Region muss vom Betreiber noch bestätigt werden (bestehender Service ggf. in einer US-Region — Region ist nachträglich nicht änderbar, ggf. Neuanlage nötig).
+- `PrivacyPage.tsx` um Render (Serverstandort EU/Frankfurt) und Vercel (USA-Sitz, globales CDN, EU-Standardvertragsklauseln nach Art. 46 DSGVO) als Hosting-Auftragsverarbeiter ergänzt — vorher fehlten Hosting-Anbieter in der Datenschutzerklärung komplett.
+- Noch offen: Render-Postgres-Instanz anlegen (Region Frankfurt), vollständige Env-Var-Liste in Render eintragen (SECRET_KEY/FRONTEND_URL/STRIPE_*_URL/CORS_ORIGINS/ENVIRONMENT ersetzen, SMTP_PASSWORD **rotieren** — stand bereits vor dieser Session in einer geteilten Kopie und wurde nun zusätzlich im Chat sichtbar), `alembic upgrade head` + `scripts/set_admin.py` gegen die neue Prod-DB, Stripe-Webhook-Endpoint auf die Render-URL umbiegen (neuer Webhook-Secret), `SITE_URL` in Vercel auf die echte Domain setzen.
+
 ---
 
 ### [P0-4] Secrets rotieren (geteiltes `.env` enthält Live-Zugangsdaten)
