@@ -537,7 +537,7 @@ Neue P2-Aufgaben aus diesem Audit:
 
 ### [P2-22] Live-Kurs-Polling schlägt in Produktion fehl (Yahoo blockt vermutlich Cloud-IPs)
 
-**Status:** ⚠️ Teilweise behoben (2026-07-09) — Retry-Mechanismus repariert, Grundproblem (Yahoo-Blocking) bleibt bestehen
+**Status:** ✅ Erledigt (2026-07-09) — Retry-Fix live verifiziert, Live-Kurse werden auf `www.comanalysis.de` jetzt korrekt angezeigt. War also überwiegend transientes Rate-Limiting, kein harter IP-Block. Fallback-Datenquelle (Alpha Vantage) bewusst zurückgestellt — nur bei erneutem Auftreten nachrüsten.
 **Bereich:** Datenqualität / Technik
 **Betroffene Dateien/Komponenten:** `agent/DataLoader.py:get_current_price_per_share`, `frontend/src/hooks/useLivePrice.ts`, `frontend/src/components/shared/LivePriceBadge.tsx`, `api/routes/metric_routes.py:47-75`
 
@@ -550,7 +550,7 @@ Neue P2-Aufgaben aus diesem Audit:
 **Akzeptanzkriterien:**
 - `@retry` greift nachweislich bei transienten Fehlern (Test vorhanden) ✅
 - Kein neues Crash-Risiko an den 9 Aufrufstellen ✅
-- Live-Kurs-Badge zeigt online tatsächlich einen Preis — **noch nicht verifiziert**, da vom Erfolg der Retries UND davon abhängig, ob Yahoo die Render-IP dauerhaft blockt oder nur soft-ratelimited. Nächster Schritt: nach Deploy auf `www.comanalysis.de` live beobachten, ob der Badge jetzt Werte zeigt.
+- Live-Kurs-Badge zeigt online tatsächlich einen Preis ✅ — vom Betreiber live auf `www.comanalysis.de` bestätigt
 
 ---
 
