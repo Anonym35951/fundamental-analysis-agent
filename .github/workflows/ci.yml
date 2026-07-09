@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-fundamental-metrics:
+    runs-on: ubuntu-latest
+    env:
+      # Nur zur Erfüllung des Konstruktor-Zugriffs in DataLoader.__init__ —
+      # die Tests laufen ausschließlich gegen eingefrorene Fixtures
+      # (agent/tests/fixtures/cache) und rufen Alpha Vantage nie auf.
+      ALPHA_VANTAGE_API_KEY: ci-placeholder
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run fundamental-metrics regression tests
+        run: python -m pytest agent/tests/ -v
