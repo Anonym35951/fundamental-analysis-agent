@@ -236,7 +236,7 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 
 ### [P1-3] Dividenden-/Average-Grower-Analyse: Randfälle degradieren statt abbrechen
 
-**Status:** Offen (Alt-Audit P1-3)
+**Status:** ✅ Erledigt (2026-07-09)
 **Bereich:** Technik / UX
 **Betroffene Dateien/Komponenten:** `agent/AgentAction.py:200-202` (+ `agent/Model.py:761-766`), `agent/AgentAction.py:432-433`, `agent/DataLoader.py` (`get_dividend_data`)
 
@@ -247,9 +247,17 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 **Erwarteter Zielzustand:** Muster aus `analyze_typical_cyclers` übernehmen: pro Kriterium `meets_criterion: False/True` + Message, Analyse läuft durch. Zinsaufwand 0 → Kriterium bestanden.
 
 **Akzeptanzkriterien:**
-- Dividenden-Analyse für eine schuldenfreie Firma und einen Nicht-Dividendenzahler liefert ein strukturiertes Ergebnis (kein Abbruch)
-- Regressionstests für beide Randfälle
-- Frontend zeigt die degradierten Kriterien verständlich an
+- Dividenden-Analyse für eine schuldenfreie Firma und einen Nicht-Dividendenzahler liefert ein strukturiertes Ergebnis (kein Abbruch) ✅
+- Regressionstests für beide Randfälle ✅
+- Frontend zeigt die degradierten Kriterien verständlich an ✅
+
+**Umsetzungsnotiz (2026-07-09):**
+- `agent/Model.py:calculate_interest_coverage_ratio` — Zinsaufwand=0 liefert jetzt `float("inf")` statt Fehler (mirrort das bestehende `net_debt_to_ebitda`-Muster für "Kennzahl mathematisch undefiniert, aber bestmögliches Ergebnis"); EBIT≤0 wirft keinen Fehler mehr, sondern liefert den (negativen/nullwertigen) Quotienten als gültigen, schlechten Messwert. Betrifft auch den direkten Metrik-Endpunkt (`metric_routes.py` nutzt dieselbe Model-Methode) — Nutzer, die diese Kennzahl einzeln für eine schuldenfreie Firma abrufen, sehen jetzt ebenfalls „∞" statt eines Fehlers.
+- `agent/AgentAction.py:analyze_dividend_companies` — Interest-Coverage-Abschnitt formatiert `inf` als String „inf" (gleiche Konvention wie `net_debt_to_ebitda`), `meets_criterion` wertet `inf >= 3 → True` automatisch korrekt aus.
+- `agent/DataLoader.py:get_dividend_data` — fehlendes `dividendRate` in `stock.info` löst keinen Fehler mehr aus; `dividend_rate` fällt auf `0` zurück, die bestehende Erfolgs-Logik (Rendite-Berechnung, Cache) läuft unverändert weiter. Wirkt sich auf alle vier Aufrufer aus (`analyze_dividend_companies`, `analyze_average_grower`, `calculate_current_dividend_yield`, `determine_buy_sell_points`) — alle vier bekamen vorher denselben Fehler für „zahlt keine Dividende".
+- `agent/AgentAction.py:analyze_average_grower` — nur noch `pd.isna(free_cashflow)` (echtes Datenproblem) bricht ab; negativer FCF durchläuft die normale Schwellenwert-Prüfung und wird korrekt als nicht erfülltes Kriterium markiert.
+- **5 neue Regressionstests** in `agent/tests/test_dividend_and_grower_edge_cases.py` (isoliert per `unittest.mock.patch.object`, kein Netzwerkzugriff — die Randfälle lassen sich nicht zuverlässig aus eingefrorenen SEC-Fixtures reproduzieren): Model-Ebene (Zinsaufwand=0 → inf, EBIT≤0 → gültiger Wert, fehlende dividendRate → 0-Rendite) sowie zwei AgentAction-Integrationstests, die explizit belegen, dass `analyze_dividend_companies` für eine schuldenfreie/dividendenlose Firma und `analyze_average_grower` bei negativem FCF **kein** `"error"`-Feld mehr liefern, sondern ein vollständiges Ergebnis. `pytest agent/tests/` 33/33 grün (28 bestehende + 5 neue).
+- **Frontend:** keine Änderung nötig — `analysisResultUtils.ts`/`metricFormatting.tsx` verarbeiten `meets_criterion`/`value` bereits generisch pro Kriterium; der String `"inf"` durchläuft denselben Formatierungspfad, der schon für `net_debt_to_ebitda` produktiv ist (`formatMetricValue` → `String(value)` für Nicht-Zahlen-Werte). Verifiziert durch Code-Lesung, nicht live (kein authentifizierter Testlauf gegen die lokale Dev-DB, siehe P1-1-Notiz).
 
 ---
 

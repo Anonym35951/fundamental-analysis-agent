@@ -196,14 +196,17 @@ class AgentAction:
                         f"Payout ratio {payout_ratio}% is negative, indicating potential data issues."
                     )
 
-            # 4. Interest Coverage Ratio (≥ 3)
+            # 4. Interest Coverage Ratio (≥ 3). Bleibt ein echter Abbruch nur
+            # bei fehlenden Rohdaten (EBIT/Zinsaufwand nicht ermittelbar) -
+            # "kein Zinsaufwand" liefert seit dem Model.py-Fix float('inf')
+            # statt eines Fehlers und erfüllt das Kriterium trivial.
             interest_coverage = self.model.calculate_interest_coverage_ratio(symbol)
             if "error" in interest_coverage:
                 return {"symbol": symbol, "error": interest_coverage["error"]}
             interest_coverage_value = float(interest_coverage["interest_coverage_ratio"])
-            interest_coverage_met = bool(interest_coverage_value >= 3)  # Explizite bool-Konvertierung
+            interest_coverage_met = bool(interest_coverage_value >= 3)  # inf >= 3 → True
             result["interest_coverage_ratio"] = {
-                "value": round(interest_coverage_value, 2),
+                "value": round(interest_coverage_value, 2) if interest_coverage_value != float("inf") else "inf",
                 "meets_criterion": interest_coverage_met,
                 "date": interest_coverage.get("date")
             }
@@ -429,7 +432,12 @@ class AgentAction:
                 return fail(fcf_data["error"])
 
             free_cashflow = fcf_data["free_cashflow"]
-            if pd.isna(free_cashflow) or free_cashflow < 0:
+            # Nur ein fehlender/undefinierter Wert ist ein Datenproblem und
+            # bricht ab. Negativer FCF ist ein gültiger, nur schlechter
+            # Messwert - das Kriterium unten (>= 5% Marktwert) bewertet ihn
+            # korrekt als nicht erfüllt statt die Analyse abzubrechen
+            # (LAUNCH_AUDIT.md P1-3).
+            if pd.isna(free_cashflow):
                 return fail(f"Ungültiger Free Cashflow für {symbol}: {free_cashflow}")
 
             market_cap_data = self.dataloader.get_market_cap(symbol, use_cache=use_cache)

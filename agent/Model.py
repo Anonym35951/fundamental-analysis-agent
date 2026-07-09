@@ -757,23 +757,18 @@ class Model:
             ebit = ebit_data["ebit"]
             interest_expense = interest_expense_data["latest_item"]["abs_value"]
 
-            # Prüfe auf ungültige Werte
+            # Kein Zinsaufwand bedeutet keine Zinslast zu decken - das ist das
+            # bestmögliche Ergebnis (unendliche Deckung), kein Fehlerfall.
+            # EBIT <= 0 ergibt einen gültigen, nur schlechten Messwert (Null
+            # oder negative Deckung). Beides früher als "error" behandelt,
+            # was z. B. bei schuldenfreien Firmen die komplette Dividenden-
+            # Analyse abbrach statt das Kriterium zu bewerten (LAUNCH_AUDIT.md
+            # P1-3) - die Aufrufer werten interest_coverage_ratio jetzt selbst
+            # gegen ihren Schwellenwert aus (inf >= 3 → Kriterium erfüllt).
             if interest_expense == 0:
-                error = {
-                    "error": f"Zinsaufwendungen für {symbol} ({frequency}) sind 0, Zinsdeckungsrate kann nicht berechnet werden.",
-                    "symbol": symbol
-                }
-                return error
-            if ebit <= 0:
-                error = {
-                    "error": f"EBIT für {symbol} ({frequency}) ist {ebit}, Zinsdeckungsrate kann nicht berechnet werden (EBIT muss positiv sein).",
-                    "symbol": symbol
-                }
-                return error
-
-            # Berechne die Zinsdeckungsrate
-            interest_coverage_ratio = ebit / interest_expense
-            interest_coverage_ratio = round(interest_coverage_ratio, 2)
+                interest_coverage_ratio = float("inf")
+            else:
+                interest_coverage_ratio = round(ebit / interest_expense, 2)
 
             # Erstelle Rückgabe-Daten
             data = {

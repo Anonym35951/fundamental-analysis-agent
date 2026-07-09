@@ -1447,11 +1447,15 @@ class DataLoader:
                 return cached_data
         try:
             stock = yf.Ticker(symbol)
-            if 'dividendRate' not in stock.info:
-                return {"error": f"Dividendenrate für {symbol} nicht verfügbar."}
             if 'regularMarketPrice' not in stock.info:
                 raise ValueError(f"Aktueller Marktpreis für {symbol} nicht verfügbar.")
-            dividend_rate = stock.info.get('dividendRate')
+            # Fehlendes 'dividendRate' heißt meist schlicht: das Unternehmen
+            # zahlt aktuell keine Dividende (z. B. Wachstumswerte) - ein
+            # gültiges, häufiges Ergebnis, kein Fehlerfall. Früher brach das
+            # die komplette Dividenden-/Average-Grower-Analyse ab, obwohl
+            # "0% Rendite" schlicht ein nicht erfülltes Kriterium ist
+            # (LAUNCH_AUDIT.md P1-3).
+            dividend_rate = stock.info.get('dividendRate') or 0
             current_price = stock.info.get("regularMarketPrice")
             if current_price == 0:
                 raise ValueError(f"Marktpreis für {symbol} ist 0, Dividendenrendite kann nicht berechnet werden.")
