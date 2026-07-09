@@ -99,7 +99,7 @@ Die Adresse muss der Betreiber liefern — falls sie beim Abarbeiten nicht vorli
 
 ### [P0-3] Produktions-Umgebung konfigurieren (Stripe Live, URLs, CORS, Migrationen, Admin)
 
-**Status:** Offen (vollständig dokumentiert in `LAUNCH_CHECKLIST.md`, Stand erneut geprüft und weiterhin zutreffend)
+**Status:** ⚠️ Größtenteils erledigt (2026-07-09) — nur noch Stripe-Live-Umstellung und Persistent Disk offen, siehe Fortschritt unten
 **Bereich:** Deployment / Technik
 **Betroffene Dateien/Komponenten:**
 - Render-Env-Vars (Backend), Vercel-Env-Vars (Frontend) — Referenzlisten in `LAUNCH_CHECKLIST.md`
@@ -142,13 +142,14 @@ Fast alles davon sind Dashboard-Aktionen des Betreibers (Stripe/Render/Vercel), 
 - **Konsolidierungsentscheidung (2026-07-09):** Um nicht auf 6+ getrennten Plattform-Abos zu landen, wird Vercel komplett abgelöst — Frontend zieht auf **Render Static Site** um (kostenlos, gleiche Plattform wie Backend + DB, eliminiert den Vercel-Pro-Zwang für kommerzielle Nutzung laut Vercel-ToS). Backend bleibt zwingend auf einer Plattform mit dauerhaft laufenden Prozessen (nicht Vercel Functions), da `downgrade_worker`/`filing_alert_worker` kontinuierliche Hintergrund-Loops sind, kein Request-getriggertes Serverless-Modell. Sentry/Plausible bewusst vorerst zurückgestellt (nicht launch-kritisch, spart weitere Abos).
 - **✅ Umzug abgeschlossen (2026-07-09):** Render Static Site (`comanalysis-frontend`, Root Directory `frontend`, Build `npm run build`, Publish `dist`) angelegt, SPA-Rewrite (`/*` → `/index.html`, Action Rewrite) eingerichtet. Custom Domains `www.comanalysis.de` (CNAME) und `comanalysis.de` (Root, per Cloudflare-CNAME-Flattening) beide verifiziert, Zertifikate ausgestellt; Render redirected die Root-Domain automatisch auf `www`. Zusätzlich eine Cloudflare Redirect Rule (`comanalysis.de/*` → `https://www.comanalysis.de/${1}`, 301) angelegt — funktional redundant zu Renders eigenem Redirect, aber schadet nicht. Backend-Env-Vars (`CORS_ORIGINS`, `FRONTEND_URL`, `STRIPE_SUCCESS_URL`, `STRIPE_CANCEL_URL`) auf `www.comanalysis.de` umgestellt. **Live verifiziert: App unter `https://www.comanalysis.de/app/dashboard` erreichbar, Login funktioniert.**
   - **✅ Vollständig gelöst (2026-07-09):** Der Root-CNAME (`@` → Render) neben den Cloudflare-Email-Routing-MX/TXT-Records brachte Email Routing zeitweise auf „Disabled". Tatsächliche Ursache war zweischichtig: (1) alte IONOS-MX/SPF-Reste (`mx00`/`mx01.ionos.de`, SPF-Include auf `_spf-eu.ionos.com`) hatten Vorrang vor Cloudflares eigenen MX-Records, wodurch Testmails mit `550 mailbox unavailable` von `postmaster.1und1.de` bounceten statt weitergeleitet zu werden — nach Löschen der IONOS-MX-Einträge war das behoben. (2) Die Cloudflare-eigenen Email-Routing-DNS-Records (3× MX, 2× TXT) standen zusätzlich auf „Locked"; ein Klick auf „Lock"/„Unlock" im Settings-Tab hat sie neu synchronisiert, danach sprang „Status" auf „Enabled". **Live vom Betreiber verifiziert: Testmail an `kontakt@comanalysis.de` kam korrekt bei `gecenanalysis@gmail.com` an.** Kompletter Domain-/Mail-Stack (Cloudflare DNS, Resend, Email Routing) ist jetzt funktionsfähig.
-  - **Noch offen:** Vercel-Projekt löschen (nicht mehr gebraucht, siehe unten).
+  - **✅ Vercel-Projekt gelöscht (2026-07-09).** Konsolidierung abgeschlossen: Frontend (Render Static Site) + Backend + DB laufen jetzt alle unter einem Render-Account, plus Cloudflare (DNS/Mail, kostenlos) + Resend (kostenlos im Free-Tier).
+  - **Verbleibend offen:** (1) Stripe-Live-Umstellung (Account auf Live-Modus, neue Live-Preise 50€/500€ anlegen, Live-Webhook-Endpoint auf die Render-Backend-URL, `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`/`STRIPE_PRICE_ID_*` in Render auf Live-Werte umstellen) — bewusst zurückgestellt, bis der Betreiber tatsächlich Zahlungen entgegennehmen will, kein Code-Task. (2) Persistent Disk für `CACHE_DIR` auf Render einrichten, sonst leert sich der Analyse-Datencache bei jedem Deploy neu (Performance, kein Blocker). (3) Ein echter End-to-End-Testkauf steht erst nach (1) sinnvoll an.
 
 ---
 
 ### [P0-4] Secrets rotieren (geteiltes `.env` enthält Live-Zugangsdaten)
 
-**Status:** Offen (neu in diesem Audit)
+**Status:** ⚠️ Teilweise erledigt (2026-07-09) — siehe Aufschlüsselung unten
 **Bereich:** Sicherheit
 **Betroffene Dateien/Komponenten:**
 - Lokale `.env` (untracked, NICHT in Git — verifiziert via `git log --all -- .env`)
@@ -171,6 +172,12 @@ Vor Launch: neues Gmail-App-Passwort, neue Datenquellen-API-Keys, und für Produ
 
 **Hinweise für Sonnet:**
 Rotation passiert in den jeweiligen Dashboards (Google-Konto, Stripe, Alpha Vantage, FRED, SimFin) — Betreiber-Aktion. Sonnet kann nur die lokale `.env` nach erfolgter Rotation aktualisieren helfen.
+
+**Umsetzungsnotiz (2026-07-09):**
+- ✅ **`SECRET_KEY`**: Prod nutzt einen eigenen, frisch generierten Wert (`fkVOHQQUciDprzxCqlqG1EiRNvZNP95HysrSw2-mCrjKado2zm4XsrIxu4vtj4DN`), nie lokal verwendet.
+- ✅ **Gmail-App-Passwort (`SMTP_PASSWORD`)**: durch den Wechsel auf Resend (siehe P0-3) wird es von der App gar nicht mehr benutzt — das Rotationsproblem ist damit gegenstandslos geworden. **Trotzdem noch offen:** das alte App-Passwort im Google-Konto widerrufen (reine Aufräumarbeit, kein Funktionsrisiko mehr, da nirgends mehr referenziert).
+- ⏳ **Stripe-Test-Keys**: werden mit der Live-Umstellung ohnehin ersetzt (siehe P0-3), keine separate Aktion nötig.
+- ❌ **Noch offen:** Alpha Vantage-, FRED- und SimFin-API-Keys wurden im Rahmen dieser Session mehrfach im Chat sichtbar (Nutzer hat die lokale `.env` zur Fehlersuche eingefügt) — sollten dennoch rotiert werden, auch wenn das Risiko gering ist (nur Datenquellen-Kontingente, keine Nutzerdaten/Zahlungen betroffen).
 
 ---
 
