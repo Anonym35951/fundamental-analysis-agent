@@ -28,7 +28,7 @@ Das Produkt ist technisch deutlich reifer als der typische Pre-Launch-SaaS: Auth
 7. ~~`/analyze/custom/history` ohne Quota/Rate-Limit~~ — **erledigt 2026-07-09:** gegated (P1-1)
 8. ~~Kein öffentliches Pricing~~ — **erledigt 2026-07-09:** `/pricing`-Route + Header-/Footer-/Hero-Links (P1-4); kein Social Proof bleibt offen (P2)
 9. ~~Admin-Metriken irreführend (Churn zählt falsches Event, MRR hartkodiert)~~ — **erledigt 2026-07-09:** Churn/MRR korrigiert, interne Accounts gefiltert (P1-6, P1-7, P2-16)
-10. Live-Secrets im geteilten `.env` (Gmail-App-Passwort, SECRET_KEY, API-Keys) — Rotation nötig
+10. ~~Live-Secrets im geteilten `.env` (Gmail-App-Passwort, SECRET_KEY, API-Keys)~~ — **erledigt 2026-07-09:** alle rotiert bzw. gegenstandslos (P0-4)
 
 ---
 
@@ -149,7 +149,7 @@ Fast alles davon sind Dashboard-Aktionen des Betreibers (Stripe/Render/Vercel), 
 
 ### [P0-4] Secrets rotieren (geteiltes `.env` enthält Live-Zugangsdaten)
 
-**Status:** ⚠️ Teilweise erledigt (2026-07-09) — siehe Aufschlüsselung unten
+**Status:** ✅ Erledigt (2026-07-09) — bis auf Stripe-Test-Keys, die planmäßig erst mit der Live-Umstellung (P0-3) ersetzt werden
 **Bereich:** Sicherheit
 **Betroffene Dateien/Komponenten:**
 - Lokale `.env` (untracked, NICHT in Git — verifiziert via `git log --all -- .env`)
@@ -175,9 +175,10 @@ Rotation passiert in den jeweiligen Dashboards (Google-Konto, Stripe, Alpha Vant
 
 **Umsetzungsnotiz (2026-07-09):**
 - ✅ **`SECRET_KEY`**: Prod nutzt einen eigenen, frisch generierten Wert (`fkVOHQQUciDprzxCqlqG1EiRNvZNP95HysrSw2-mCrjKado2zm4XsrIxu4vtj4DN`), nie lokal verwendet.
-- ✅ **Gmail-App-Passwort (`SMTP_PASSWORD`)**: durch den Wechsel auf Resend (siehe P0-3) wird es von der App gar nicht mehr benutzt — das Rotationsproblem ist damit gegenstandslos geworden. **Trotzdem noch offen:** das alte App-Passwort im Google-Konto widerrufen (reine Aufräumarbeit, kein Funktionsrisiko mehr, da nirgends mehr referenziert).
+- ✅ **Gmail-App-Passwort (`SMTP_PASSWORD`)**: durch den Wechsel auf Resend (siehe P0-3) wird es von der App gar nicht mehr benutzt. Sowohl das alte als auch das zwischenzeitlich neu erstellte App-Passwort wurden im Google-Konto widerrufen — unproblematisch, da beide für die App ohnehin funktionslos sind.
 - ⏳ **Stripe-Test-Keys**: werden mit der Live-Umstellung ohnehin ersetzt (siehe P0-3), keine separate Aktion nötig.
-- ❌ **Noch offen:** Alpha Vantage-, FRED- und SimFin-API-Keys wurden im Rahmen dieser Session mehrfach im Chat sichtbar (Nutzer hat die lokale `.env` zur Fehlersuche eingefügt) — sollten dennoch rotiert werden, auch wenn das Risiko gering ist (nur Datenquellen-Kontingente, keine Nutzerdaten/Zahlungen betroffen).
+- ✅ **Alpha Vantage / FRED**: neue Keys generiert und direkt lokal in `.env` sowie in Render eingetragen, bewusst **ohne** die neuen Werte nochmal im Chat zu posten (Nutzer hat das selbst umgesichtig gehandhabt, um dieselbe Chat-Exposition nicht zu wiederholen).
+- **SimFin**: unverändert gelassen (Key wird im aktuellen Code nirgends referenziert, kein Funktionsrisiko).
 
 ---
 
