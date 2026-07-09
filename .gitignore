@@ -12,3 +12,13 @@ dist/
 
 # OS
 .DS_Store
+
+# Claude Code worktree artifacts (nested git working copies, not source)
+.claude/worktrees/
+
+# Generierter DataLoader-Dateicache (siehe agent/DataLoader.py, CACHE_DIR) —
+# öffentliche Finanzdaten, keine Nutzerdaten, aber Tausende generierte JSON-
+# Dateien gehören nicht ins Repo. DataLoader() legt je nach Arbeitsverzeichnis
+# (z. B. beim direkten Ausführen von Test-/Debug-Skripten unter
+# agent/data_sources/**) an mehreren Stellen ein lokales cache/-Verzeichnis an.
+**/cache/
