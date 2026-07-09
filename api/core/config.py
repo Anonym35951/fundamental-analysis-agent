@@ -33,15 +33,15 @@ class Settings(BaseSettings):
     STRIPE_SUCCESS_URL: str
     STRIPE_CANCEL_URL: str
 
-    # Email Config
+    # Email Config (Resend HTTP API - siehe api/services/email_service.py.
+    # Ersetzt Gmail-SMTP, das auf Render mit "Network is unreachable"
+    # fehlschlug und ohnehin ohne eigene Domain/SPF/DKIM unzuverlässig
+    # zustellte)
     EMAIL_FROM: str
-    SMTP_HOST: str
-    SMTP_PORT: int
-    SMTP_USER: str
-    SMTP_PASSWORD: str
+    RESEND_API_KEY: str
     # Empfänger-Adresse für das Support-Kontaktformular (frontend/src/pages/legal/ContactPage.tsx
-    # und /app/support) - konfigurierbar statt hartkodiert, da sie sich vom SMTP-Absender
-    # (EMAIL_FROM) unterscheiden kann.
+    # und /app/support) - konfigurierbar statt hartkodiert, da sie sich vom
+    # Absender (EMAIL_FROM) unterscheiden kann.
     SUPPORT_EMAIL: str = "gecenanalysis@gmail.com"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

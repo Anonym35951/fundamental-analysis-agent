@@ -1,43 +1,20 @@
 import html
 import logging
-import smtplib
-import socket
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from typing import Callable, Literal
+
+import requests
 
 from api.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-
-class _IPv4SMTP(smtplib.SMTP):
-    """smtplib.SMTP resolves the host via getaddrinfo() with the default
-    (dual-stack) address family and connects to whichever address comes
-    first - on some hosting platforms (observed on Render) the returned
-    IPv6 address isn't actually routable and connect() fails immediately
-    with OSError: [Errno 101] Network is unreachable, even though IPv4
-    works fine. Forcing AF_INET here sidesteps that; STARTTLS/cert
-    verification is unaffected since it uses self._host (the original
-    hostname string) for SNI, not the resolved IP."""
-
-    def _get_socket(self, host, port, timeout):
-        addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-        family, socktype, proto, _, sockaddr = addr_info[0]
-        sock = socket.socket(family, socktype, proto)
-        # Mirrors socket.create_connection's own sentinel check - timeout
-        # defaults to the private socket._GLOBAL_DEFAULT_TIMEOUT object
-        # (meaning "leave the platform default"), not None.
-        if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
-            sock.settimeout(timeout)
-        sock.connect(sockaddr)
-        return sock
+_RESEND_API_URL = "https://api.resend.com/emails"
 
 
 def send_email_safely(send_fn: Callable[..., bool], *args, **kwargs) -> None:
     """Wrapper for use with FastAPI BackgroundTasks: `send_fn` (one of the
     send_*_email functions below) runs after the response has already been
-    sent, so its own SMTP errors are already caught and returned as False —
+    sent, so its own send errors are already caught and returned as False —
     this is only the outer safety net for anything unexpected (e.g. a bug
     while building the HTML), which would otherwise surface as an unhandled
     exception in the ASGI background-task machinery instead of a normal
@@ -55,21 +32,32 @@ def _send_email(
     html_body: str,
     reply_to: str | None = None,
 ) -> bool:
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = settings.EMAIL_FROM
-    msg["To"] = to_email
+    """Sends via the Resend HTTP API (port 443) instead of raw SMTP. Gmail
+    SMTP (port 587) was unreliable in production - on Render it failed
+    outright with OSError: [Errno 101] Network is unreachable (broken IPv6
+    egress for that specific host/port), and even when reachable, mail
+    sent from a personal Gmail address (no SPF/DKIM on our own domain) is
+    exactly the kind of transactional mail spam filters distrust. An HTTPS
+    API call sidesteps the network issue entirely and Resend handles
+    proper authentication for the sending domain."""
+    payload = {
+        "from": settings.EMAIL_FROM,
+        "to": [to_email],
+        "subject": subject,
+        "text": text_body,
+        "html": html_body,
+    }
     if reply_to:
-        msg["Reply-To"] = reply_to
-
-    msg.attach(MIMEText(text_body, "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
+        payload["reply_to"] = reply_to
 
     try:
-        with _IPv4SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.send_message(msg)
+        response = requests.post(
+            _RESEND_API_URL,
+            headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+            json=payload,
+            timeout=10,
+        )
+        response.raise_for_status()
         return True
     except Exception:
         logger.exception("Failed to send email to %s", to_email)

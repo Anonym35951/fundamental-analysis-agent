@@ -1,7 +1,7 @@
 """Test-Setup für die API-Schicht (getrennt von agent/tests/, das die
 Analyse-Engine gegen eingefrorene SEC-Fixtures prüft).
 
-api/core/config.py verlangt beim Import 14 Pflicht-Env-Vars (siehe
+api/core/config.py verlangt beim Import mehrere Pflicht-Env-Vars (siehe
 LAUNCH.md P0-3 - genau das ließ den Render-Deploy ohne gesetzte Env-Vars
 abstürzen). Damit diese Tests unabhängig von einer lokalen .env
 deterministisch laufen (z. B. in CI, wo keine .env existiert), werden hier
@@ -23,10 +23,7 @@ _DUMMY_ENV = {
     "STRIPE_SUCCESS_URL": "http://testserver/success",
     "STRIPE_CANCEL_URL": "http://testserver/cancel",
     "EMAIL_FROM": "test@example.com",
-    "SMTP_HOST": "localhost",
-    "SMTP_PORT": "587",
-    "SMTP_USER": "test",
-    "SMTP_PASSWORD": "test",
+    "RESEND_API_KEY": "re_test_dummy",
 }
 for _key, _value in _DUMMY_ENV.items():
     os.environ[_key] = _value
