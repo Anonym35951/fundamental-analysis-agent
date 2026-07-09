@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type, RetryError
 from dotenv import load_dotenv
+from agent.cache_r2 import R2CacheSync
 from agent.data_sources.sec_source import SecSource
 
 load_dotenv()
@@ -78,6 +79,10 @@ class DataLoader:
         # Code anzufassen. agent/ ist bewusst von api/core/config entkoppelt.
         self.cache_dir = os.environ.get("CACHE_DIR", "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
+        # R2-Backing für den Fall, dass CACHE_DIR auf ein ephemeres Dateisystem
+        # zeigt (Render Free-Plan hat kein Persistent Disk) — no-op ohne R2_*-
+        # Env-Vars, siehe agent/cache_r2.py.
+        self._r2 = R2CacheSync()
         self.api_key = os.environ["ALPHA_VANTAGE_API_KEY"]
         self.base_url = "https://www.alphavantage.co/query?"
         logging.basicConfig(level=logging.INFO)
@@ -3081,6 +3086,8 @@ class DataLoader:
     def _load_cached_data(self, symbol, data_type):
         filepath = os.path.join(self.cache_dir, f"{symbol}_{data_type}.json")
         cache_duration = self._cache_duration_for(data_type)
+        if not os.path.exists(filepath):
+            self._r2.warm(filepath, os.path.basename(filepath))
         if os.path.exists(filepath) and (
                 datetime.now() - datetime.fromtimestamp(os.path.getmtime(filepath))) < cache_duration:
             with open(filepath, "r") as f:
@@ -3123,6 +3130,7 @@ class DataLoader:
             with open(filepath, "w") as f:
                 json.dump(data_to_cache, f)
             self.logger.info(f"Cache-Datei erfolgreich geschrieben: {filepath}")
+            self._r2.persist(filepath, os.path.basename(filepath))
         except Exception as e:
             self.logger.error(f"Fehler beim Schreiben der Cache-Datei {filepath}: {e}")
             raise

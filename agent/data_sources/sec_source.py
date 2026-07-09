@@ -9,6 +9,8 @@ import pandas as pd
 import requests
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed, RetryError
 
+from agent.cache_r2 import R2CacheSync
+
 
 # Formtypen, die für die "neues Filing verfügbar"-Benachrichtigung relevant
 # sind (Favoriten-Alerts, siehe api/services/filing_alert_service.py). 8-K &
@@ -40,6 +42,13 @@ class SecSource:
         self.ticker_url = "https://www.sec.gov/files/company_tickers.json"
 
         os.makedirs(self.cache_dir, exist_ok=True)
+        # Eigene R2CacheSync-Instanz (statt eine von DataLoader durchgereicht zu
+        # bekommen): SecSource wird auch eigenständig instanziiert (siehe
+        # api/services/filing_alert_service.py), muss also unabhängig
+        # funktionieren. "sec/"-Präfix trennt die Keys von DataLoader.cache_r2,
+        # falls beide denselben R2-Bucket nutzen.
+        self._r2 = R2CacheSync()
+        self._r2_key_prefix = "sec"
 
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
@@ -2431,6 +2440,9 @@ class SecSource:
         filepath = os.path.join(self.cache_dir, f"{cache_key}.json")
 
         if not os.path.exists(filepath):
+            self._r2.warm(filepath, f"{self._r2_key_prefix}/{cache_key}.json")
+
+        if not os.path.exists(filepath):
             return None
 
         if datetime.now() - datetime.fromtimestamp(os.path.getmtime(filepath)) > max_age:
@@ -2446,6 +2458,7 @@ class SecSource:
 
         with open(filepath, "w") as file:
             json.dump(self._convert_to_json(data), file)
+        self._r2.persist(filepath, f"{self._r2_key_prefix}/{cache_key}.json")
 
     def _convert_to_json(self, data: Any):
         if isinstance(data, pd.DataFrame):

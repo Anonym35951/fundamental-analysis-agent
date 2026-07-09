@@ -4,6 +4,8 @@ annotated-types==0.7.0
 anyio==4.12.1
 bcrypt==4.0.1
 beautifulsoup4==4.13.3
+boto3==1.43.45
+botocore==1.43.45
 certifi==2025.1.31
 cffi==1.17.1
 charset-normalizer==3.4.1
@@ -19,6 +21,7 @@ frozendict==2.4.6
 h11==0.16.0
 httpx==0.28.1
 idna==3.10
+jmespath==1.1.0
 joblib==1.4.2
 kiwisolver==1.4.8
 limits==5.8.0
@@ -46,6 +49,7 @@ python-jose==3.5.0
 python-multipart==0.0.24
 pytz==2025.2
 requests==2.32.3
+s3transfer==0.19.0
 scikit-learn==1.6.1
 scipy==1.15.2
 sentry-sdk==2.64.0
