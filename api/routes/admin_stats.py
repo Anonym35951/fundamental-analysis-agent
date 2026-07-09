@@ -15,11 +15,53 @@ from api.models.user import User
 
 router = APIRouter(prefix="/admin/stats", tags=["admin-stats"])
 
+# Eigene Accounts (Betreiber-Admin, vorab freigeschaltete "friends"-Tester)
+# erzeugen dieselben Events wie echte Nutzer. Bei kleiner Nutzerbasis (Soft
+# Launch!) dominiert sonst die Eigennutzung DAU/WAU/MAU, Funnel und die
+# Analyse-Charts. Siehe LAUNCH.md P2-16.
+INTERNAL_PLANS = ("admin", "friends")
+
+# Pro-Preise für die MRR-Schätzung. Kein Live-Stripe-Call pro Dashboard-
+# Aufruf (wäre ein Stripe-API-Call pro Pro-User) - muss manuell synchron
+# gehalten werden, falls sich der Preis in Stripe ändert (siehe
+# STRIPE_PRICE_ID_PRO_MONTHLY/YEARLY in api/core/config.py). Siehe LAUNCH.md
+# P1-7.
+PRO_MONTHLY_PRICE_EUR = 50.0
+PRO_YEARLY_PRICE_EUR = 500.0
+PRO_YEARLY_MONTHLY_EQUIVALENT_EUR = PRO_YEARLY_PRICE_EUR / 12
+
+
+def _monthly_price_for_interval(billing_interval: str | None) -> float | None:
+    """None, wenn das Intervall nie mit Stripe synchronisiert wurde - der
+    Aufrufer muss diesen Fall explizit als "unbekannt" auswerten statt ihn
+    stillschweigend als monatlich zu werten (vorheriger Bug, LAUNCH.md
+    P1-7)."""
+    if billing_interval == "year":
+        return PRO_YEARLY_MONTHLY_EQUIVALENT_EUR
+    if billing_interval == "month":
+        return PRO_MONTHLY_PRICE_EUR
+    return None
+
+
+def _internal_user_ids_subquery(db: Session):
+    return db.query(User.id).filter(User.plan.in_(INTERNAL_PLANS)).subquery()
+
+
+def _external_events(db: Session, event_type: str):
+    """Basisquery für product_events eines Typs, ohne interne (admin/
+    friends) Accounts - siehe INTERNAL_PLANS."""
+    internal_ids = _internal_user_ids_subquery(db)
+    return db.query(ProductEvent).filter(
+        ProductEvent.event_type == event_type,
+        ProductEvent.user_id.isnot(None),
+        ProductEvent.user_id.notin_(db.query(internal_ids.c.id)),
+    )
+
 
 def _distinct_user_count(db: Session, event_type: str) -> int:
     return (
-        db.query(func.count(func.distinct(ProductEvent.user_id)))
-        .filter(ProductEvent.event_type == event_type, ProductEvent.user_id.isnot(None))
+        _external_events(db, event_type)
+        .with_entities(func.count(func.distinct(ProductEvent.user_id)))
         .scalar()
         or 0
     )
@@ -33,13 +75,11 @@ def get_funnel(
     _: User = Depends(require_admin),
 ):
     """Registrierung -> Verifizierung -> 1. Analyse -> 5. Analyse ->
-    Limit-Hit -> Checkout-Start -> zahlender Kunde."""
+    Limit-Hit -> Checkout-Start -> zahlender Kunde. Schließt interne
+    Accounts aus (siehe INTERNAL_PLANS)."""
     analysis_counts_per_user = (
-        db.query(ProductEvent.user_id, func.count(ProductEvent.id).label("cnt"))
-        .filter(
-            ProductEvent.event_type == "analysis_started",
-            ProductEvent.user_id.isnot(None),
-        )
+        _external_events(db, "analysis_started")
+        .with_entities(ProductEvent.user_id, func.count(ProductEvent.id).label("cnt"))
         .group_by(ProductEvent.user_id)
         .all()
     )
@@ -63,14 +103,20 @@ def get_activity(
     _: User = Depends(require_admin),
 ):
     """DAU/WAU/MAU, gemessen an Nutzern mit mindestens einem Event im
-    jeweiligen Zeitraum (jede Aktion zählt, nicht nur Analysen)."""
+    jeweiligen Zeitraum (jede Aktion zählt, nicht nur Analysen). Schließt
+    interne Accounts aus (siehe INTERNAL_PLANS)."""
     now = datetime.utcnow()
+    internal_ids = _internal_user_ids_subquery(db)
 
     def active_users_since(delta: timedelta) -> int:
         since = now - delta
         return (
             db.query(func.count(func.distinct(ProductEvent.user_id)))
-            .filter(ProductEvent.created_at >= since, ProductEvent.user_id.isnot(None))
+            .filter(
+                ProductEvent.created_at >= since,
+                ProductEvent.user_id.isnot(None),
+                ProductEvent.user_id.notin_(db.query(internal_ids.c.id)),
+            )
             .scalar()
             or 0
         )
@@ -90,14 +136,21 @@ def get_daily_activity(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """Zeitreihe für Recharts: Registrierungen und gestartete Analysen pro Tag."""
+    """Zeitreihe für Recharts: Registrierungen und gestartete Analysen pro
+    Tag. Schließt interne Accounts aus (siehe INTERNAL_PLANS)."""
     since = datetime.utcnow() - timedelta(days=days)
     day_col = cast(ProductEvent.created_at, Date)
+    internal_ids = _internal_user_ids_subquery(db)
 
     def daily_counts(event_type: str) -> dict[str, int]:
         rows = (
             db.query(day_col.label("day"), func.count(ProductEvent.id))
-            .filter(ProductEvent.event_type == event_type, ProductEvent.created_at >= since)
+            .filter(
+                ProductEvent.event_type == event_type,
+                ProductEvent.created_at >= since,
+                ProductEvent.user_id.isnot(None),
+                ProductEvent.user_id.notin_(db.query(internal_ids.c.id)),
+            )
             .group_by(day_col)
             .all()
         )
@@ -124,21 +177,24 @@ def get_analyses_breakdown(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """Analysen pro Modus + meistanalysierte Symbole."""
+    """Analysen pro Modus + meistanalysierte Symbole. Schließt interne
+    Accounts aus (siehe INTERNAL_PLANS) - sonst dominieren eigene Testläufe
+    die "Top Symbole"."""
     mode_col = ProductEvent.event_metadata["mode"].as_string()
     symbol_col = ProductEvent.event_metadata["symbol"].as_string()
+    base_query = _external_events(db, "analysis_started")
 
     by_mode = (
-        db.query(mode_col.label("mode"), func.count(ProductEvent.id).label("count"))
-        .filter(ProductEvent.event_type == "analysis_started")
+        base_query
+        .with_entities(mode_col.label("mode"), func.count(ProductEvent.id).label("count"))
         .group_by(mode_col)
         .order_by(func.count(ProductEvent.id).desc())
         .all()
     )
 
     top_symbols = (
-        db.query(symbol_col.label("symbol"), func.count(ProductEvent.id).label("count"))
-        .filter(ProductEvent.event_type == "analysis_started")
+        base_query
+        .with_entities(symbol_col.label("symbol"), func.count(ProductEvent.id).label("count"))
         .group_by(symbol_col)
         .order_by(func.count(ProductEvent.id).desc())
         .limit(20)
@@ -151,35 +207,83 @@ def get_analyses_breakdown(
     }
 
 
-@router.get("/subscriptions")
-@limiter.limit("20/minute")
-def get_subscriptions(
-    request: Request,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    """Aktive Abos, geschätzte MRR (aus Preis × Intervall, kein Stripe-Call
-    nötig), Churn der letzten 30 Tage."""
-    pro_users = db.query(User.billing_interval).filter(User.plan == "pro").all()
+def _compute_subscription_stats(db: Session) -> dict:
+    """MRR und Abo-Kennzahlen, getrennt nach Billing-Status:
+    - active: zählt in mrr_eur (gesunde, wiederkehrende Umsatzbasis).
+    - canceling/past_due: zählt in at_risk_mrr_eur (noch bezahlt, aber
+      absehbar wegfallend) - NICHT in mrr_eur, sonst wird MRR systematisch
+      überzeichnet (vorheriger Bug, LAUNCH.md P1-7).
+    - canceled: ausgeschlossen (kein Umsatz mehr zu erwarten; sollte durch
+      den downgrade_worker ohnehin auf plan="free" laufen).
+    billing_interval == None (nie mit Stripe synchronisiert) fließt in
+    keinen Euro-Betrag ein, sondern nur in unknown_billing_interval_count -
+    vorher wurde das stillschweigend als monatlich (50 €) gezählt.
 
-    mrr = 0.0
+    Churn zählt distinct User mit dem `subscription_deleted`-Event der
+    letzten 30 Tage (Stripe-Webhook feuert das erst bei der tatsächlichen
+    Löschung). Der normale "Kündigung zum Periodenende"-Weg durchläuft vorher
+    nur `subscription_status_changed` mit to="canceling" - das ist kein
+    abgeschlossener Churn und wird hier bewusst NICHT gezählt (vorheriger
+    Bug: Query zählte nur to="canceled", das der normale Weg nie erreicht,
+    Churn zeigte daher praktisch immer 0). `subscription_cancel_requested`
+    (Klick auf "Kündigen" im Frontend, bevor Stripe bestätigt) wird separat
+    als Frühindikator ausgewiesen, nicht als abgeschlossener Churn.
+
+    Reine, DB-Session-parametrisierte Funktion (kein FastAPI-Dependency-
+    Aufruf) - direkt testbar ohne Rate-Limiter/Request-Mocking, siehe
+    api/tests/test_admin_stats.py."""
+    pro_users = (
+        db.query(User.billing_status, User.billing_interval)
+        .filter(User.plan == "pro")
+        .all()
+    )
+
+    mrr_eur = 0.0
     monthly_count = 0
     yearly_count = 0
-    for (billing_interval,) in pro_users:
-        if billing_interval == "year":
-            mrr += 500 / 12
-            yearly_count += 1
-        else:
-            mrr += 50
-            monthly_count += 1
+    unknown_interval_count = 0
+    at_risk_mrr_eur = 0.0
+    at_risk_count = 0
+
+    for billing_status, billing_interval in pro_users:
+        price = _monthly_price_for_interval(billing_interval)
+
+        if billing_status == "active":
+            if price is None:
+                unknown_interval_count += 1
+            else:
+                mrr_eur += price
+                if billing_interval == "year":
+                    yearly_count += 1
+                else:
+                    monthly_count += 1
+        elif billing_status in ("canceling", "past_due"):
+            at_risk_count += 1
+            if price is not None:
+                at_risk_mrr_eur += price
+            else:
+                unknown_interval_count += 1
+        # billing_status == "canceled": kein Umsatz, bewusst ignoriert.
 
     since_30d = datetime.utcnow() - timedelta(days=30)
-    churned_30d = (
+
+    churned_last_30d = (
         db.query(func.count(func.distinct(ProductEvent.user_id)))
         .filter(
-            ProductEvent.event_type == "subscription_status_changed",
-            ProductEvent.event_metadata["to"].as_string() == "canceled",
+            ProductEvent.event_type == "subscription_deleted",
             ProductEvent.created_at >= since_30d,
+            ProductEvent.user_id.isnot(None),
+        )
+        .scalar()
+        or 0
+    )
+
+    cancellations_requested_last_30d = (
+        db.query(func.count(func.distinct(ProductEvent.user_id)))
+        .filter(
+            ProductEvent.event_type == "subscription_cancel_requested",
+            ProductEvent.created_at >= since_30d,
+            ProductEvent.user_id.isnot(None),
         )
         .scalar()
         or 0
@@ -200,10 +304,24 @@ def get_subscriptions(
         "active_pro_subscriptions": monthly_count + yearly_count,
         "monthly_subscriptions": monthly_count,
         "yearly_subscriptions": yearly_count,
-        "mrr_eur": round(mrr, 2),
-        "churned_last_30d": churned_30d,
+        "unknown_billing_interval_count": unknown_interval_count,
+        "mrr_eur": round(mrr_eur, 2),
+        "at_risk_subscriptions": at_risk_count,
+        "at_risk_mrr_eur": round(at_risk_mrr_eur, 2),
+        "churned_last_30d": churned_last_30d,
+        "cancellations_requested_last_30d": cancellations_requested_last_30d,
         "free_users_near_limit": free_users_near_limit,
     }
+
+
+@router.get("/subscriptions")
+@limiter.limit("20/minute")
+def get_subscriptions(
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    return _compute_subscription_stats(db)
 
 
 @router.get("/near-limit-users")

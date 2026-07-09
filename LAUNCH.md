@@ -9,25 +9,25 @@
 ## 1. Aktueller Launch-Status
 
 - **Launch-ready: Bedingt** (Nein für einen sofortigen Full Launch)
-- **Gesamtscore: 70/100** (Stand 2026-07-09 nach Block A+B — ursprünglich 64/100, siehe Fortschritt unten)
-- **Teil-Scores:** Technik 82 (+6) · Frontend/UX 80 (+2) · Responsiveness 80 · Marketing/Conversion 50 (+5) · Admin-Dashboard 55 · Datenqualität 58 · Sicherheit/Vertrauen 87 (+5) · Produktklarheit 88 (+3) · Professionalität 72 (+2, weiter gebremst durch offenes P0-2)
+- **Gesamtscore: 74/100** (Stand 2026-07-09 nach Block A+B+C — ursprünglich 64/100, siehe Fortschritt unten)
+- **Teil-Scores:** Technik 84 (+8) · Frontend/UX 80 (+2) · Responsiveness 80 · Marketing/Conversion 50 (+5) · Admin-Dashboard 72 (+17) · Datenqualität 70 (+12) · Sicherheit/Vertrauen 87 (+5) · Produktklarheit 88 (+3) · Professionalität 72 (+2, weiter gebremst durch offenes P0-2)
 - **Empfohlene Launch-Strategie: Soft Launch / geschlossene Beta** nach Erledigung aller P0-Aufgaben. Full Launch erst nach P1.
 
-**Fortschritt seit Erst-Audit (Block A + B, 2026-07-09):** Working Tree gesichert (P0-1), Datenschutz/Plausible/Datum konsistent (P1-8), Quota-Lücke geschlossen (P1-1), API-Docs in Prod deaktiviert (P1-11), Dividenden-/Grower-Randfälle repariert inkl. 5 neuer Tests (P1-3), Landing-Claim-Widerspruch aufgelöst + Ergebnis-Wording neutralisiert + In-App-Disclaimer (P0-5, P1-5). Weiterhin offen und launch-blockierend: Impressum/Datenschutz-Adresse (P0-2, wartet auf Nutzer-Input), Produktions-Env/Stripe-Live (P0-3), vollständige Secrets-Rotation (P0-4, SECRET_KEY bereits generiert).
+**Fortschritt seit Erst-Audit (Block A + B + C, 2026-07-09):** Working Tree gesichert (P0-1), Datenschutz/Plausible/Datum konsistent (P1-8), Quota-Lücke geschlossen (P1-1), API-Docs in Prod deaktiviert (P1-11), Dividenden-/Grower-Randfälle repariert inkl. 5 neuer Tests (P1-3), Landing-Claim-Widerspruch aufgelöst + Ergebnis-Wording neutralisiert + In-App-Disclaimer (P0-5, P1-5), Admin-Metriken Churn + MRR korrigiert + interne Accounts aus allen Aktivitätsmetriken gefiltert inkl. neuem API-Test-Harness mit 13 Tests (P1-6, P1-7, P2-16). Produktions-Deploy auf Render am 2026-07-09 versucht und live am fehlenden Env-Setup gescheitert (bestätigt genau P0-3). Weiterhin offen und launch-blockierend: Impressum/Datenschutz-Adresse (P0-2, wartet auf Nutzer-Input), Produktions-Env/Stripe-Live (P0-3, Env-Var-Checkliste bereitgestellt), vollständige Secrets-Rotation (P0-4, SECRET_KEY bereits generiert).
 
 **Kurze Gesamtbewertung:**
-Das Produkt ist technisch deutlich reifer als der typische Pre-Launch-SaaS: Auth, Billing, Webhooks, IDOR-Schutz, Rate-Limiting und Fehlerkapselung sind sauber gebaut und im Live-Test bestätigt (Admin-Routen ohne Token → 401, keine Fehlerdetails nach außen, keine Secrets in Git). Das Frontend ist auf Desktop/Tablet/Mobile live getestet ohne Layout-Brüche oder horizontales Scrollen auf den öffentlichen Seiten. **Die verbleibenden Launch-Hindernisse sind nicht mehr die Kern-Engine, sondern primär organisatorisch:** (1) rechtlicher Platzhalter im Impressum/Datenschutz (wartet auf die echte Adresse), (2) komplett fehlende Produktions-Konfiguration (Stripe Test-Modus, localhost-URLs, CORS), (3) volle Secrets-Rotation in externen Dashboards, (4) schwaches Marketing (kein öffentliches Pricing, kein Social Proof) und (5) zwei nachweislich falsche Admin-Metriken (Churn ≈ immer 0, MRR-Schätzung) — beide noch offen (P1-6, P1-7).
+Das Produkt ist technisch deutlich reifer als der typische Pre-Launch-SaaS: Auth, Billing, Webhooks, IDOR-Schutz, Rate-Limiting und Fehlerkapselung sind sauber gebaut und im Live-Test bestätigt (Admin-Routen ohne Token → 401, keine Fehlerdetails nach außen, keine Secrets in Git). Das Frontend ist auf Desktop/Tablet/Mobile live getestet ohne Layout-Brüche oder horizontales Scrollen auf den öffentlichen Seiten. Die Admin-Metriken (Churn, MRR, DAU/WAU/MAU) sind jetzt korrekt und testabgesichert. **Die verbleibenden Launch-Hindernisse sind nicht mehr die Kern-Engine, sondern primär organisatorisch:** (1) rechtlicher Platzhalter im Impressum/Datenschutz (wartet auf die echte Adresse), (2) komplett fehlende Produktions-Konfiguration (Stripe Test-Modus, localhost-URLs, CORS, Env-Vars auf Render — Deploy-Absturz am 2026-07-09 live bestätigt), (3) volle Secrets-Rotation in externen Dashboards und (4) schwaches Marketing (kein öffentliches Pricing, kein Social Proof).
 
 **Wichtigste Launch-Risiken (Top 10):**
 1. ~~Uncommittete Fixrunde (231 Pfade)~~ — **erledigt 2026-07-09:** in 4 Commits committed und zu `origin/main` gepusht (`874f226`…`93a833f`)
 2. Impressum/Datenschutz mit Platzhalter-Adressen — Abmahnrisiko ab Tag 1 (live im Browser bestätigt)
-3. Produktions-Env nicht konfiguriert — E-Mail-Links, Stripe-Redirects und CORS wären in Produktion nachweislich kaputt
+3. Produktions-Env nicht konfiguriert — **live bestätigt 2026-07-09:** Manual Deploy auf Render stürzt beim Start mit `ValidationError: 14 validation errors for Settings` ab (alle Pflicht-Env-Vars fehlen)
 4. Stripe im Test-Modus — es kann kein echter Umsatz entstehen
 5. ~~Landing-Claim „Keine Kursziele" widerspricht dem Produkt~~ — **erledigt 2026-07-09:** Claim + Ergebnis-Wording angepasst, In-App-Disclaimer ergänzt (P0-5, P1-5)
 6. Kennzahlen nie gegen Live-SEC-Daten verifiziert (Alt-Audit P1-2) — Kernversprechen des Produkts
 7. ~~`/analyze/custom/history` ohne Quota/Rate-Limit~~ — **erledigt 2026-07-09:** gegated (P1-1)
 8. Kein öffentliches Pricing + kein Social Proof — Conversion-Blocker für zahlende Kunden
-9. Admin-Metriken irreführend (Churn zählt falsches Event, MRR hartkodiert) — Fehlentscheidungen des Betreibers
+9. ~~Admin-Metriken irreführend (Churn zählt falsches Event, MRR hartkodiert)~~ — **erledigt 2026-07-09:** Churn/MRR korrigiert, interne Accounts gefiltert (P1-6, P1-7, P2-16)
 10. Live-Secrets im geteilten `.env` (Gmail-App-Passwort, SECRET_KEY, API-Keys) — Rotation nötig
 
 ---
@@ -310,7 +310,7 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 
 ### [P1-6] Admin-Metrik Churn reparieren (zeigt systematisch ~0)
 
-**Status:** Offen (neu in diesem Audit)
+**Status:** ✅ Erledigt (2026-07-09)
 **Bereich:** Admin / Datenqualität
 **Betroffene Dateien/Komponenten:** `api/routes/admin_stats.py:176-186`; Events: `api/routes/stripe_webhook.py:341` (`subscription_status_changed`), `:431` (`subscription_deleted`)
 
@@ -323,15 +323,17 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 **Erwarteter Zielzustand:** Churn zählt distinct User mit `subscription_deleted` in den letzten 30 Tagen (zusätzlich optional: `subscription_cancel_requested` als Frühindikator getrennt ausweisen).
 
 **Akzeptanzkriterien:**
-- Query zählt `subscription_deleted`
-- API-Test mit gemockten Events: Kündigung zum Periodenende erhöht Churn nach Ablauf
-- Admin-UI-Label präzisiert („Beendete Abos (30 T)")
+- Query zählt `subscription_deleted` ✅
+- API-Test mit gemockten Events: Kündigung zum Periodenende erhöht Churn nach Ablauf ✅
+- Admin-UI-Label präzisiert („Beendete Abos (30 T)") ✅
+
+**Umsetzungsnotiz (2026-07-09):** `admin_stats.py` zählt Churn jetzt über `subscription_deleted` statt `subscription_status_changed`+`to=="canceled"`. `subscription_cancel_requested` (Klick auf „Kündigen", bevor Stripe bestätigt) läuft separat als `cancellations_requested_last_30d` — Frühindikator, kein abgeschlossener Churn. Aggregationslogik in `_compute_subscription_stats(db)` extrahiert (reine Funktion ohne Rate-Limiter/Request-Abhängigkeit), damit sie ohne FastAPI-Mocking testbar ist. Neuer API-Test-Ordner `api/tests/` (In-Memory-SQLite, `conftest.py` setzt Dummy-Env-Vars vor dem Import, damit `Settings()` nicht crasht — bisher gab es keinerlei API-Test-Infrastruktur, siehe Alt-Audit P2-9) mit 13 Tests, u. a. `test_churn_does_not_count_status_changed_to_canceling` (belegt den alten Bug) und `test_churn_counts_subscription_deleted`. `pytest.ini` und `.github/workflows/ci.yml` liefen bisher nur gegen `agent/tests/` — beide auf `agent/tests/ api/tests/` erweitert, damit die neuen Tests auch in CI laufen. Frontend-Label „Churn (30 Tage)" → „Beendete Abos (30 T)", neue Kachel „Kündigung angefragt (30 T)". 46/46 Tests grün (33 Engine + 13 neue API-Tests), `npx tsc -b`/`npm run build` grün.
 
 ---
 
 ### [P1-7] Admin-Metrik MRR korrigieren (hartkodierte Schätzung, mehrere Verzerrungen)
 
-**Status:** Offen (neu in diesem Audit)
+**Status:** ✅ Erledigt (2026-07-09)
 **Bereich:** Admin / Datenqualität
 **Betroffene Dateien/Komponenten:** `api/routes/admin_stats.py:161-206`; `api/models/user.py:60` (`billing_interval`, Default None)
 
@@ -344,9 +346,11 @@ Erst die Betreiber-Entscheidung Weg 1 vs. 2 einholen. Bei Weg 1: Message-Strings
 **Erwarteter Zielzustand:** MRR zählt nur `billing_status == "active"` (Entscheidung dokumentieren, ob `canceling` bis Periodenende mitzählt — branchenüblich: ja, aber getrennt ausweisen); `billing_interval == None` wird nicht stillschweigend als monatlich gewertet, sondern als Datenfehler gezählt und im Dashboard sichtbar gemacht; Preisbeträge zentral definiert (Konstante/Settings) oder aus Stripe gelesen.
 
 **Akzeptanzkriterien:**
-- `past_due` zählt nicht (oder separat als „gefährdete MRR")
-- None-Intervall erscheint als eigener Zähler „unbekanntes Intervall" statt stiller 50-€-Annahme
-- Test deckt die drei Fälle ab
+- `past_due` zählt nicht (oder separat als „gefährdete MRR") ✅
+- None-Intervall erscheint als eigener Zähler „unbekanntes Intervall" statt stiller 50-€-Annahme ✅
+- Test deckt die drei Fälle ab ✅
+
+**Umsetzungsnotiz (2026-07-09):** `_compute_subscription_stats(db)` bucketet jetzt nach `billing_status`: `active` → `mrr_eur`/`active_pro_subscriptions`; `canceling`/`past_due` → getrennt in `at_risk_mrr_eur`/`at_risk_subscriptions` (branchenübliche Entscheidung: canceling zählt bis Periodenende als Umsatz, aber sichtbar getrennt — wie im Alt-Text vorgeschlagen); `canceled` → vollständig ausgeschlossen. `billing_interval is None` fließt in keinen Euro-Betrag mehr ein (weder aktiv noch at-risk), sondern nur in `unknown_billing_interval_count` — die stille 50-€-Annahme (Preis (a) blieb hartkodiert als benannte Modul-Konstante `PRO_MONTHLY_PRICE_EUR`/`PRO_YEARLY_PRICE_EUR`, kein Live-Stripe-Sync — das wäre ein API-Call pro Pro-User pro Dashboard-Aufruf; als Kommentar im Code und hier dokumentiert, damit es nicht als „erledigt" missverstanden wird, falls sich der Preis in Stripe künftig ändert. Rabatte/Proration/Refunds (Punkt d) bleiben aus demselben Grund weiterhin unsichtbar — außerhalb des Scopes dieses Fixes. 6 Tests decken die Fälle ab: aktiv/monatlich, aktiv/jährlich, canceling, past_due, canceled (ausgeschlossen), unbekanntes Intervall. Frontend: neue Kacheln „Gefährdete MRR" (mit Anzahl) und „Unbekanntes Intervall" in `AdminDashboardPage.tsx`.
 
 ---
 
@@ -450,11 +454,14 @@ Neue P2-Aufgaben aus diesem Audit:
 
 ### [P2-16] Interne Accounts (admin/friends) verfälschen Admin-Aktivitätsmetriken
 
-**Status:** Offen · **Bereich:** Datenqualität
+**Status:** ✅ Erledigt (2026-07-09)
+**Bereich:** Datenqualität
 **Betroffene Dateien/Komponenten:** `api/routes/admin_stats.py` (DAU/WAU/MAU `:58-82`, Funnel `:28-55`, Daily `:85-117`)
 **Problem:** Eigene `plan=="admin"`- und `plan=="friends"`-Accounts erzeugen `analysis_started`/Login-Aktivität und fließen ungefiltert in DAU/WAU/MAU, Funnel und Analyse-Zahlen ein. Bei kleiner Nutzerbasis (Soft Launch!) dominiert die Eigennutzung die Metriken.
 **Zielzustand:** Stats-Queries schließen `admin`/`friends` aus (Join auf User.plan), optional Toggle „interne Accounts einbeziehen".
-**Akzeptanzkriterien:** Admin-Eigennutzung erhöht DAU nicht; Test mit gemischten Plänen.
+**Akzeptanzkriterien:** Admin-Eigennutzung erhöht DAU nicht ✅; Test mit gemischten Plänen ✅.
+
+**Umsetzungsnotiz (2026-07-09):** Neue `INTERNAL_PLANS = ("admin", "friends")`-Konstante + `_internal_user_ids_subquery`/`_external_events`-Helper in `admin_stats.py`, angewandt auf `_distinct_user_count` (Funnel), `get_activity` (DAU/WAU/MAU), `get_daily_activity` und `get_analyses_breakdown` (by_mode/top_symbols — sonst dominieren eigene Testläufe die „Top Symbole"). Kein Toggle „interne Accounts einbeziehen" umgesetzt (im Zielzustand als „optional" markiert) — bei Bedarf später ergänzbar, aktuell immer ausgeschlossen. Tests `test_distinct_user_count_excludes_admin_and_friends` / `test_distinct_user_count_includes_pro_and_free_plans` in `api/tests/test_admin_stats.py` decken gemischte Pläne ab. MRR/Churn-Queries brauchten keine Anpassung (basieren auf `plan=="pro"`, das schließt `admin`/`friends` bereits aus).
 
 ### [P2-17] Tracking-Lücken: Seitenaufrufe und Feature-Nutzung fehlen im Funnel
 
@@ -540,8 +547,8 @@ Neue P2-Aufgaben aus diesem Audit:
 
 ## 8. Admin Dashboard Tasks
 
-1. **Churn-Fix** (→ P1-6) und **MRR-Fix** (→ P1-7) — beide Metriken sind aktuell irreführend.
-2. **Interne Accounts filtern** (→ P2-16) — beim Soft Launch dominiert sonst Eigennutzung.
+1. ~~**Churn-Fix** (→ P1-6) und **MRR-Fix** (→ P1-7)~~ — ✅ erledigt 2026-07-09.
+2. ~~**Interne Accounts filtern** (→ P2-16)~~ — ✅ erledigt 2026-07-09.
 3. **Churn-Gründe-Erfassung bauen:** `/admin/stats/churn-reasons` existiert, aber die Cancel-UI erfasst den Grund kaum (`admin_stats.py:246-249` dokumentiert das selbst; Plan-Punkt 4.6). Kündigungs-Modal um optionale Grund-Auswahl erweitern (`CancelSubscriptionModal`), Event trägt `reason` bereits.
 4. **Vorhandene Stärken (kein Task):** DAU/WAU/MAU, 7-stufiger Funnel, 30-Tage-Charts, Top-Symbole, Near-Limit-Liste (konkret handlungsrelevant für Upgrade-Ansprache), CRM mit Notizen/Timeline/Plan-Wechsel (Admin-Plan nicht via API vergebbar — gutes Defense-in-Depth), Audit-Notizen bei Plan-Änderungen.
 5. **Zeitraum-Filter:** Aktuell fix 30 Tage — für Trend-Erkennung 7/30/90-Tage-Umschalter ergänzen (P2).
@@ -550,10 +557,10 @@ Neue P2-Aufgaben aus diesem Audit:
 ## 9. Datenqualität & Tracking Tasks
 
 - **Korrekt gesammelt (verifiziert):** Registrierung/Verifizierung/Analysen/Quota/Checkout/Subscription-Lifecycle als append-only `product_events` mit Idempotenz auf Stripe-Seite (`stripe_events`-Ledger); ein Event pro Analyse-Start (keine Doppelzählung, Custom mit N Metriken = 1 Event mit `mode:"custom"`); GDPR-Löschung anonymisiert Events (`ON DELETE SET NULL`) statt Historie zu zerstören.
-- **Falsch/irreführend:** Churn (→ P1-6), MRR (→ P1-7), interne Accounts (→ P2-16).
+- ~~**Falsch/irreführend:** Churn (→ P1-6), MRR (→ P1-7), interne Accounts (→ P2-16).~~ — ✅ erledigt 2026-07-09.
 - **Fehlend:** Seitenaufrufe/Feature-Events (→ P2-17), Churn-Gründe (→ Admin-Task 3), MRR-Historie (→ Admin-Task 6).
 - **Zeitzonen:** Alle Tagesgrenzen UTC (`datetime.utcnow`, `cast(created_at, Date)`) — für ein DE-Produkt um 1–2 h verschoben. Bewusst dokumentieren oder auf Europe/Berlin umstellen (P2).
-- **Testdaten:** Keine Seed-/Demo-Daten-Skripte — Prod-Metriken starten sauber. Einzige Verunreinigungsquelle: interne Accounts (→ P2-16).
+- **Testdaten:** Keine Seed-/Demo-Daten-Skripte — Prod-Metriken starten sauber. ~~Einzige Verunreinigungsquelle: interne Accounts (→ P2-16).~~ — ✅ gefiltert, erledigt 2026-07-09.
 
 ## 10. Sicherheits- und Vertrauensaufgaben
 

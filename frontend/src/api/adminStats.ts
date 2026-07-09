@@ -31,8 +31,21 @@ export type SubscriptionStats = {
   active_pro_subscriptions: number;
   monthly_subscriptions: number;
   yearly_subscriptions: number;
+  /** Aktive Pro-User, deren billing_interval nie mit Stripe synchronisiert
+   * wurde - fließen bewusst NICHT in mrr_eur ein (siehe LAUNCH.md P1-7). */
+  unknown_billing_interval_count: number;
   mrr_eur: number;
+  /** Abos mit billing_status canceling/past_due - noch nicht verloren,
+   * aber absehbar wegfallend. Getrennt von mrr_eur ausgewiesen. */
+  at_risk_subscriptions: number;
+  at_risk_mrr_eur: number;
+  /** Abgeschlossener Churn: distinct User mit subscription_deleted in den
+   * letzten 30 Tagen (nicht: Kündigung angefragt, siehe
+   * cancellations_requested_last_30d). */
   churned_last_30d: number;
+  /** Frühindikator: Klick auf "Kündigen" im Frontend, unabhängig davon ob
+   * das Abo bereits ausgelaufen ist. */
+  cancellations_requested_last_30d: number;
   free_users_near_limit: number;
 };
 

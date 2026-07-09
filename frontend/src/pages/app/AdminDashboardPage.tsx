@@ -154,7 +154,17 @@ function AdminDashboardPage() {
                 subscriptions ? `${subscriptions.mrr_eur.toLocaleString("de-DE")} €` : undefined
               }
             />
-            <StatCard label="Churn (30 Tage)" value={subscriptions?.churned_last_30d} />
+            <StatCard
+              label="Gefährdete MRR"
+              value={
+                subscriptions
+                  ? `${subscriptions.at_risk_mrr_eur.toLocaleString("de-DE")} € (${subscriptions.at_risk_subscriptions})`
+                  : undefined
+              }
+            />
+            <StatCard label="Beendete Abos (30 T)" value={subscriptions?.churned_last_30d} />
+            <StatCard label="Kündigung angefragt (30 T)" value={subscriptions?.cancellations_requested_last_30d} />
+            <StatCard label="Unbekanntes Intervall" value={subscriptions?.unknown_billing_interval_count} />
             <StatCard label="Free nahe am Limit" value={subscriptions?.free_users_near_limit} />
           </div>
 
