@@ -1002,18 +1002,27 @@ class DataLoader:
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_current_price_per_share(self, symbol):
-        """Gibt den aktuellen Preis einer Aktie in US-Dollar zurück."""
-        try:
-            stock = yf.Ticker(symbol)
-            current_price = stock.info.get("regularMarketPrice")
-            if current_price is None:
-                hist = stock.history(period="1d")
-                if hist.empty:
-                    raise ValueError(f"Keine aktuellen Preisdaten für {symbol} gefunden.")
-                current_price = hist["Close"].iloc[-1]
-            return current_price
-        except Exception as e:
-            return {"error": f"Fehler beim Abrufen des Preises für {symbol}: {str(e)}"}
+        """Gibt den aktuellen Preis einer Aktie in US-Dollar zurück.
+
+        Fängt Exceptions bewusst NICHT selbst ab (anders als die meisten
+        DataLoader-Methoden) - der @retry-Decorator braucht eine tatsächlich
+        propagierende Exception, um zu greifen. Mit einem internen try/except
+        plus error-dict-Rückgabe feuert @retry nie (LAUNCH_AUDIT.md P2-12).
+        Live-Kurse sind der Fall, in dem transiente Yahoo-Fehler (429s,
+        Timeouts - insbesondere von Cloud-/Rechenzentrums-IPs aus) am
+        häufigsten auftreten, daher hier zuerst behoben. Alle Aufrufer
+        (direkt und transitiv über get_current_tbv_and_price) haben ein
+        eigenes umschließendes try/except und fangen die letzte Exception
+        nach den drei Versuchen weiterhin als Error-Dict/generische
+        API-Fehlermeldung ab - siehe LAUNCH.md."""
+        stock = yf.Ticker(symbol)
+        current_price = stock.info.get("regularMarketPrice")
+        if current_price is None:
+            hist = stock.history(period="1d")
+            if hist.empty:
+                raise ValueError(f"Keine aktuellen Preisdaten für {symbol} gefunden.")
+            current_price = hist["Close"].iloc[-1]
+        return current_price
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_balance_sheet(self, symbol, frequency="annual", use_cache=True):

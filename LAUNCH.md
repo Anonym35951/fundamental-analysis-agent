@@ -528,10 +528,29 @@ Neue P2-Aufgaben aus diesem Audit:
 
 ### [P2-21] Weitere übernommene Betriebs-/Hygiene-Punkte
 
-- Gmail-SMTP mittelfristig durch transaktionalen Anbieter ersetzen (Resend/Postmark/SES) — Sendelimit ~500/Tag, Zustellbarkeit (`LAUNCH_CHECKLIST.md` 🟠)
+- ~~Gmail-SMTP mittelfristig durch transaktionalen Anbieter ersetzen (Resend/Postmark/SES)~~ — ✅ erledigt 2026-07-09 (siehe P0-3, Resend-Umstellung)
 - Kein „Spin down on inactivity" auf Render; nicht horizontal skalieren ohne Worker-Umbau (`LAUNCH_CHECKLIST.md` ⚙️)
 - Datenquellen-Free-Tier-Limits prüfen/upgraden (`LAUNCH_CHECKLIST.md` 🟢)
 - `robots.txt` fehlt (Alt-Audit Abschnitt 15) · Security-Scans in CI (`bandit`, `pip-audit`) · Rate-Limit für `metric_routes.py` und `admin_customers.py` ergänzen (aktuell 0 Limits, alle authed — geringes Risiko) · Security-/Audit-Log für Auth-Ereignisse (Failed Logins, Admin-CRM-Zugriffe) · `datetime.utcnow()`-Migration (deprecated) · UTC-Tagesgrenzen in Admin-Charts (für DE-Produkt um 1–2 h verschoben — dokumentieren oder auf Europe/Berlin umstellen)
+
+---
+
+### [P2-22] Live-Kurs-Polling schlägt in Produktion fehl (Yahoo blockt vermutlich Cloud-IPs)
+
+**Status:** ⚠️ Teilweise behoben (2026-07-09) — Retry-Mechanismus repariert, Grundproblem (Yahoo-Blocking) bleibt bestehen
+**Bereich:** Datenqualität / Technik
+**Betroffene Dateien/Komponenten:** `agent/DataLoader.py:get_current_price_per_share`, `frontend/src/hooks/useLivePrice.ts`, `frontend/src/components/shared/LivePriceBadge.tsx`, `api/routes/metric_routes.py:47-75`
+
+**Problem:** Vom Betreiber live auf `www.comanalysis.de` beobachtet: der Live-Kurs-Badge zeigt nichts an. Ursache laut Code-Analyse: `yf.Ticker(symbol).info`/`.history()` (Yahoo Finance, inoffizielle API) wird von Cloud-/Rechenzentrums-IP-Bereichen (Render, AWS, GCP etc.) häufiger blockiert/rate-limitiert als von privaten IPs — lokal funktioniert es deshalb, online nicht zuverlässig. Verschärft durch Alt-Audit **P2-12**: `@retry`-Decorator auf `get_current_price_per_share` griff nie, weil die Methode intern jede Exception fing und ein `{"error": ...}`-Dict zurückgab, statt sie propagieren zu lassen — ein einzelner transienter 429/Timeout wurde dadurch sofort zum permanenten Fehler. Zusätzlich unsichtbar für den Nutzer: `LivePriceBadge.tsx` rendert bei einem Fehler bewusst `null` statt einer Fehlermeldung.
+
+**Umsetzungsnotiz (2026-07-09):** `get_current_price_per_share` lässt Exceptions jetzt propagieren, damit `@retry` (3 Versuche, 2s Wartezeit) tatsächlich greift. Alle 9 Aufrufstellen (direkt und transitiv über `get_current_tbv_and_price`) wurden einzeln geprüft — jede hat ein eigenes umschließendes `try/except`, das die letzte Exception weiterhin sicher zu einem Error-Dict/einer generischen API-Fehlermeldung macht (kein Crash-Risiko). 3 neue Tests in `agent/tests/test_live_price_retry.py` (Erfolg ohne Retry, Erfolg nach 2 transienten Fehlern, `RetryError` nach 3 endgültigen Fehlschlägen). `pytest` 49/49 grün.
+
+**Ausdrücklich NICHT gelöst:** Der Retry-Fix hilft nur bei *transienten* Fehlern (kurzes Rate-Limit-Fenster). Falls Yahoo die Render-IP-Range dauerhaft/hart blockt, schlagen auch alle 3 Retry-Versuche fehl — das Grundproblem ist mit App-seitigen Mitteln kaum lösbar (kein offizieller, garantiert erlaubter Yahoo-API-Zugang). Mögliche spätere Härtung: Fallback auf eine andere, bereits integrierte Quelle bei Yahoo-Ausfall (z. B. Alpha Vantage `GLOBAL_QUOTE`), und/oder den Fehler in `LivePriceBadge`/`useLivePrice` wenigstens im Dev-/Debug-Modus sichtbar machen statt ihn komplett zu verschlucken.
+
+**Akzeptanzkriterien:**
+- `@retry` greift nachweislich bei transienten Fehlern (Test vorhanden) ✅
+- Kein neues Crash-Risiko an den 9 Aufrufstellen ✅
+- Live-Kurs-Badge zeigt online tatsächlich einen Preis — **noch nicht verifiziert**, da vom Erfolg der Retries UND davon abhängig, ob Yahoo die Render-IP dauerhaft blockt oder nur soft-ratelimited. Nächster Schritt: nach Deploy auf `www.comanalysis.de` live beobachten, ob der Badge jetzt Werte zeigt.
 
 ---
 
