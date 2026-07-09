@@ -1,4 +1,5 @@
 import logging
+import math
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -20,6 +21,21 @@ class Model:
     EV_MULTIPLE_COLUMNS = ["EV_Sales", "EV_EBIT", "EV_EBITDA"]
     HISTORICAL_MULTIPLE_COLUMNS = PRICE_MULTIPLE_COLUMNS + EV_MULTIPLE_COLUMNS
 
+    def _resolve_shares_outstanding(self, symbol):
+        """Holt shares_outstanding und entpackt das DataLoader-Dict konsistent.
+
+        Returns:
+            float: shares_outstanding, wenn gültig.
+            dict: Fehlerdetails bei Problemen.
+        """
+        result = self.dataloader.get_shares_outstanding(symbol)
+        if isinstance(result, dict) and "error" in result:
+            return result
+        shares = result.get("shares_outstanding") if isinstance(result, dict) else result
+        if not isinstance(shares, (int, float)) or not math.isfinite(shares) or shares <= 0:
+            return {"error": f"Ungültige Anzahl ausstehender Aktien für {symbol}: {shares}"}
+        return float(shares)
+
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def calculate_KGV(self, symbol):
         """Berechnet das Kurs-Gewinn-Verhältnis (KGV).
@@ -40,7 +56,7 @@ class Model:
             if isinstance(financials, dict) and "error" in financials:
                 return financials
 
-            shares = self.dataloader.get_shares_outstanding(symbol)
+            shares = self._resolve_shares_outstanding(symbol)
             if isinstance(shares, dict) and "error" in shares:
                 return shares
 
@@ -52,9 +68,6 @@ class Model:
                 return {"error": f"Keine Nettogewinn-Daten für {symbol} gefunden."}
 
             net_income = financials.loc["Net Income"].iloc[0]
-
-            if shares <= 0:
-                return {"error": f"Ungültige Aktienanzahl für {symbol}: {shares}"}
 
             eps = net_income / shares
 
@@ -137,35 +150,54 @@ class Model:
             return {"error": f"Fehler beim Berechnen von Net Debt/EBITDA für {symbol}: {str(e)}"}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
-    def analyze_payout_ratio(self, symbol):
+    def analyze_payout_ratio(self, symbol: str, threshold: float = 75.0) -> dict:
         """
-        Analysiert die Ausschüttungsquote und warnt, wenn sie > 100% ist.
+        Analysiert die Ausschüttungsquote und warnt, wenn sie über einem definierten Grenzwert liegt.
 
         Args:
             symbol (str): Aktiensymbol (z. B. 'AAPL').
+            threshold (float): Grenzwert für die Ausschüttungsquote (Default: 75%).
 
         Returns:
-            dict: Ausschüttungsquote und ggf. eine Warnung.
+            dict: Ausschüttungsquote und Bewertung.
         """
         try:
             payout_data = self.dataloader.get_payout_ratio_data_annual(symbol)
             if "error" in payout_data:
                 return payout_data
 
-            payout_ratio = payout_data['payout_ratio_eps']
-            if payout_ratio > 75:
-                return {
-                    "payout_ratio": payout_ratio,
-                    "warning": "Ausschüttungsquote über 75% – Nachhaltigkeit prüfen."
-                }
-            else:
-                return {
-                    "payout_ratio": payout_ratio,
-                    "message": "Ausschüttungsquote ≤ 100%."
-                }
-        except Exception as e:
-            return {"error": f"Fehler beim Analysieren der Ausschüttungsquote für {symbol}: {str(e)}"}
+            payout_ratio = payout_data.get("payout_ratio_eps")
 
+            if payout_ratio is None or not isinstance(payout_ratio, (int, float)):
+                return {
+                    "error": f"Ungültige Ausschüttungsquote für {symbol}: {payout_ratio}",
+                    "symbol": symbol
+                }
+
+            result = {
+                "symbol": symbol,
+                "payout_ratio": float(payout_ratio),
+                "threshold": float(threshold)
+            }
+
+            if payout_ratio > threshold:
+                result.update({
+                    "status": "warning",
+                    "message": f"Ausschüttungsquote über {threshold}% – Nachhaltigkeit prüfen."
+                })
+            else:
+                result.update({
+                    "status": "ok",
+                    "message": f"Ausschüttungsquote ≤ {threshold}%."
+                })
+
+            return result
+
+        except Exception as e:
+            return {
+                "error": f"Fehler beim Analysieren der Ausschüttungsquote für {symbol}: {str(e)}",
+                "symbol": symbol
+            }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def analyze_dividend_history(self, symbol):
@@ -259,21 +291,67 @@ class Model:
             dividend_history = self.dataloader.get_dividend_history(symbol)
             if "error" in dividend_history:
                 return None
-            dividends = dividend_history['dividends_history']
+            dividends = dividend_history['dividends_history']['dividend']
+            # The dividend_history DataFrame round-trips through the JSON
+            # cache (DataLoader._cache_data/_load_cached_data), which strips
+            # the DatetimeIndex's timezone — but get_stock_data's index stays
+            # tz-aware. Dividing two differently-tz-indexed Series below
+            # raises, so normalize both to tz-naive first.
+            if dividends.index.tz is not None:
+                dividends.index = dividends.index.tz_localize(None)
 
             stock_data = self.dataloader.get_stock_data(symbol, period=f"{years}y")
             if "error" in stock_data:
                 return None
             prices = stock_data['Close']
+            if prices.index.tz is not None:
+                prices.index = prices.index.tz_localize(None)
 
             annual_dividends = dividends.resample('A').sum()
             year_end_prices = prices.resample('A').last()
 
             yields = (annual_dividends / year_end_prices) * 100
             average_yield = yields.dropna().mean()
+            if not math.isfinite(average_yield):
+                return None
             return round(average_yield, 2)
         except Exception as e:
             return None
+
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
+    def calculate_current_dividend_yield(self, symbol: str, use_cache: bool = True) -> dict:
+        """
+        Liefert die aktuelle (TTM) Dividendenrendite, im Gegensatz zum
+        10-Jahres-Durchschnitt aus calculate_historical_dividend_yield_average.
+
+        Formel:
+            Current Dividend Yield = Dividend Rate (TTM) / Current Price * 100
+
+        Returns:
+            dict:
+                {
+                  "dividend_yield": float,
+                  "dividend_rate": float,
+                  "symbol": symbol
+                }
+            oder bei Fehler:
+                {"error": "...", "symbol": symbol}
+        """
+        try:
+            dividend_data = self.dataloader.get_dividend_data(symbol, use_cache=use_cache)
+            if isinstance(dividend_data, dict) and "error" in dividend_data:
+                return {"error": dividend_data["error"], "symbol": symbol}
+
+            return {
+                "dividend_yield": dividend_data.get("dividend_yield"),
+                "dividend_rate": dividend_data.get("dividend_rate"),
+                "symbol": symbol
+            }
+        except Exception as e:
+            return {
+                "error": f"Fehler beim Berechnen der aktuellen Dividendenrendite für {symbol}: {str(e)}",
+                "symbol": symbol
+            }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def determine_buy_sell_points(self, symbol):
@@ -292,6 +370,9 @@ class Model:
                 return dividend_data
 
             current_yield = dividend_data['dividend_yield']
+            if current_yield is None or not isinstance(current_yield, (int, float)):
+                return {"error": f"Keine gültige Dividendenrendite für {symbol} verfügbar."}
+
             average_yield = self.calculate_historical_dividend_yield_average(symbol)
 
             if average_yield is None:
@@ -313,10 +394,10 @@ class Model:
         if "error" in balance_sheet:
             return balance_sheet
         tangible_book_value = self.get_tangible_book_value(balance_sheet)
-        if "error" in tangible_book_value:
+        if isinstance(tangible_book_value, dict) and "error" in tangible_book_value:
             return tangible_book_value
-        shares = self.dataloader.get_shares_outstanding(symbol)
-        if "error" in shares:
+        shares = self._resolve_shares_outstanding(symbol)
+        if isinstance(shares, dict) and "error" in shares:
             return shares
         return tangible_book_value / shares
 
@@ -343,7 +424,7 @@ class Model:
 
         # Fallback: yfinance info
         if not shares or shares <= 0:
-            shares = self.dataloader.get_shares_outstanding(symbol)
+            shares = self._resolve_shares_outstanding(symbol)
             if isinstance(shares, dict):
                 return shares, None, None
 
@@ -383,7 +464,7 @@ class Model:
         try:
             # Daten abrufen
             current_price = self.dataloader.get_current_price_per_share(symbol)
-            shares = self.dataloader.get_shares_outstanding(symbol)
+            shares = self._resolve_shares_outstanding(symbol)
 
             # Umsatzdaten abrufen
             if frequency == "annual":
@@ -596,6 +677,8 @@ class Model:
             pe_ratio = self.calculate_KGV(symbol)
             if isinstance(pe_ratio, dict) and "error" in pe_ratio:
                 return pe_ratio
+            if not isinstance(pe_ratio, (int, float)) or not math.isfinite(pe_ratio):
+                return {"error": f"KGV für {symbol} ist nicht endlich (inf): PEG-Ratio nicht berechenbar.", "symbol": symbol}
 
             growth_data = self.calculate_avg_annual_profit_growth(symbol, start_date, end_date, use_cache=use_cache)
             if "error" in growth_data:
@@ -672,7 +755,7 @@ class Model:
 
             # Extrahiere Werte
             ebit = ebit_data["ebit"]
-            interest_expense = interest_expense_data["interest_expense"]
+            interest_expense = interest_expense_data["latest_item"]["abs_value"]
 
             # Prüfe auf ungültige Werte
             if interest_expense == 0:
@@ -820,9 +903,19 @@ class Model:
             inventory_result = self.dataloader.get_inventory(symbol, frequency)
             if "error" in inventory_result:
                 if "Keine Vorräte" in inventory_result["error"]:
+                    # Kein Lagerbestand ist für Dienstleister ein valider, zu
+                    # erwartender Zustand (kein Fehler) — als 0% ausweisen,
+                    # statt eine rote Fehlermeldung anzuzeigen.
+                    no_inventory_revenue = self.dataloader.get_revenue(symbol, frequency)
+                    if "error" in no_inventory_revenue:
+                        return {"error": f"Fehler beim Abrufen des Umsatzes: {no_inventory_revenue['error']}", "symbol": symbol}
                     return {
-                        "error": f"Keine Vorräte für {symbol} ({frequency}) vorhanden, möglicherweise Dienstleister.",
-                        "symbol": symbol}
+                        "inventory_to_revenue_ratio": 0.0,
+                        "symbol": symbol,
+                        "frequency": frequency,
+                        "date": no_inventory_revenue["date"],
+                        "message": "Kein Lagerbestand vorhanden (vermutlich Dienstleister)."
+                    }
                 return {"error": f"Fehler beim Abrufen der Vorräte: {inventory_result['error']}", "symbol": symbol}
 
             # Umsatz abrufen
@@ -898,6 +991,13 @@ class Model:
                 {"error": "...", "symbol": symbol}
         """
         try:
+            if self.dataloader.is_financial_sector(symbol):
+                return {
+                    "error": "Cash/Market Cap ist für Finanzinstitute (Banken, Versicherungen) nicht aussagekräftig, "
+                             "da kurzfristige Wertpapiere Teil des operativen Geschäfts sind.",
+                    "symbol": symbol,
+                }
+
             # 1. Cash & Equivalents abrufen
             cash_data = self.dataloader.get_cash_and_equivalents(symbol, frequency=frequency, use_cache=use_cache)
 
@@ -1059,11 +1159,9 @@ class Model:
                 return {"error": f"Ungültiger FreeCashflow-Wert für {symbol}: {freeCashflow}", "symbol": symbol}
 
             # Prüfen auf ungültigen FreeCashflow
-            shares = self.dataloader.get_shares_outstanding(symbol)
+            shares = self._resolve_shares_outstanding(symbol)
             if isinstance(shares, dict) and "error" in shares:
                 return {"error": shares["error"], "symbol": symbol}
-            if shares is None or not isinstance(shares, (int, float)) or shares <= 0:
-                return {"error": f"Ungültige Anzahl ausstehender Aktien für {symbol}: {shares}", "symbol": symbol}
             freeCashflow_per_share = freeCashflow / shares
             if freeCashflow_per_share <= 0:
                 data = {
@@ -1263,7 +1361,7 @@ class Model:
                 "error": f"Fehler bei der Berechnung der Inflation für den Zeitraum {start_date} bis {end_date}: {str(e)}"}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
-    def calculate_avg_quarterly_profit_growth(self, symbol, start_date, end_date, use_cache=True):
+    def calculate_avg_quarterly_profit_growth(self, symbol, start_date=None, end_date=None, use_cache=True):
         """
         Berechnet die durchschnittliche quartalsweise Gewinnwachstumsrate (AQGR) basierend auf allen verfügbaren
         quartalsweisen Nettogewinndaten, sofern keine negativen Werte vorliegen. Bei negativen Werten werden die Daten
@@ -1323,8 +1421,12 @@ class Model:
             if len(net_incomes) < 2:
                 return {"error": f"Nicht genügend Nettogewinndaten für {symbol} (mindestens 2 Berichte erforderlich)."}
 
-            # Schritt 5: Prüfen auf negative Werte
-            has_negative_values = (net_incomes <= 0).any()
+            # Schritt 5: Prüfen auf strukturell negative Werte — ein einzelner
+            # Verlust-Quartal soll ein sonst profitables Unternehmen nicht als
+            # durchgängig unprofitabel kennzeichnen. Erst wenn die Mehrheit
+            # der Perioden ≤ 0 ist, gilt das Unternehmen als strukturell
+            # unprofitabel.
+            has_negative_values = (net_incomes <= 0).mean() > 0.5
 
             if has_negative_values:
                 # Schritt 6a: Daten auflisten und Warnung ausgeben
@@ -1332,7 +1434,7 @@ class Model:
                     {"date": date.strftime('%Y-%m-%d'), "value": value}
                     for date, value in zip(net_incomes.index, net_incomes.values)
                 ]
-                message = (f"Das Unternehmen {symbol} weist durchgängig negative Nettogewinne auf: "
+                message = (f"Das Unternehmen {symbol} weist überwiegend negative Nettogewinne auf: "
                            f"{', '.join(f'{d['value']:.0f}' for d in net_income_list)} Mio. USD. "
                            f"Eine Investition in diesen Wert ist mit hohem Risiko behaftet, da das Unternehmen Verluste macht.")
                 return {
@@ -1344,17 +1446,23 @@ class Model:
                     "message": message
                 }
             else:
-                # Schritt 6b: Wachstumsraten zwischen aufeinanderfolgenden Quartalen berechnen (keine negativen Werte)
+                # Schritt 6b: Wachstumsraten zwischen aufeinanderfolgenden Quartalen
+                # berechnen — einzelne Verlust-Quartale werden übersprungen statt
+                # die gesamte Berechnung abzubrechen, da sie sonst die Aussage
+                # über die Mehrheit der (positiven) Perioden verfälschen würden.
                 growth_rates = []
                 for i in range(len(net_incomes) - 1):
                     current_value = net_incomes.iloc[i]  # Aktueller Nettogewinn (neuere Daten)
                     next_value = net_incomes.iloc[i + 1]  # Nächster Nettogewinn (ältere Daten)
                     if current_value <= 0 or next_value <= 0:
-                        return {
-                            "error": f"Ungültige Daten für Wachstumsrate-Berechnung für {symbol} (Wert ≤ 0 erkannt)."
-                        }
+                        continue
                     growth_rate = ((current_value / next_value) - 1) * 100  # Wachstumsrate in Prozent
                     growth_rates.append(growth_rate)
+
+                if not growth_rates:
+                    return {
+                        "error": f"Keine gültigen Datenpaare für Wachstumsrate-Berechnung für {symbol} (zu viele Werte ≤ 0)."
+                    }
 
                 # Schritt 7: Durchschnittliche Wachstumsrate berechnen
                 avg_growth = sum(growth_rates) / len(growth_rates)
@@ -1366,6 +1474,11 @@ class Model:
                 # Schritt 8: Ergebnis zurückgeben
                 return {
                     "avg_growth": avg_growth,
+                    # Anzahl der für avg_growth gemittelten Wachstumsraten -
+                    # Basis, um avg_growth in compare_avg_quarterly_growth_to_
+                    # inflation korrekt zu einer kumulierten Gesamtwachstumsrate
+                    # hochzurechnen (siehe LAUNCH_AUDIT.md, K-4).
+                    "periods": len(growth_rates),
                     "symbol": symbol,
                     "actual_start_date": net_incomes.index[-1].strftime('%Y-%m-%d'),
                     "actual_end_date": net_incomes.index[0].strftime('%Y-%m-%d'),
@@ -1377,7 +1490,7 @@ class Model:
             return {"error": f"Fehler bei der Berechnung des quartalsweisen Gewinnwachstums für {symbol}: {str(e)}"}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
-    def calculate_avg_annual_profit_growth(self, symbol, start_date, end_date, use_cache=True):
+    def calculate_avg_annual_profit_growth(self, symbol, start_date=None, end_date=None, use_cache=True):
         """
         Berechnet die durchschnittliche jährliche Gewinnwachstumsrate (AAGR) basierend auf allen verfügbaren
         jährlichen Nettogewinndaten, aber nur, wenn alle Werte positiv sind. Bei Vorhandensein eines negativen
@@ -1437,16 +1550,20 @@ class Model:
             if len(net_incomes) < 2:
                 return {"error": f"Nicht genügend Nettogewinndaten für {symbol} (mindestens 2 Berichte erforderlich)."}
 
-            # Schritt 5: Prüfen auf negative Werte
-            has_negative_values = (net_incomes <= 0).any()
+            # Schritt 5: Prüfen auf strukturell negative Werte — ein einzelnes
+            # Verlustjahr soll ein sonst profitables Unternehmen nicht als
+            # durchgängig unprofitabel kennzeichnen. Erst wenn die Mehrheit
+            # der Perioden ≤ 0 ist, gilt das Unternehmen als strukturell
+            # unprofitabel.
+            has_negative_values = (net_incomes <= 0).mean() > 0.5
 
             if has_negative_values:
-                # Schritt 6a: Daten auflisten und Warnung ausgeben, wenn mindestens ein Wert negativ ist
+                # Schritt 6a: Daten auflisten und Warnung ausgeben
                 net_income_list = [
                     {"date": date.strftime('%Y-%m-%d'), "value": value / 1000000}  # Umrechnung in Mio. USD
                     for date, value in zip(net_incomes.index, net_incomes.values)
                 ]
-                message = (f"Das Unternehmen {symbol} weist negative Nettogewinne auf: "
+                message = (f"Das Unternehmen {symbol} weist überwiegend negative Nettogewinne auf: "
                            f"{', '.join(f'{d['value']:.0f}' for d in net_income_list)} Mio. USD. "
                            f"Eine Investition in diesen Wert ist mit hohem Risiko behaftet, da das Unternehmen Verluste macht. "
                            f"Ein Vergleich mit der Inflation ist nicht sinnvoll.")
@@ -1459,13 +1576,23 @@ class Model:
                     "message": message
                 }
             else:
-                # Schritt 6b: Wachstumsraten zwischen aufeinanderfolgenden Jahren berechnen (alle Werte positiv)
+                # Schritt 6b: Wachstumsraten zwischen aufeinanderfolgenden Jahren
+                # berechnen — einzelne Verlustjahre werden übersprungen statt die
+                # gesamte Berechnung abzubrechen, da sie sonst die Aussage über
+                # die Mehrheit der (positiven) Perioden verfälschen würden.
                 growth_rates = []
                 for i in range(len(net_incomes) - 1):
                     current_value = net_incomes.iloc[i]  # Aktueller Nettogewinn (neuere Daten)
                     next_value = net_incomes.iloc[i + 1]  # Nächster Nettogewinn (ältere Daten)
+                    if current_value <= 0 or next_value <= 0:
+                        continue
                     growth_rate = ((current_value / next_value) - 1) * 100  # Wachstumsrate in Prozent
                     growth_rates.append(growth_rate)
+
+                if not growth_rates:
+                    return {
+                        "error": f"Keine gültigen Datenpaare für Wachstumsrate-Berechnung für {symbol} (zu viele Werte ≤ 0)."
+                    }
 
                 # Schritt 7: Durchschnittliche Wachstumsrate berechnen
                 avg_growth = sum(growth_rates) / len(growth_rates)
@@ -1478,6 +1605,11 @@ class Model:
                 # Schritt 9: Ergebnis zurückgeben
                 return {
                     "avg_growth": avg_growth,
+                    # Anzahl der für avg_growth gemittelten Wachstumsraten -
+                    # Basis, um avg_growth in compare_avg_annual_growth_to_
+                    # inflation korrekt zu einer kumulierten Gesamtwachstumsrate
+                    # hochzurechnen (siehe LAUNCH_AUDIT.md, K-4).
+                    "periods": len(growth_rates),
                     "symbol": symbol,
                     "actual_start_date": actual_start_date,
                     "actual_end_date": actual_end_date,
@@ -1541,20 +1673,37 @@ class Model:
                 if "error" in inflation_result:
                     return inflation_result
 
-                # AQGR und Inflation vergleichen
                 aqgr = growth_result["avg_growth"]
                 total_inflation = inflation_result["total_inflation"]
-                outperforms_inflation = bool(aqgr > total_inflation)
+                periods = growth_result.get("periods")
+
+                # AQGR ist eine DURCHSCHNITTLICHE Wachstumsrate PRO QUARTAL,
+                # total_inflation ist die KUMULATIVE Inflation über den
+                # gesamten Zeitraum - ein direkter Vergleich war Äpfel gegen
+                # Birnen (siehe LAUNCH_AUDIT.md, K-4). Daher AQGR erst über
+                # die Anzahl der Perioden zu einem kumulierten Gesamt-
+                # Gewinnwachstum aufzinsen: (1 + aqgr)^periods - 1.
+                if periods:
+                    cumulative_growth = round(((1 + aqgr / 100) ** periods - 1) * 100, 2)
+                else:
+                    # Sollte praktisch nie eintreten (periods fehlt nur bei
+                    # aelteren/fremden growth_result-Objekten) - konservativer
+                    # Fallback auf die unkumulierte Rate statt eines Fehlers.
+                    cumulative_growth = aqgr
+
+                outperforms_inflation = bool(cumulative_growth > total_inflation)
 
                 # Ergebnis zusammenstellen
                 return {
                     "symbol": symbol,
                     "aqgr": aqgr,
+                    "cumulative_growth": cumulative_growth,
                     "total_inflation": total_inflation,
                     "outperforms_inflation": outperforms_inflation,
-                    "message": (f"Das quartalsweise Gewinnwachstum von {aqgr}% "
+                    "message": (f"Das kumulierte Gewinnwachstum von {cumulative_growth}% "
+                                f"(Ø {aqgr}% pro Quartal) von {actual_start_date} bis {actual_end_date} "
                                 f"{'übersteigt' if outperforms_inflation else 'unterliegt'} "
-                                f"der Inflation von {total_inflation}%.")
+                                f"der kumulativen Inflation von {total_inflation}% im selben Zeitraum.")
                 }
             elif "net_incomes" in growth_result:
                 # Negative Gewinne: Datenauflistung und Warnung weitergeben
@@ -1619,20 +1768,37 @@ class Model:
                 if "error" in inflation_result:
                     return inflation_result
 
-                # AAGR und Inflation vergleichen
                 aagr = growth_result["avg_growth"]
                 total_inflation = inflation_result["total_inflation"]
-                outperforms_inflation = bool(aagr > total_inflation)
+                periods = growth_result.get("periods")
+
+                # AAGR ist eine DURCHSCHNITTLICHE Wachstumsrate PRO JAHR,
+                # total_inflation ist die KUMULATIVE Inflation über den
+                # gesamten Zeitraum - ein direkter Vergleich war Äpfel gegen
+                # Birnen (siehe LAUNCH_AUDIT.md, K-4). Daher AAGR erst über
+                # die Anzahl der Perioden zu einem kumulierten Gesamt-
+                # Gewinnwachstum aufzinsen: (1 + aagr)^periods - 1.
+                if periods:
+                    cumulative_growth = round(((1 + aagr / 100) ** periods - 1) * 100, 2)
+                else:
+                    # Sollte praktisch nie eintreten (periods fehlt nur bei
+                    # aelteren/fremden growth_result-Objekten) - konservativer
+                    # Fallback auf die unkumulierte Rate statt eines Fehlers.
+                    cumulative_growth = aagr
+
+                outperforms_inflation = bool(cumulative_growth > total_inflation)
 
                 # Ergebnis zusammenstellen
                 return {
                     "symbol": symbol,
                     "aagr": aagr,
+                    "cumulative_growth": cumulative_growth,
                     "total_inflation": total_inflation,
                     "outperforms_inflation": outperforms_inflation,
-                    "message": (f"Die jährliche Gewinnwachstumsrate von {aagr}% "
+                    "message": (f"Das kumulierte Gewinnwachstum von {cumulative_growth}% "
+                                f"(Ø {aagr}% pro Jahr) von {actual_start_date} bis {actual_end_date} "
                                 f"{'übersteigt' if outperforms_inflation else 'unterliegt'} "
-                                f"der Inflation von {total_inflation}%.")
+                                f"der kumulativen Inflation von {total_inflation}% im selben Zeitraum.")
                 }
             elif "net_incomes" in growth_result:
                 # Negative Gewinne: Datenauflistung und Warnung weitergeben
@@ -3838,6 +4004,8 @@ class Model:
                 historical_data[historical_data.index.year == y][multiple_column].min() for y in top_3_years_global
             ]
             buy_value_fallback = round(pd.Series(lowest_3_values_global).median(), 2)
+            if not math.isfinite(buy_value_fallback):
+                return {'error': 'Buy-Wert ist NaN/Inf – Datenbasis unzureichend', 'buy_fallback_algo_used': True}
 
             return {
                 'global_min': float(global_min),
@@ -3854,6 +4022,8 @@ class Model:
 
         # Berechne den Median der 3 niedrigsten Werte und runde auf zwei Dezimalstellen
         buy_value = round(pd.Series(lowest_3_values).median(), 2)
+        if not math.isfinite(buy_value):
+            return {'error': 'Buy-Wert ist NaN/Inf – Datenbasis unzureichend'}
 
         return {
             'global_min': global_min,
@@ -3883,8 +4053,8 @@ class Model:
 
         # Hole den Buy-Wert und teile durch 1,2
         buy_value = buy_result['buy_value']
-        if buy_value is None or not isinstance(buy_value, (int, float)) or buy_value <= 0:
-            return {'error': 'Ungültiger Buy-Wert: Muss eine positive Zahl sein'}
+        if buy_value is None or not isinstance(buy_value, (int, float)) or not math.isfinite(buy_value) or buy_value <= 0:
+            return {'error': 'CRV über dieses Multiple nicht berechenbar: Die zugrunde liegende Kennzahl ist negativ (Unternehmen aktuell unprofitabel).'}
 
         worst_case_value = round(buy_value / 1.2, 2)
 
@@ -3953,6 +4123,20 @@ class Model:
 
         return fair_value
 
+    def _lookup_balance_sheet_value(self, balance_sheet, labels: list):
+        """Sucht das erste passende Zeilen-Label aus `labels` in einer SEC-
+        Bilanz im get_balance_sheet-Format (Zeilenindex = Kennzahl, Spalten =
+        Perioden) und gibt den Wert der neuesten Periode zurück, oder None,
+        falls keines der Labels vorhanden ist. SEC-Bilanzlabels variieren je
+        nach Filer (z. B. "Total Liabilities" vs. "Total Liabilities Net
+        Minority Interest") — gleiche Toleranz-Logik wie in
+        calculate_debt_to_equity/calculate_current_netCurrentAssets, hier
+        wiederverwendet statt dupliziert."""
+        for label in labels:
+            if label in balance_sheet.index:
+                return balance_sheet.loc[label].iloc[0]
+        return None
+
     def calculate_course_target_PriceMultiples(self, historical_data: pd.DataFrame, symbol: str):
         # Globale Listen sind bereits definiert und können direkt genutzt werden
 
@@ -4004,20 +4188,18 @@ class Model:
             f"Szenario-Multiples - WC: {wc_multiple}, BUY: {buy_multiple}, FV: {fv_multiple}, SELL: {sell_multiple}")
 
         # Schritt 2b: Berechne die Kennzahl pro Aktie basierend auf dem Multiple
-        shares_outstanding = self.dataloader.get_shares_outstanding(symbol)
+        shares_outstanding = self._resolve_shares_outstanding(symbol)
         if isinstance(shares_outstanding, dict) and "error" in shares_outstanding:
             self.logger.error(f"Fehler beim Abruf der Aktienzahl: {shares_outstanding['error']}")
             return {'error': f"Fehler beim Abruf der Aktienzahl: {shares_outstanding['error']}"}
-        if shares_outstanding <= 0:
-            self.logger.error(f"Ungültige Aktienzahl für {symbol}: {shares_outstanding}")
-            return {'error': f"Ungültige Aktienzahl für {symbol}: {shares_outstanding}"}
 
         metric_per_share = 0.0
         if price_multiple_column == "Price_Sales":
-            revenue = self.dataloader.get_revenue(symbol, frequency="quarterly")["revenue"]
-            if isinstance(revenue, dict) and "error" in revenue:
-                self.logger.error(f"Fehler beim Abruf von revenue: {revenue['error']}")
-                return {'error': f"Fehler beim Abruf von revenue: {revenue['error']}"}
+            revenue_data = self.dataloader.get_revenue(symbol, frequency="quarterly")
+            if isinstance(revenue_data, dict) and "error" in revenue_data:
+                self.logger.error(f"Fehler beim Abruf von revenue: {revenue_data['error']}")
+                return {'error': f"Fehler beim Abruf von revenue: {revenue_data['error']}"}
+            revenue = revenue_data["revenue"]
             metric_per_share = revenue / shares_outstanding if revenue else 0.0
         elif price_multiple_column == "Price_EBIT":
             ebit_data = self.dataloader.get_ebit_data(symbol, frequency="quarterly")
@@ -4030,10 +4212,26 @@ class Model:
             if isinstance(balance_sheet, dict) and "error" in balance_sheet:
                 self.logger.error(f"Fehler beim Abruf der Bilanz: {balance_sheet['error']}")
                 return {'error': f"Fehler beim Abruf der Bilanz: {balance_sheet['error']}"}
-            total_assets = balance_sheet.loc["Total Assets"].iloc[0] if "Total Assets" in balance_sheet.index else 0
-            total_liabilities = balance_sheet.loc["Total Liabilities"].iloc[
-                0] if "Total Liabilities" in balance_sheet.index else 0
-            net_current_assets = total_assets - total_liabilities
+            # Net Current Assets = Total Current Assets - Total Current
+            # Liabilities (konsistent mit der historischen Definition in
+            # calculate_historical_netCurrentAssets) - NICHT Total Assets -
+            # Total Liabilities, das ist das Eigenkapital und passt nicht
+            # zum historischen "Price_NetCurrentAssets"-Multiple.
+            current_assets = self._lookup_balance_sheet_value(
+                balance_sheet,
+                ["Total Current Assets", "Current Assets", "TotalCurrentAssets", "CurrentAssets"],
+            )
+            current_liabilities = self._lookup_balance_sheet_value(
+                balance_sheet,
+                ["Total Current Liabilities", "Current Liabilities", "TotalCurrentLiabilities", "CurrentLiabilities"],
+            )
+            if current_assets is None or current_liabilities is None:
+                self.logger.error(
+                    f"Keine Umlaufvermögen-/Kurzfristige-Verbindlichkeiten-Daten für {symbol} gefunden. "
+                    f"Verfügbare Labels: {list(balance_sheet.index)}"
+                )
+                return {'error': f"Keine Umlaufvermögen-/Kurzfristige-Verbindlichkeiten-Daten für {symbol} gefunden."}
+            net_current_assets = current_assets - current_liabilities
             metric_per_share = net_current_assets / shares_outstanding
         elif price_multiple_column == "Price_OperatingCashflow":
             operating_cashflow = self.dataloader.get_operating_cashflow(symbol, frequency="quarterly")[
@@ -4047,12 +4245,28 @@ class Model:
             if isinstance(balance_sheet, dict) and "error" in balance_sheet:
                 self.logger.error(f"Fehler beim Abruf der Bilanz: {balance_sheet['error']}")
                 return {'error': f"Fehler beim Abruf der Bilanz: {balance_sheet['error']}"}
-            total_assets = balance_sheet.loc["Total Assets"].iloc[0] if "Total Assets" in balance_sheet.index else 0
-            intangible_assets = balance_sheet.loc["Intangible Assets"].iloc[
-                0] if "Intangible Assets" in balance_sheet.index else 0
-            total_liabilities = balance_sheet.loc["Total Liabilities"].iloc[
-                0] if "Total Liabilities" in balance_sheet.index else 0
-            tangible_book_value = total_assets - intangible_assets - total_liabilities
+            # Total Assets/Total Liabilities sind Pflichtfelder - fehlen sie,
+            # ist ein stiller Rückfall auf 0 falsch (ergäbe einen um die volle
+            # Bilanzsumme überhöhten TBV). Intangible Assets/Goodwill sind
+            # bei Firmen ohne entsprechende Posten legitim 0 (kein Fehler).
+            total_assets = self._lookup_balance_sheet_value(balance_sheet, ["Total Assets"])
+            intangible_assets = self._lookup_balance_sheet_value(balance_sheet, ["Intangible Assets"]) or 0.0
+            goodwill = self._lookup_balance_sheet_value(balance_sheet, ["Goodwill"]) or 0.0
+            # Gleiche tolerante Label-Liste wie calculate_debt_to_equity, da
+            # SEC-Filer "Total Liabilities" unterschiedlich benennen - ein
+            # alleiniger Check auf "Total Liabilities" verpasste diese
+            # Varianten und fiel stillschweigend auf 0 zurück.
+            total_liabilities = self._lookup_balance_sheet_value(
+                balance_sheet,
+                ["Total Liabilities Net Minority Interest", "Total Liabilities", "TotalLiabilities"],
+            )
+            if total_assets is None or total_liabilities is None:
+                self.logger.error(
+                    f"Keine Bilanzdaten (Total Assets/Total Liabilities) für {symbol} gefunden. "
+                    f"Verfügbare Labels: {list(balance_sheet.index)}"
+                )
+                return {'error': f"Keine Bilanzdaten (Total Assets/Total Liabilities) für {symbol} gefunden."}
+            tangible_book_value = total_assets - intangible_assets - goodwill - total_liabilities
             metric_per_share = tangible_book_value / shares_outstanding
         elif price_multiple_column == "Price_Book":
             # Berechne Book Value per Share aus den vorhandenen Daten
@@ -4153,9 +4367,8 @@ class Model:
         if isinstance(nd, dict) and "error" in nd: return nd
         net_debt = float(nd["net_debt"])
 
-        shares = self.dataloader.get_shares_outstanding(symbol)
+        shares = self._resolve_shares_outstanding(symbol)
         if isinstance(shares, dict) and "error" in shares: return shares
-        if not shares or shares <= 0: return {"error": f"Ungültige Aktienzahl: {shares}"}
 
         minority_interest = self.dataloader.get_minority_interest(symbol, frequency="quarterly")
         if isinstance(minority_interest, dict) and "error" in minority_interest:
@@ -4542,7 +4755,7 @@ class Model:
             return {"error": bs["error"]}
 
         tbv_total = self.get_tangible_book_value(bs)
-        shares = self.dataloader.get_shares_outstanding(symbol)
+        shares = self._resolve_shares_outstanding(symbol)
         if isinstance(shares, dict) and "error" in shares:
             return {"error": shares["error"]}
 
@@ -4686,7 +4899,7 @@ class Model:
             return {"error": ebit_data["error"]}
 
         ebit_total = ebit_data["ebit"]
-        shares = self.dataloader.get_shares_outstanding(symbol)
+        shares = self._resolve_shares_outstanding(symbol)
         if isinstance(shares, dict) and "error" in shares:
             return {"error": shares["error"]}
 
@@ -4988,11 +5201,9 @@ class Model:
             if not isinstance(ebit, (int, float)):
                 return {"error": f"Ungültiger EBIT-Wert für {symbol}: {ebit}", "symbol": symbol}
             # Prüfen auf ungültigen EBIT
-            shares = self.dataloader.get_shares_outstanding(symbol)  # Entferne use_cache, wenn nicht unterstützt
+            shares = self._resolve_shares_outstanding(symbol)
             if isinstance(shares, dict) and "error" in shares:
                 return {"error": shares["error"], "symbol": symbol}
-            if shares is None or not isinstance(shares, (int, float)) or shares <= 0:
-                return {"error": f"Ungültige Anzahl ausstehender Aktien für {symbol}: {shares}", "symbol": symbol}
             ebit_per_share = ebit / shares
             if ebit_per_share <= 0:
                 data = {

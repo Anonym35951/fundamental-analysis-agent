@@ -5,7 +5,18 @@ import threading
 import uuid
 import time
 import math
-from typing import Any, Dict, Optional
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, Dict, Optional
+
+# Generische Fehlermeldungen für Clients — Exception-Details bleiben im Server-Log.
+GENERIC_JOB_ERROR = (
+    "Analyse fehlgeschlagen — Datenquelle vorübergehend nicht verfügbar oder "
+    "Daten unvollständig. Bitte versuche es später erneut."
+)
+TOO_MANY_ACTIVE_JOBS_DETAIL = (
+    "Zu viele gleichzeitige Analysen. Bitte warte, bis eine laufende Analyse "
+    "abgeschlossen ist."
+)
 
 
 def sanitize_for_json(obj: Any) -> Any:
@@ -23,11 +34,28 @@ def sanitize_for_json(obj: Any) -> Any:
 
 
 class JobManager:
-    def __init__(self):
+    def __init__(self, max_workers: int = 4, max_active_jobs_per_user: int = 3):
         self._lock = threading.Lock()
         self._jobs: Dict[str, Dict[str, Any]] = {}
+        # Gemeinsamer Pool statt unbegrenztem Thread-Spawning pro Request:
+        # begrenzt die Gesamtlast, überzählige Jobs warten in der Queue.
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="analysis"
+        )
+        self.max_active_jobs_per_user = max_active_jobs_per_user
 
-    def create_job(self, symbol: str, total: int) -> str:
+    def count_active_jobs(self, user_id: int) -> int:
+        with self._lock:
+            return sum(
+                1
+                for job in self._jobs.values()
+                if job.get("user_id") == user_id and job["status"] == "running"
+            )
+
+    def submit(self, fn: Callable[[], None]) -> None:
+        self._executor.submit(fn)
+
+    def create_job(self, symbol: str, total: int, user_id: int) -> str:
         job_id = str(uuid.uuid4())
         with self._lock:
             self._jobs[job_id] = {
@@ -36,11 +64,13 @@ class JobManager:
                 "status": "running",
                 "total": total,
                 "done": 0,
-                "current": None,
+                # Bis der Worker-Thread übernimmt, steht der Job in der Queue.
+                "current": "In Warteschlange…",
                 "started_at": time.time(),
                 "finished_at": None,
                 "error": None,
                 "results": {},
+                "user_id": user_id,
             }
         return job_id
 
@@ -70,10 +100,16 @@ class JobManager:
                 self._jobs[job_id]["current"] = None
                 self._jobs[job_id]["finished_at"] = time.time()
 
-    def get_progress(self, job_id: str) -> Optional[dict]:
+    def get_progress(self, job_id: str, user_id: Optional[int] = None) -> Optional[dict]:
         with self._lock:
             job = self._jobs.get(job_id)
-            if not job:
+            # user_id=None is only ever passed by trusted, same-process callers
+            # acting on a job_id they just created themselves (e.g. the
+            # background thread's own completion snapshot) — never by a
+            # user-facing route. Routes always pass the requesting user's id,
+            # and a mismatch is treated identically to "job not found" so a
+            # wrong/foreign job_id can't be used to probe for existence.
+            if not job or (user_id is not None and job.get("user_id") != user_id):
                 return None
             return {
                 "job_id": job["job_id"],
@@ -85,10 +121,10 @@ class JobManager:
                 "error": job["error"],
             }
 
-    def get_result(self, job_id: str) -> Optional[dict]:
+    def get_result(self, job_id: str, user_id: Optional[int] = None) -> Optional[dict]:
         with self._lock:
             job = self._jobs.get(job_id)
-            if not job:
+            if not job or (user_id is not None and job.get("user_id") != user_id):
                 return None
             return {
                 "job_id": job["job_id"],

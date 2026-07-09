@@ -1,0 +1,162 @@
+# api/routes/admin_customers.py
+"""Leichtgewichtiges internes CRM fuers private Admin-Dashboard: Kunden-
+Suche/-Details, Notizen und Aktivitaets-Timeline. Kein Sales-Pipeline/Lead-
+Stage-System - Notizen decken Freitext-Kontext ab, passend zur Projektgroesse.
+"""
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from api.core.dependencies import get_db, require_admin
+from api.crud.customer_note import create_note, get_notes_for_user
+from api.models.product_event import ProductEvent
+from api.models.user import User
+from api.schemas.customer import (
+    CustomerDetail,
+    CustomerListItem,
+    CustomerNoteCreate,
+    CustomerNoteResponse,
+    UpdateCustomerPlanRequest,
+)
+from api.services.user_service import reset_monthly_request_count, update_user_plan
+
+router = APIRouter(prefix="/admin/customers", tags=["admin-customers"])
+
+
+@router.get("", response_model=list[CustomerListItem])
+def list_customers(
+    search: str | None = Query(default=None),
+    plan: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    query = db.query(User)
+
+    if search:
+        pattern = f"%{search}%"
+        query = query.filter(
+            or_(
+                User.email.ilike(pattern),
+                User.username.ilike(pattern),
+                User.first_name.ilike(pattern),
+                User.last_name.ilike(pattern),
+            )
+        )
+
+    if plan:
+        query = query.filter(User.plan == plan)
+
+    return query.order_by(User.created_at.desc()).limit(200).all()
+
+
+@router.get("/{user_id}", response_model=CustomerDetail)
+def get_customer(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    customer = db.query(User).filter(User.id == user_id).first()
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return customer
+
+
+@router.get("/{user_id}/notes", response_model=list[CustomerNoteResponse])
+def list_customer_notes(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    return get_notes_for_user(db, user_id)
+
+
+@router.post("/{user_id}/notes", response_model=CustomerNoteResponse)
+def add_customer_note(
+    user_id: int,
+    data: CustomerNoteCreate,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    customer = db.query(User).filter(User.id == user_id).first()
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return create_note(db, user_id=user_id, admin_author_id=current_admin.id, note_text=data.note)
+
+
+@router.get("/{user_id}/activity")
+def get_customer_activity(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """Read-only Sicht auf die bestehende product_events-Tabelle, gescoped
+    auf einen Nutzer - kein Duplikat-Logging, reine Anzeige."""
+    events = (
+        db.query(ProductEvent)
+        .filter(ProductEvent.user_id == user_id)
+        .order_by(ProductEvent.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    return [
+        {
+            "id": event.id,
+            "event_type": event.event_type,
+            "event_metadata": event.event_metadata,
+            "created_at": event.created_at,
+        }
+        for event in events
+    ]
+
+
+# Plans, die ein Admin ueber das CRM vergeben darf. "admin" bewusst
+# ausgeschlossen (Defense-in-Depth, zusaetzlich zum Frontend-Dropdown ohne
+# diese Option) - Admin-Rechte bleiben exklusiv ueber scripts/set_admin.py.
+ADMIN_ASSIGNABLE_PLANS = {"free", "friends", "pro"}
+
+
+@router.post("/{user_id}/plan", response_model=CustomerDetail)
+def update_customer_plan(
+    user_id: int,
+    data: UpdateCustomerPlanRequest,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    if data.new_plan not in ADMIN_ASSIGNABLE_PLANS:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+
+    customer = db.query(User).filter(User.id == user_id).first()
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    old_plan = customer.plan
+    updated_user = update_user_plan(db=db, user_id=user_id, new_plan=data.new_plan)
+
+    create_note(
+        db,
+        user_id=user_id,
+        admin_author_id=current_admin.id,
+        note_text=f"Plan geändert von '{old_plan}' zu '{data.new_plan}' durch Admin ({current_admin.email}).",
+    )
+    return updated_user
+
+
+@router.post("/{user_id}/reset-usage", response_model=CustomerDetail)
+def reset_customer_usage(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    customer = db.query(User).filter(User.id == user_id).first()
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    updated_user = reset_monthly_request_count(db, user_id)
+
+    create_note(
+        db,
+        user_id=user_id,
+        admin_author_id=current_admin.id,
+        note_text=f"Verbrauchszähler manuell zurückgesetzt durch Admin ({current_admin.email}).",
+    )
+    return updated_user

@@ -6,6 +6,7 @@ from scipy.stats import false_discovery_control
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 from agent.DataLoader import DataLoader
 from agent.Model import Model
+from agent.industry_multiples import resolve_multiples
 import logging
 
 class AgentAction:
@@ -93,8 +94,17 @@ class AgentAction:
                     error_msg.append(f"Quarterly growth error: {quarterly_growth['error']}")
                 return {"symbol": symbol, "error": "; ".join(error_msg)}
 
+            annual_cumulative_growth = None
+            quarterly_cumulative_growth = None
+
             if "aagr" in annual_growth:
                 annual_aagr = annual_growth["aagr"]
+                # cumulative_growth (aufgezinstes Gesamtwachstum über den
+                # Zeitraum) ist die Groesse, die tatsaechlich gegen
+                # total_inflation (ebenfalls kumulativ) verglichen wird -
+                # siehe compare_avg_annual_growth_to_inflation/LAUNCH_AUDIT.md
+                # K-4. annual_aagr bleibt nur die Ø-Rate pro Jahr zur Anzeige.
+                annual_cumulative_growth = annual_growth.get("cumulative_growth")
                 inflation = annual_growth["total_inflation"]
                 actual_start_date = annual_growth.get("actual_start_date")
                 actual_end_date = annual_growth.get("actual_end_date")
@@ -105,6 +115,7 @@ class AgentAction:
 
             if "aqgr" in quarterly_growth:
                 quarterly_aqgr = quarterly_growth["aqgr"]
+                quarterly_cumulative_growth = quarterly_growth.get("cumulative_growth")
                 if inflation is None:
                     inflation = quarterly_growth["total_inflation"]
                 if actual_start_date is None:
@@ -118,14 +129,25 @@ class AgentAction:
 
             result["earnings_growth_vs_inflation"] = {
                 "annual_aagr": annual_aagr,
+                "annual_cumulative_growth": annual_cumulative_growth,
                 "quarterly_aqgr": quarterly_aqgr,
+                "quarterly_cumulative_growth": quarterly_cumulative_growth,
                 "inflation": inflation,
                 "actual_start_date": actual_start_date,
                 "actual_end_date": actual_end_date,
                 "meets_criterion": earnings_growth_met,
                 "message": (
-                    f"Annual growth of {annual_aagr or 'N/A'}% and/or quarterly growth of {quarterly_aqgr or 'N/A'}% "
-                    f"{'exceeds' if earnings_growth_met else 'does not exceed'} inflation of {inflation or 'N/A'}%.")
+                    # Muss die kumulierten Werte referenzieren (nicht die
+                    # Ø-Raten annual_aagr/quarterly_aqgr) - sonst widerspricht
+                    # der Text dem tatsaechlich zugrunde liegenden Vergleich
+                    # (meets_criterion basiert auf cumulative_growth vs.
+                    # inflation, nicht auf den Ø-Raten).
+                    f"Cumulative annual growth of {annual_cumulative_growth if annual_cumulative_growth is not None else 'N/A'}% "
+                    f"(avg. {annual_aagr or 'N/A'}%/year) and/or cumulative quarterly growth of "
+                    f"{quarterly_cumulative_growth if quarterly_cumulative_growth is not None else 'N/A'}% "
+                    f"(avg. {quarterly_aqgr or 'N/A'}%/quarter) "
+                    f"{'exceeds' if earnings_growth_met else 'does not exceed'} cumulative inflation of {inflation or 'N/A'}% "
+                    f"over the same period.")
             }
             if not earnings_growth_met:
                 all_criteria_met = False
@@ -134,32 +156,45 @@ class AgentAction:
                     f"does not exceed inflation of {inflation or 'N/A'}%."
                 )
 
-            # 3. Payout Ratio (≤ 75%, up to 100% if not debt-financed)
-            payout_ratio_data = self.model.analyze_payout_ratio(symbol)
+            # 3. Payout Ratio (≤ threshold, up to 100% if not debt-financed)
+            payout_threshold = 75.0
+
+            payout_ratio_data = self.model.analyze_payout_ratio(symbol, threshold=payout_threshold)
             if "error" in payout_ratio_data:
                 return {"symbol": symbol, "error": payout_ratio_data["error"]}
-            payout_ratio = float(payout_ratio_data["payout_ratio"])  # Bereits float, sicher
-            payout_ratio_met = payout_ratio <= 75  # Erzeugt Python bool
-            if 75 < payout_ratio <= 100:
+
+            payout_ratio = float(payout_ratio_data["payout_ratio"])
+            payout_ratio_met = payout_ratio <= payout_threshold
+
+            if payout_threshold < payout_ratio <= 100:
                 net_debt_ebitda_data = self.model.calculate_net_debt_to_ebitda(symbol)
                 if isinstance(net_debt_ebitda_data, dict) and "error" in net_debt_ebitda_data:
                     return {"symbol": symbol, "error": net_debt_ebitda_data["error"]}
-                net_debt_ebitda = float(net_debt_ebitda_data)  # Konvertiere zu Python float
-                payout_ratio_met = bool(net_debt_ebitda <= 2 and net_debt_ebitda != float('inf'))  # Explizite bool-Konvertierung
+
+                net_debt_ebitda = float(net_debt_ebitda_data)
+                payout_ratio_met = bool(net_debt_ebitda <= 2 and net_debt_ebitda != float("inf"))
+
             result["payout_ratio"] = {
                 "value": round(payout_ratio, 2),
+                "threshold": payout_threshold,
                 "meets_criterion": payout_ratio_met,
-                "message": payout_ratio_data.get("message") or payout_ratio_data.get("warning", "")
+                "message": payout_ratio_data.get("message", "")
             }
+
             if not payout_ratio_met:
                 all_criteria_met = False
                 if payout_ratio > 100:
-                    messages.append(f"Payout ratio {payout_ratio}% exceeds 100%, indicating unsustainable dividends.")
-                elif 75 < payout_ratio <= 100:
                     messages.append(
-                        f"Payout ratio {payout_ratio}% exceeds 75% but is ≤ 100% and probably debt-financed (Net Debt/EBITDA > 2).")
+                        f"Payout ratio {payout_ratio}% exceeds 100%, indicating unsustainable dividends."
+                    )
+                elif payout_threshold < payout_ratio <= 100:
+                    messages.append(
+                        f"Payout ratio {payout_ratio}% exceeds {payout_threshold}% but is ≤ 100% and probably debt-financed (Net Debt/EBITDA > 2)."
+                    )
                 elif payout_ratio < 0:
-                    messages.append(f"Payout ratio {payout_ratio}% is negative, indicating potential data issues.")
+                    messages.append(
+                        f"Payout ratio {payout_ratio}% is negative, indicating potential data issues."
+                    )
 
             # 4. Interest Coverage Ratio (≥ 3)
             interest_coverage = self.model.calculate_interest_coverage_ratio(symbol)
@@ -1557,15 +1592,19 @@ class AgentAction:
 
     def calculate_crv_by_sector_multiples(self, symbol: str) -> dict:
         """
-        Ermittelt sektorabhängige relevante Multiples für ein Unternehmen,
-        berechnet für jedes Multiple das CRV auf Basis historischer Daten
-        und gibt die Ergebnisse strukturiert zurück.
+        Ermittelt die fuer die Branche eines Unternehmens relevanten
+        Multiples (agent/industry_multiples.py, Zuordnung basiert auf
+        yfinances Sektor/Industrie-Taxonomie statt einer kuratierten
+        Symbol-Liste - siehe get_company_profile in DataLoader), berechnet
+        fuer jedes Multiple das CRV auf Basis historischer Daten und gibt
+        die Ergebnisse strukturiert zurueck.
 
         Returns:
             {
                 "symbol": "AAPL",
                 "sectors": [...],
                 "multiples_used": [...],
+                "multiples_source": "industry" | "sector" | "fallback",
                 "crv_results": {
                     "Price_FreeCashflow": {...},
                     "EV_EBITDA": {...}
@@ -1574,91 +1613,37 @@ class AgentAction:
             oder {"error": "...", "symbol": symbol}
         """
 
-        # ---------- 1) Branchen ermitteln ----------
-        sectors = self.COMPANY_SECTORS.get(symbol)
-        if not sectors:
+        # ---------- 1) Unternehmensprofil (Sektor/Industrie) ermitteln ----------
+        profile = self.dataloader.get_company_profile(symbol)
+        if "error" in profile:
             return {
                 "error": f"Keine Branchen-Zuordnung für {symbol} vorhanden.",
                 "symbol": symbol
             }
 
-        # ---------- 2) Relevante Multiples sammeln ----------
-        multiples = set()
-        for sector in sectors:
-            sector_multiples = self.BRANCH_MULTIPLES_MAP.get(sector)
-            if sector_multiples:
-                multiples.update(sector_multiples)
+        sector = profile.get("sector")
+        industry = profile.get("industry")
+        sectors = [s for s in (industry, sector) if s]
 
-        if not multiples:
-            return {
-                "error": f"Keine relevanten Multiples für die Branchen von {symbol} definiert.",
-                "symbol": symbol,
-                "sectors": sectors
-            }
+        # ---------- 2) Relevante Multiples auflösen ----------
+        multiples_list, multiples_source = resolve_multiples(sector, industry)
+        multiples = set(multiples_list)
 
         # ---------- 3) CRV je Multiple berechnen ----------
         crv_results = {}
 
         for multiple in sorted(multiples):
             try:
-                historical_df = None
-                use_cache = True
-
-                if multiple == "EV_Sales":
-                    historical_df = self.model.calculate_historical_ev_sales(
-                        symbol=symbol, start_date=None, end_date=None, use_cache=use_cache
-                    )
-
-                elif multiple == "EV_EBIT":
-                    historical_df = self.model.calculate_historical_ev_to_ebit(
-                        symbol=symbol, start_date=None, end_date=None, use_cache=use_cache
-                    )
-
-                elif multiple == "EV_EBITDA":
-                    historical_df = self.model.calculate_historical_ev_to_ebitda(
-                        symbol=symbol, start_date=None, end_date=None, use_cache=use_cache
-                    )
-
-                elif multiple == "Price_Book":
-                    historical_df = self.model.calculate_historical_price_to_book(
-                        symbol=symbol, start_date=None, end_date=None, use_cache=use_cache
-                    )
-
-                elif multiple == "Price_Sales":
-                    historical_df = self.model.calculate_historical_price_to_sales(
-                        symbol=symbol, start_date=None, end_date=None, use_cache=use_cache
-                    )
-
-                elif multiple == "Price_EBIT":
-                    historical_df = self.model.calculate_historical_price_to_ebit(
-                        symbol=symbol, start_date=None, end_date=None, use_cache=use_cache
-                    )
-
-                elif multiple == "Price_NetCurrentAssets":
-                    historical_df = self.model.calculate_historical_price_netCurrentAssets(
-                        symbol=symbol, start_date=None, end_date=None, use_cache=use_cache
-                    )
-
-                elif multiple == "Price_OperatingCashflow":
-                    historical_df = self.model.calculate_historical_price_OperatingCashflow(
-                        symbol=symbol, start_date=None, end_date=None, use_cache=use_cache
-                    )
-
-                elif multiple == "Price_FreeCashflow":
-                    historical_df = self.model.calculate_historical_Price_FreeCashflow(
-                        symbol=symbol, start_date=None, end_date=None, use_cache=use_cache
-                    )
-
-                elif multiple == "Price_TangibleBookValue":
-                    historical_df = self.model.calculate_historical_price_to_TangibleBookValue(
-                        symbol=symbol, start_date=None, end_date=None, use_cache=use_cache
-                    )
-
-                else:
+                method_name = self.MULTIPLE_METHOD_MAP.get(multiple)
+                if method_name is None:
                     crv_results[multiple] = {
                         "error": f"Multiple {multiple} ist nicht implementiert."
                     }
                     continue
+
+                historical_df = getattr(self.model, method_name)(
+                    symbol=symbol, start_date=None, end_date=None, use_cache=True
+                )
 
                 # ---------- Validierung der historischen Daten ----------
                 if historical_df is None or getattr(historical_df, "empty", True):
@@ -1695,139 +1680,9 @@ class AgentAction:
             "symbol": symbol,
             "sectors": sectors,
             "multiples_used": sorted(multiples),
+            "multiples_source": multiples_source,
             "crv_results": crv_results
         }
-
-    COMPANY_SECTORS = {
-        "ILMN": ["Biotech", "Genomics"],
-        "GOOGL": ["Internet Services", "Advertising", "Technology"],
-        "TSLA": ["EV", "Energy", "Robotics", "AI"],
-        "AMD": ["Semiconductors"],
-        "PYPL": ["FinTech", "Digital Payments"],
-        "NVDA": ["Semiconductors", "Tech"],
-        "NKE": ["Sporting Goods"],
-        "UNH": ["Healthcare"],
-        "XPEV": ["EV", "AI", "Robotics"],
-        "OCGN": ["Biotech", "Healthcare", "Pharma"],
-        "UAA": ["Sporting Goods"],
-        "BABA": ["E-Commerce", "Cloud Computing", "Digital Media", "FinTech", "Logistics"],
-        "LUMN": ["Telecommunications"],
-        "TTWO": ["Gaming", "Game Publisher"],
-        "BIDU": ["Search Engine", "Cloud", "E-Commerce"],
-        "JD": ["AI", "Robotics", "E-Commerce"],
-        "CRSP": ["Pharma", "Biotech"],
-        "NVO": ["Pharma"],
-        "NFLX": ["Media", "Film", "Streaming"],
-        "AAPL": ["Tech", "Digital Media"],
-        "MO": ["Tabak"],
-        "BYD": ["EV"],
-        "SAP": ["Cloud Computing"]
-    }
-
-    # ActionModule – Branchen → relevante historische Multiples für CRV
-    BRANCH_MULTIPLES_MAP = {
-        "BioTech": [
-            "Price_TangibleBookValue",
-            "Price_NetCurrentAssets",
-        ],
-        "Pharma": [
-            "Price_TangibleBookValue",
-            "Price_NetCurrentAssets",
-        ],
-        "Genomik": [
-            "Price_TangibleBookValue",
-            "Price_NetCurrentAssets",
-        ],
-
-        "Healthcare": [
-            "EV_EBIT",
-            "Price_OperatingCashflow",
-        ],
-
-        "Tech": [
-            "Price_FreeCashflow",
-            "EV_EBITDA",
-        ],
-
-        "AI": [
-            "EV_Sales",
-            "Price_Sales",
-        ],
-        "Robots": [
-            "EV_Sales",
-            "Price_Sales",
-        ],
-
-        "Chips": [
-            "EV_EBITDA",
-            "EV_EBIT",
-        ],
-        "Halbleiter": [
-            "EV_EBITDA",
-            "EV_EBIT",
-        ],
-
-        "EV": [
-            "EV_Sales",
-            "EV_EBITDA",
-        ],
-        "Energy": [
-            "EV_Sales",
-            "EV_EBITDA",
-        ],
-
-        "FinTech": [
-            "Price_FreeCashflow",
-            "EV_EBITDA",
-        ],
-        "Digital Payment": [
-            "Price_FreeCashflow",
-            "EV_EBITDA",
-        ],
-
-        "E-Commerce": [
-            "EV_Sales",
-            "Price_FreeCashflow",
-        ],
-        "Digital Media": [
-            "EV_Sales",
-            "Price_FreeCashflow",
-        ],
-
-        "Logistik": [
-            "EV_EBITDA",
-            "Price_TangibleBookValue",
-        ],
-
-        "Telekommunikation": [
-            "EV_EBITDA",
-            "Price_FreeCashflow",
-        ],
-
-        "Sportartikelhersteller": [
-            "Price_EBIT",
-            "Price_FreeCashflow",
-        ],
-
-        "Game Publisher": [
-            "Price_FreeCashflow",
-            "EV_EBIT",
-        ],
-
-        "Film": [
-            "EV_EBITDA",
-            "Price_FreeCashflow",
-        ],
-        "Streaming": [
-            "EV_EBITDA",
-            "Price_FreeCashflow",
-        ],
-        "Tabak": [
-            "Price_FreeCashflow",
-            "EV_EBITDA",
-            "Price_OperatingCashflow",
-        ],
-    }
 
     # ActionModule – Multiple → Model-Methode
     MULTIPLE_METHOD_MAP = {

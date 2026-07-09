@@ -7,22 +7,124 @@ import yfinance as yf
 import requests
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from dateutil.relativedelta import relativedelta
-from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type, RetryError
+from dotenv import load_dotenv
+from agent.data_sources.sec_source import SecSource
+
+load_dotenv()
+
+
+def describe_exception(e: Exception) -> str:
+    """Unwraps tenacity's RetryError to the actual exception that caused the
+    final retry attempt to fail, so user-facing error messages show the real
+    cause (e.g. a timeout or rate limit) instead of the unreadable
+    "RetryError[<Future at ... raised ...>]" wrapper text."""
+    if isinstance(e, RetryError):
+        try:
+            underlying = e.last_attempt.exception()
+            if underlying is not None:
+                return str(underlying)
+        except Exception:
+            pass
+    return str(e)
+
+
+CACHE_MAX_AGE = timedelta(days=620)  # etwas über der 600-Tage-Historical-TTL
+CACHE_MAX_SIZE_BYTES = 500 * 1024 * 1024  # 500 MB Obergrenze fürs Cache-Verzeichnis
+CACHE_PRUNE_INTERVAL = timedelta(hours=1)  # Pruning nicht bei jeder Instanziierung neu durchlaufen
+
+# TTL-Staffelung für _load_cached_data/_cache_data (Dateicache je Symbol):
+# - "historical_*"-Keys: mehrjährige Zeitreihen, ändern sich nur am aktuellen
+#   Rand -> lange TTL (unverändert, s. HISTORICAL_CACHE_TTL).
+# - PRICE_SENSITIVE_CACHE_KEYWORDS: Werte, die den aktuellen Börsenkurs
+#   einpreisen (Marktkapitalisierung, Enterprise Value, EV-/Preis-Multiples,
+#   PEG-Ratio, Bandbreiten-Bewertung) - ändern sich während der Handelszeit
+#   laufend, bleiben daher kurzlebig.
+# - alles andere: SEC-/FRED-Fundamentaldaten (Bilanz, GuV, Cashflow,
+#   Dividenden, Aktienzahl, Inflation, ROIC, ...) ändern sich real nur mit
+#   einem neuen Quartals-/Jahres-Filing bzw. einer monatlichen CPI-
+#   Veröffentlichung. Vorher lief hier fälschlich dieselbe 10-Sekunden-TTL
+#   wie für Live-Preis-Werte, was bei praktisch jeder Kennzahl-Abfrage einen
+#   erneuten SEC-/Alpha-Vantage-Request auslöste (siehe LAUNCH_AUDIT.md, H-3).
+#   6 Stunden analog zur bestehenden SEC-Filing-Prüfung
+#   (SecSource.get_latest_filing / filing_alert_worker in api/main.py).
+HISTORICAL_CACHE_TTL = timedelta(days=600)
+FUNDAMENTAL_CACHE_TTL = timedelta(hours=6)
+LIVE_CACHE_TTL = timedelta(seconds=10)
+PRICE_SENSITIVE_CACHE_KEYWORDS = (
+    "market_cap",
+    "enterprise_value",
+    "ev_to_sales",
+    "ev_to_ebit",
+    "ev_to_ebitda",
+    "price_to_ebit",
+    "price_to_freecashflow",
+    "peg_ratio",
+    "tbv_bandwidth_eval",
+    "ebit_bandwidth_eval",
+)
+
 
 class DataLoader:
     def __init__(self, user_agent="gecen.efe1308@gmail.com"):
         self.user_agent = user_agent
         self.ticker_cache = {}
         self.price_cache = {}
-        self.cache_dir = "cache"
+        # CACHE_DIR per Env konfigurierbar, damit ein Render Persistent Disk
+        # (oder ein beliebiger anderer Mount) eingebunden werden kann, ohne den
+        # Code anzufassen. agent/ ist bewusst von api/core/config entkoppelt.
+        self.cache_dir = os.environ.get("CACHE_DIR", "cache")
         os.makedirs(self.cache_dir, exist_ok=True)
-        self.api_key = "UJN306OQ5D0F9M3I"  # Ersetze mit deinem Alpha Vantage API-Schlüssel --> muss neu Subscription anmelden für neuen Key
+        self.api_key = os.environ["ALPHA_VANTAGE_API_KEY"]
         self.base_url = "https://www.alphavantage.co/query?"
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
+        self.sec_source = SecSource(user_agent=self.user_agent)
+        self._prune_cache()
+
+    def _prune_cache(self):
+        """Hält das Cache-Verzeichnis begrenzt: löscht abgelaufene Dateien und,
+        falls die Gesamtgröße das Limit überschreitet, zusätzlich die ältesten
+        Dateien. Läuft höchstens einmal pro CACHE_PRUNE_INTERVAL (Sentinel-Datei),
+        damit es bei häufiger DataLoader-Instanziierung nicht bei jedem Analyse-Job
+        erneut das ganze Verzeichnis durchläuft."""
+        sentinel = os.path.join(self.cache_dir, ".last_prune")
+        now = datetime.now()
+        if os.path.exists(sentinel):
+            last_prune = datetime.fromtimestamp(os.path.getmtime(sentinel))
+            if now - last_prune < CACHE_PRUNE_INTERVAL:
+                return
+
+        try:
+            entries = []
+            for name in os.listdir(self.cache_dir):
+                if name.startswith("."):
+                    continue
+                path = os.path.join(self.cache_dir, name)
+                if not os.path.isfile(path):
+                    continue
+                mtime = os.path.getmtime(path)
+                if now - datetime.fromtimestamp(mtime) > CACHE_MAX_AGE:
+                    os.remove(path)
+                    continue
+                entries.append((mtime, os.path.getsize(path), path))
+
+            total_size = sum(size for _, size, _ in entries)
+            if total_size > CACHE_MAX_SIZE_BYTES:
+                entries.sort(key=lambda e: e[0])  # älteste zuerst
+                for mtime, size, path in entries:
+                    if total_size <= CACHE_MAX_SIZE_BYTES:
+                        break
+                    os.remove(path)
+                    total_size -= size
+
+            with open(sentinel, "w") as f:
+                f.write(now.isoformat())
+        except OSError as e:
+            self.logger.warning(f"Cache-Pruning fehlgeschlagen: {e}")
 
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
@@ -48,36 +150,109 @@ class DataLoader:
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_stock_financials(self, symbol, frequency="annual", use_cache=True):
-        """Ruft Finanzdaten eines Unternehmens von Yahoo Finance ab.
-        frequency: 'annual' für jährliche Daten, 'quarterly' für quartalsweise Daten.
         """
+        Ruft GuV-/Income-Statement-Daten über SEC ab.
+        Yahoo-kompatible Rückgabe: pandas DataFrame mit Kennzahlen als Index und Perioden als Spalten.
+        """
+        if frequency not in ["annual", "quarterly"]:
+            return {
+                "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
+                "symbol": symbol
+            }
+
+        cache_key = f"stock_financials_{frequency}"
+
         if use_cache:
-            cached_data = self._load_cached_data(symbol, f"stock_financials_{frequency}")
+            cached_data = self._load_cached_data(symbol, cache_key)
             if cached_data is not None:
                 if isinstance(cached_data, dict) and "error" in cached_data:
                     return cached_data
                 if not isinstance(cached_data, pd.DataFrame):
-                    return {"error": f"Cached-Daten für {symbol} ({frequency}) sind kein DataFrame: {str(cached_data)}",
-                            "symbol": symbol}
+                    return {
+                        "error": f"Cached-Daten für {symbol} ({frequency}) sind kein DataFrame: {str(cached_data)}",
+                        "symbol": symbol
+                    }
                 return cached_data
 
         try:
-            stock = yf.Ticker(symbol)
-            if frequency == "quarterly":
-                financials = stock.quarterly_financials
-            else:
-                financials = stock.financials
+            financials = self.sec_source.get_stock_financials(
+                symbol=symbol,
+                frequency=frequency,
+                use_cache=use_cache
+            )
+
+            if isinstance(financials, dict) and "error" in financials:
+                return financials
 
             if not isinstance(financials, pd.DataFrame):
-                raise ValueError(f"Finanzdaten für {symbol} ({frequency}) sind kein DataFrame: {str(financials)}")
+                return {
+                    "error": f"SEC-Finanzdaten für {symbol} ({frequency}) sind kein DataFrame: {str(financials)}",
+                    "symbol": symbol
+                }
+
             if financials.empty:
-                raise ValueError(f"Keine Finanzdaten ({frequency}) für {symbol} gefunden.")
+                return {
+                    "error": f"Keine SEC-Finanzdaten ({frequency}) für {symbol} gefunden.",
+                    "symbol": symbol
+                }
+
             if use_cache:
-                self._cache_data(financials, symbol, f"stock_financials_{frequency}")
+                self._cache_data(financials, symbol, cache_key)
+
             return financials
+
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen der Finanzdaten für {symbol} ({frequency}): {str(e)}",
-                    "symbol": symbol}
+            return {
+                "error": f"Fehler beim Abrufen der SEC-Finanzdaten für {symbol} ({frequency}): {describe_exception(e)}",
+                "symbol": symbol
+            }
+
+    def get_data_source_summary(self, symbol: str, frequency: str = "annual") -> dict:
+        """Liefert die Herkunft und Aktualität der Fundamentaldaten eines Symbols
+        fürs Transparenz-Versprechen (Quellen-Badge im Frontend).
+
+        Income Statement und Bilanz kommen in dieser Engine praktisch immer aus
+        SEC-Filings (get_stock_financials/get_balance_sheet haben keinen
+        Yahoo-Fallback) — daher hier bewusst ein pro Symbol/Frequenz einmalig
+        bestimmter Herkunftsstatus statt eine Quellenmarkierung pro einzelner
+        Kennzahl, was hunderte Berechnungsfunktionen unberührt lässt und trotzdem
+        eine ehrliche, akkurate Aussage liefert: "diese Fundamentaldaten stammen
+        aus SEC-Filing X, Stand Y".
+
+        Returns:
+            {
+                "symbol": "AAPL",
+                "frequency": "annual",
+                "source": "SEC",
+                "as_of": "2025-09-30",   # jüngste Berichtsperiode in den Rohdaten
+                "fetched_at": "2026-07-02T21:00:00+00:00",
+            }
+            oder bei Fehler: {"error": "...", "symbol": symbol}
+        """
+        fetched_at = datetime.now(timezone.utc).isoformat()
+
+        financials = self.get_stock_financials(symbol, frequency=frequency, use_cache=True)
+        if isinstance(financials, dict) and "error" in financials:
+            return {
+                "error": f"Keine Fundamentaldaten für {symbol} ({frequency}) verfügbar.",
+                "symbol": symbol,
+            }
+
+        as_of = None
+        try:
+            period_dates = pd.to_datetime(financials.columns, errors="coerce").dropna()
+            if len(period_dates) > 0:
+                as_of = period_dates.max().strftime("%Y-%m-%d")
+        except Exception:
+            as_of = None
+
+        return {
+            "symbol": symbol.upper(),
+            "frequency": frequency,
+            "source": "SEC",
+            "as_of": as_of,
+            "fetched_at": fetched_at,
+        }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_invested_capital(self, symbol: str, frequency: str = "annual", use_cache: bool = True) -> dict:
@@ -390,114 +565,440 @@ class DataLoader:
 
         return result
 
-
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
+    @retry(stop=stop_after_attempt(3),wait=wait_fixed(2),retry=retry_if_exception_type(Exception))
     def get_peg_ratio(self, symbol, use_cache=True):
         """
-        Ruft die PEG-Ratio eines Unternehmens von Yahoo Finance ab oder berechnet sie manuell,
-        falls keine direkten Daten verfügbar sind.
+        Berechnet die PEG Ratio vollständig aus SEC-Daten.
 
-        Args:
-            symbol (str): Aktiensymbol (z. B. 'AAPL').
-            use_cache (bool): Verwendung des Caches (Standard: True).
+        Formel:
+
+            PEG = PE Ratio / Gewinnwachstum (%)
+
+            PE = Aktienkurs / EPS
+
+            Gewinnwachstum =
+                (Aktuelles Net Income - Vorjahres Net Income)
+                / |Vorjahres Net Income|
+                * 100
 
         Returns:
-            dict: Enthält die PEG-Ratio, die Methode der Berechnung und ggf. zusätzliche Daten.
-                  Beispiel:
-                  {
-                      "peg_ratio": 2.34,
-                      "symbol": "AAPL",
-                      "method": "direct"
-                  }
-                  oder bei Berechnung:
-                  {
-                      "peg_ratio": 4.0,
-                      "symbol": "AAPL",
-                      "method": "calculated_from_earnings_growth",
-                      "trailing_pe": 31.24,
-                      "earnings_growth": 7.8
-                  }
-                  oder bei Fehler:
-                  {
-                      "error": "Fehlerbeschreibung",
-                      "symbol": "AAPL"
-                  }
+            {
+                "peg_ratio": 1.52,
+                "symbol": "AAPL",
+                "method": "sec_calculated",
+                "trailing_pe": 29.4,
+                "earnings_growth": 19.3,
+                "eps": 6.12
+            }
+
+        oder
+
+            {
+                "error": "...",
+                "symbol": "AAPL"
+            }
         """
+
+        cache_key = "peg_ratio"
         if use_cache:
-            cached_data = self._load_cached_data(symbol, "peg_ratio")
-            if cached_data is not None and "error" not in cached_data:
+            cached_data = self._load_cached_data(symbol, cache_key)
+            if (
+                    cached_data is not None
+                    and "error" not in cached_data
+            ):
                 return cached_data
 
         try:
-            stock = yf.Ticker(symbol)
+            current_price = self.get_current_price_per_share(symbol)
 
-            # Schritt 1: Direkte PEG-Ratio abrufen
-            peg_ratio = stock.info.get("pegRatio")
-            if peg_ratio is not None and not pd.isna(peg_ratio):
-                try:
-                    peg_val = float(peg_ratio)
-                except Exception:
-                    peg_val = None
-
-                if peg_val is not None and peg_val > 0:
-                    data = {
-                        "peg_ratio": round(peg_val, 2),
-                        "symbol": symbol,
-                        "method": "direct"
-                    }
-                    if use_cache:
-                        self._cache_data(data, symbol, "peg_ratio")
-                    return data
-
-            # Schritt 2: Fallback auf Berechnung
-            trailing_pe = stock.info.get("trailingPE")
-            earnings_growth = stock.info.get("earningsGrowth")
+            if isinstance(current_price, dict):
+                return {
+                    "error": current_price.get(
+                        "error",
+                        f"Fehler beim Abrufen des Aktienkurses für {symbol}"
+                    ),
+                    "symbol": symbol
+                }
 
             if (
-                    trailing_pe is not None
-                    and not pd.isna(trailing_pe)
-                    and earnings_growth is not None
-                    and not pd.isna(earnings_growth)
-                    and earnings_growth > 0
+                    current_price is None
+                    or pd.isna(current_price)
+                    or float(current_price) <= 0
             ):
-                # Skaliere earningsGrowth von Dezimal (z. B. 0.078) zu Prozent (7.8)
-                earnings_growth_percent = earnings_growth * 100
-                calculated_peg = trailing_pe / earnings_growth_percent
-                data = {
-                    "peg_ratio": round(float(calculated_peg), 2),
-                    "symbol": symbol,
-                    "method": "calculated_from_earnings_growth",
-                    "trailing_pe": round(float(trailing_pe), 2),
-                    "earnings_growth": round(float(earnings_growth_percent), 2)
+                return {
+                    "error": f"Ungültiger Aktienkurs für {symbol}: {current_price}",
+                    "symbol": symbol
                 }
-                if use_cache:
-                    self._cache_data(data, symbol, "peg_ratio")
-                return data
+            shares_result = self.get_shares_outstanding(symbol)
 
-            # Schritt 3: Keine ausreichenden Daten gefunden
-            error = {
-                "error": f"Keine PEG-Ratio-Daten für {symbol} verfügbar",
-                "symbol": symbol
+            if isinstance(shares_result, dict):
+
+                if "error" in shares_result:
+                    return shares_result
+
+                shares_outstanding = shares_result.get(
+                    "shares_outstanding"
+                )
+
+            else:
+                shares_outstanding = shares_result
+
+            if (
+                    shares_outstanding is None
+                    or pd.isna(shares_outstanding)
+                    or float(shares_outstanding) <= 0
+            ):
+                return {
+                    "error": f"Ungültige Shares Outstanding für {symbol}: {shares_outstanding}",
+                    "symbol": symbol
+                }
+
+            financials = self.get_stock_financials(
+                symbol=symbol,
+                frequency="annual",
+                use_cache=use_cache
+            )
+
+            if isinstance(financials, dict) and "error" in financials:
+                return financials
+
+            if (
+                    not isinstance(financials, pd.DataFrame)
+                    or financials.empty
+            ):
+                return {
+                    "error": f"Keine Finanzdaten für {symbol} gefunden.",
+                    "symbol": symbol
+                }
+
+            net_income_label = None
+
+            for label in [
+                "Net Income Common Stockholders",
+                "Net Income",
+                "Net Income Applicable To Common Shares"
+            ]:
+
+                if label in financials.index:
+                    net_income_label = label
+                    break
+
+            if net_income_label is None:
+                return {
+                    "error": (
+                        f"Keine Net-Income-Daten für {symbol} gefunden. "
+                        f"Verfügbare Labels: {list(financials.index)}"
+                    ),
+                    "symbol": symbol
+                }
+
+            net_income_series = financials.loc[
+                net_income_label
+            ].dropna()
+
+            if len(net_income_series) < 2:
+                return {
+                    "error": (
+                        f"Nicht genügend Net-Income-Daten "
+                        f"für PEG-Berechnung bei {symbol}."
+                    ),
+                    "symbol": symbol
+                }
+
+            latest_net_income = float(
+                net_income_series.iloc[0]
+            )
+
+            previous_net_income = float(
+                net_income_series.iloc[1]
+            )
+
+            eps = (
+                    latest_net_income
+                    / float(shares_outstanding)
+            )
+
+            if (
+                    pd.isna(eps)
+                    or eps <= 0
+            ):
+                return {
+                    "error": f"Ungültiges EPS für {symbol}: {eps}",
+                    "symbol": symbol
+                }
+
+            trailing_pe = (
+                    float(current_price)
+                    / float(eps)
+            )
+
+            if (
+                    pd.isna(trailing_pe)
+                    or trailing_pe <= 0
+            ):
+                return {
+                    "error": f"Ungültige PE Ratio für {symbol}: {trailing_pe}",
+                    "symbol": symbol
+                }
+
+            if previous_net_income == 0:
+                return {
+                    "error": (
+                        f"Vorjahresgewinn für {symbol} ist 0. "
+                        f"PEG kann nicht berechnet werden."
+                    ),
+                    "symbol": symbol
+                }
+
+            earnings_growth = (
+                                      (
+                                              latest_net_income
+                                              - previous_net_income
+                                      )
+                                      / abs(previous_net_income)
+                              ) * 100
+
+            #
+            # ==========================================================
+            # Gewinnwachstum validieren
+            # ==========================================================
+            #
+
+            if pd.isna(earnings_growth):
+                return {
+                    "error": (
+                        f"Ungültiges Gewinnwachstum "
+                        f"für {symbol}: {earnings_growth}"
+                    ),
+                    "symbol": symbol
+                }
+
+            #
+            # ==========================================================
+            # Negatives Wachstum → PEG nicht sinnvoll
+            # ==========================================================
+            #
+
+            if earnings_growth <= 0:
+
+                result = {
+                    "peg_ratio": None,
+                    "symbol": symbol.upper(),
+                    "method": "sec_calculated",
+                    "trailing_pe": round(float(trailing_pe), 2),
+                    "earnings_growth": round(float(earnings_growth), 2),
+                    "eps": round(float(eps), 4),
+                    "latest_net_income": float(latest_net_income),
+                    "previous_net_income": float(previous_net_income),
+                    "reason": "negative_growth"
+                }
+
+                if use_cache:
+                    self._cache_data(
+                        result,
+                        symbol,
+                        cache_key
+                    )
+
+                return result
+
+            #
+            # ==========================================================
+            # Normale PEG-Berechnung
+            # ==========================================================
+            #
+
+            peg_ratio = (
+                    float(trailing_pe)
+                    / float(earnings_growth)
+            )
+
+            if pd.isna(peg_ratio):
+                return {
+                    "error": f"Ungültige PEG Ratio für {symbol}: {peg_ratio}",
+                    "symbol": symbol
+                }
+
+            result = {
+                "peg_ratio": round(float(peg_ratio), 2),
+                "symbol": symbol.upper(),
+                "method": "sec_calculated",
+                "trailing_pe": round(float(trailing_pe), 2),
+                "earnings_growth": round(float(earnings_growth), 2),
+                "eps": round(float(eps), 4),
+                "latest_net_income": float(latest_net_income),
+                "previous_net_income": float(previous_net_income)
             }
-            return error
+
+            if use_cache:
+                self._cache_data(
+                    result,
+                    symbol,
+                    cache_key
+                )
+
+            return result
 
         except Exception as e:
-            error = {
-                "error": f"Fehler beim Abrufen oder Berechnen der PEG-Ratio für {symbol}: {str(e)}",
+
+            return {
+                "error": (
+                    f"Fehler beim Berechnen der "
+                    f"PEG Ratio für {symbol}: {str(e)}"
+                ),
                 "symbol": symbol
             }
-            return error
 
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_book_value(self, symbol):
-        """Ruft den Buchwert des Unternehmens ab"""
+        """
+        Ruft den Buchwert je Aktie (Book Value Per Share) ab.
+
+        Priorität:
+        1. SEC Balance Sheet + Shares Outstanding
+        2. Yahoo Finance Fallback
+
+        Formel:
+            Book Value Per Share =
+            Stockholders Equity / Shares Outstanding
+        """
+
+        try:
+
+            #
+            # ==========================================================
+            # 1. SEC PRIORITÄT
+            # ==========================================================
+            #
+
+            try:
+
+                balance_sheet = self.sec_source.get_balance_sheet(
+                    symbol=symbol,
+                    frequency="annual",
+                    use_cache=True,
+                    scope="core",
+                )
+
+                if (
+                        isinstance(balance_sheet, pd.DataFrame)
+                        and not balance_sheet.empty
+                ):
+
+                    equity = None
+
+                    for label in [
+                        "Stockholders Equity",
+                        "Common Stock Equity",
+                        "Total Stockholders Equity",
+                    ]:
+
+                        if label in balance_sheet.index:
+
+                            value = balance_sheet.loc[label].iloc[0]
+
+                            if pd.notna(value):
+                                equity = float(value)
+                                break
+
+                    shares_outstanding = self.get_shares_outstanding(symbol)
+
+                    if (
+                            equity is not None
+                            and isinstance(shares_outstanding, (int, float))
+                            and shares_outstanding > 0
+                    ):
+                        return equity / float(shares_outstanding)
+
+            except Exception:
+                pass
+
+            #
+            # ==========================================================
+            # 2. YAHOO FALLBACK
+            # ==========================================================
+            #
+
+            stock = yf.Ticker(symbol)
+
+            book_value = stock.info.get("bookValue")
+
+            if book_value is None:
+                raise ValueError(
+                    f"Keine Buchwert-Daten für {symbol} gefunden."
+                )
+
+            return float(book_value)
+
+        except Exception as e:
+
+            return {
+                "error": (
+                    f"Fehler beim Abrufen des Buchwerts "
+                    f"für {symbol}: {str(e)}"
+                )
+            }
+
+
+    def is_financial_sector(self, symbol: str) -> bool:
+        """Prüft, ob ein Symbol eine Bank oder ein Versicherer ist.
+
+        Banken und Versicherer weisen Handelsbestände/kurzfristige
+        Wertpapiere in derselben SEC-Bilanzposition wie 'Cash' aus, was
+        Kennzahlen wie Cash/Market Cap für diese Unternehmen strukturell
+        unsinnig macht. yfinance ordnet auch Zahlungsdienstleister/Broker
+        (z. B. PayPal, Visa) dem groben Sektor "Financial Services" zu, ohne
+        dieses Bilanzierungsproblem zu haben — daher gezielt auf die
+        feingranularere `industry`-Kategorie prüfen statt auf den Sektor."""
         try:
             stock = yf.Ticker(symbol)
-            book_value = stock.info.get("bookValue")
-            if book_value is None:
-                raise ValueError(f"Keine Daten zu ausstehenden Aktien für {symbol} gefunden.")
-            return book_value
+            industry = stock.info.get("industry") or ""
+            return industry.startswith("Banks") or industry.startswith("Insurance")
+        except Exception:
+            return False
+
+    def get_company_profile(self, symbol: str, use_cache: bool = True) -> dict:
+        """Liefert Name/Sektor/Industrie eines Symbols (yfinance `.info`) für
+        die Branchen-Klassifikation in calculate_crv_by_sector_multiples
+        (agent/industry_multiples.resolve_multiples). Sektor/Industrie
+        ändern sich praktisch nie - Cache-Key bewusst mit "historical_"
+        präfigiert, damit _load_cached_data die lange TTL (600 Tage statt
+        10 Sekunden) verwendet, siehe dortige Fallunterscheidung.
+
+        Ein unbekanntes/ungültiges Symbol liefert von yfinance ein leeres
+        oder fast leeres `.info` (kein sector/longName/regularMarketPrice) -
+        in dem Fall wird bewusst NICHT gecacht, damit ein späterer, echter
+        yfinance-Ausfall nicht fälschlich als "Symbol existiert nicht"
+        einbrennt."""
+        cache_key = "historical_company_profile"
+
+        if use_cache:
+            cached = self._load_cached_data(symbol, cache_key)
+            if cached is not None and "error" not in cached:
+                return cached
+
+        try:
+            info = yf.Ticker(symbol).info or {}
+            has_market_data = any(
+                info.get(field) is not None
+                for field in ("regularMarketPrice", "longName", "shortName", "sector")
+            )
+            if not has_market_data:
+                return {"error": f"Unbekanntes Symbol: {symbol}"}
+
+            profile = {
+                "symbol": symbol,
+                "name": info.get("longName") or info.get("shortName") or symbol,
+                "sector": info.get("sector"),
+                "industry": info.get("industry"),
+            }
+
+            if use_cache:
+                self._cache_data(profile, symbol, cache_key)
+
+            return profile
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen des Buchwerts für {symbol}: {str(e)}"}
+            return {"error": f"Fehler beim Abrufen des Unternehmensprofils für {symbol}: {str(e)}"}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_current_price_per_share(self, symbol):
@@ -515,104 +1016,224 @@ class DataLoader:
             return {"error": f"Fehler beim Abrufen des Preises für {symbol}: {str(e)}"}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
-    def get_balance_sheet(self, symbol, frequency="annual", use_cache = True):
-        """
-        Ruft die Bilanzdaten eines Unternehmens ab.
-        frequency: 'annual' für jährliche Daten, 'quarterly' für quartalsweise Daten.
-        """
+    def get_balance_sheet(self, symbol, frequency="annual", use_cache=True):
         if use_cache:
             cached_data = self._load_cached_data(symbol, f"balance_sheet_{frequency}")
             if cached_data is not None and "error" not in cached_data:
                 return cached_data
+
         try:
-            stock = yf.Ticker(symbol)
-            if frequency == "quarterly":
-                balance_sheet = stock.quarterly_balance_sheet
-            else:
-                balance_sheet = stock.balance_sheet
+            balance_sheet = self.sec_source.get_balance_sheet(
+                symbol=symbol,
+                frequency=frequency,
+                use_cache=use_cache,
+            )
+
+            if isinstance(balance_sheet, dict) and "error" in balance_sheet:
+                return balance_sheet
 
             if balance_sheet.empty:
-                raise ValueError(f"Keine Bilanzdaten ({frequency}) für {symbol} gefunden.")
+                raise ValueError(f"Keine SEC-Bilanzdaten ({frequency}) für {symbol} gefunden.")
+
             if use_cache:
                 self._cache_data(balance_sheet, symbol, f"balance_sheet_{frequency}")
-            return balance_sheet
-        except Exception as e:
-            return {"error": f"Fehler beim Abrufen der Bilanzdaten für {symbol} ({frequency}): {str(e)}"}
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
+            return balance_sheet
+
+        except Exception as e:
+            return {
+                "error": f"Fehler beim Abrufen der Bilanzdaten für {symbol} ({frequency}) über SEC: {str(e)}",
+                "symbol": symbol,
+            }
+
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2),retry=retry_if_exception_type(Exception))
     def get_market_cap(self, symbol: str, use_cache: bool = True) -> dict:
         """
-        Ruft die aktuelle Marktkapitalisierung für ein gegebenes Aktiensymbol ab.
+        Berechnet die aktuelle Marktkapitalisierung.
 
-        Args:
-            symbol (str): Aktiensymbol (z. B. 'AAPL').
-            use_cache (bool): Ob der Cache verwendet werden soll (Standard: True).
+        Formel:
+
+            Market Cap =
+            Current Share Price × Shares Outstanding
 
         Returns:
-            dict: Enthält die Marktkapitalisierung, Symbol und Datum.
-                  Beispiel:
-                  {
-                      "market_cap": 1234567890000.0,
-                      "symbol": "AAPL",
-                      "date": "2025-10-13"
-                  }
-                  oder bei Fehler:
-                  {
-                      "error": "Fehlerbeschreibung",
-                      "symbol": "AAPL"
-                  }
+            {
+                "market_cap": 1234567890000.0,
+                "symbol": "AAPL",
+                "date": "2026-04-17",
+                "source": "Price × SEC Shares Outstanding"
+            }
+
+        oder
+
+            {
+                "error": "...",
+                "symbol": "AAPL"
+            }
         """
-        # Cache-Daten-Typ für den Schlüssel
+
         data_type = "market_cap"
 
-        # Versuche, Daten aus dem Cache zu laden
+        #
+        # Cache
+        #
+
         if use_cache:
-            cached_data = self._load_cached_data(symbol, data_type)
-            if cached_data is not None and "error" not in cached_data:
-                self.logger.info(f"Cache-Daten für {symbol} (market_cap) geladen.")
+
+            cached_data = self._load_cached_data(
+                symbol,
+                data_type
+            )
+
+            if (
+                    cached_data is not None
+                    and "error" not in cached_data
+            ):
                 return cached_data
 
         try:
-            # Ticker-Objekt erstellen
-            ticker = yf.Ticker(symbol)
 
-            # Marktkapitalisierung direkt abrufen
-            market_cap = ticker.info.get("marketCap")
-            if market_cap is None or pd.isna(market_cap) or market_cap <= 0:
-                # Fallback: Berechnung aus Aktienkurs und ausstehenden Aktien
-                current_price = self.get_current_price_per_share(symbol)
-                shares = self.get_shares_outstanding(symbol)
-                if isinstance(current_price, dict) and "error" in current_price:
-                    return {"error": current_price["error"], "symbol": symbol}
-                if isinstance(shares, dict) and "error" in shares:
-                    return {"error": shares["error"], "symbol": symbol}
-                market_cap = current_price * shares
-                if market_cap <= 0:
-                    raise ValueError(f"Ungültige Marktkapitalisierung für {symbol}: {market_cap}")
+            #
+            # ==========================================================
+            # Aktienkurs
+            # ==========================================================
+            #
 
-            # Datum extrahieren (heutiges Datum, da es sich um aktuelle Daten handelt)
-            latest_date = datetime.now().strftime("%Y-%m-%d")
+            current_price = self.get_current_price_per_share(
+                symbol
+            )
 
-            # Ergebnis-Dictionary erstellen
+            if isinstance(current_price, dict):
+                return {
+                    "error": current_price.get(
+                        "error",
+                        f"Fehler beim Abrufen des Aktienkurses für {symbol}"
+                    ),
+                    "symbol": symbol
+                }
+
+            #
+            # ==========================================================
+            # Shares Outstanding (SEC)
+            # ==========================================================
+            #
+
+            shares_result = self.get_shares_outstanding(
+                symbol
+            )
+
+            if isinstance(shares_result, dict):
+
+                if "error" in shares_result:
+                    return {
+                        "error": shares_result["error"],
+                        "symbol": symbol
+                    }
+
+                if "shares_outstanding" not in shares_result:
+                    return {
+                        "error": (
+                            f"Keine Shares Outstanding "
+                            f"für {symbol} gefunden."
+                        ),
+                        "symbol": symbol
+                    }
+
+                shares_outstanding = shares_result[
+                    "shares_outstanding"
+                ]
+
+            else:
+
+                #
+                # Rückwärtskompatibilität
+                #
+
+                shares_outstanding = shares_result
+
+            #
+            # ==========================================================
+            # Validierung
+            # ==========================================================
+            #
+
+            if (
+                    shares_outstanding is None
+                    or pd.isna(shares_outstanding)
+                    or float(shares_outstanding) <= 0
+            ):
+                raise ValueError(
+                    f"Ungültige Shares Outstanding "
+                    f"für {symbol}: {shares_outstanding}"
+                )
+
+            if (
+                    current_price is None
+                    or pd.isna(current_price)
+                    or float(current_price) <= 0
+            ):
+                raise ValueError(
+                    f"Ungültiger Aktienkurs "
+                    f"für {symbol}: {current_price}"
+                )
+
+            #
+            # ==========================================================
+            # Market Cap berechnen
+            # ==========================================================
+            #
+
+            market_cap = (
+                    float(current_price)
+                    * float(shares_outstanding)
+            )
+
+            if (
+                    pd.isna(market_cap)
+                    or market_cap <= 0
+            ):
+                raise ValueError(
+                    f"Ungültige Marktkapitalisierung "
+                    f"für {symbol}: {market_cap}"
+                )
+
+            #
+            # ==========================================================
+            # Ergebnis
+            # ==========================================================
+            #
+
             result = {
                 "market_cap": float(market_cap),
-                "symbol": symbol,
-                "date": latest_date
+                "symbol": symbol.upper(),
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "source": "Price × SEC Shares Outstanding"
             }
 
-            # Ergebnis im Cache speichern
+            #
+            # Cache
+            #
+
             if use_cache:
-                self._cache_data(result, symbol, data_type)
-                self.logger.info(f"Marktkapitalisierung für {symbol} erfolgreich abgerufen und gecacht.")
+                self._cache_data(
+                    result,
+                    symbol,
+                    data_type
+                )
 
             return result
 
         except Exception as e:
-            error_msg = f"Fehler beim Abrufen der Marktkapitalisierung für {symbol}: {str(e)}"
-            if "HTTP Error 404" in str(e):
-                error_msg = f"Ungültiges Symbol: {symbol}. {str(e)}"
-            self.logger.error(error_msg)
-            return {"error": error_msg, "symbol": symbol}
+
+            return {
+                "error": (
+                    f"Fehler beim Berechnen der "
+                    f"Marktkapitalisierung für "
+                    f"{symbol}: {str(e)}"
+                ),
+                "symbol": symbol
+            }
+
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_cash_and_equivalents(self, symbol: str, frequency: str = "annual", use_cache: bool = True) -> dict:
@@ -653,12 +1274,17 @@ class DataLoader:
             if balance_sheet is None or getattr(balance_sheet, "empty", True):
                 return {"error": f"Keine Bilanzdaten ({frequency}) für {symbol} verfügbar.", "symbol": symbol}
 
-            # mögliche Labels (yfinance variiert je nach Company)
+            # mögliche Labels (yfinance variiert je nach Company). Die
+            # kombinierten Cash+Short-Term-Investments-Labels stehen bewusst
+            # vor der reinen "Cash And Cash Equivalents"-Position: bei
+            # cash-reichen Unternehmen (z. B. AAPL, MSFT) liegt ein
+            # Großteil der liquiden Mittel in kurzfristigen Wertpapieren,
+            # die eine reine Cash-Kennzahl systematisch unterschätzen würde.
             cash_labels = [
-                "Cash And Cash Equivalents",
-                "Cash And Cash Equivalents And Short Term Investments",
                 "Cash Cash Equivalents And Short Term Investments",
+                "Cash And Cash Equivalents And Short Term Investments",
                 "Cash And Short Term Investments",
+                "Cash And Cash Equivalents",
                 "Cash",
                 "CashAndCashEquivalents",
             ]
@@ -705,16 +1331,112 @@ class DataLoader:
                     "symbol": symbol}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
-    def get_shares_outstanding(self, symbol):
-        """Ruft die Anzahl der ausstehenden Aktien ab."""
+    def get_shares_outstanding(self, symbol: str) -> dict:
+        """
+        Ruft die Anzahl der ausstehenden Aktien ab.
+
+        Priorität:
+        1. SEC Company Facts
+        2. Yahoo Finance Fallback
+
+        Returns:
+            {
+                "shares_outstanding": 15000000000,
+                "symbol": "AAPL",
+                "date": "2025-09-27"
+            }
+
+        oder
+
+            {
+                "error": "...",
+                "symbol": "AAPL"
+            }
+        """
+
+        data_type = "shares_outstanding"
+
+        # Cache prüfen
+        cached_data = self._load_cached_data(symbol, data_type)
+        if cached_data is not None:
+            return cached_data
+
         try:
+
+            #
+            # ==========================================================
+            # 1. SEC PRIORITÄT
+            # ==========================================================
+            # Foreign Private Issuers / ADRs (z. B. BABA) melden bei SEC die
+            # zugrunde liegenden Ordinary Shares, nicht die an der Börse
+            # gehandelten ADS-Einheiten — bei BABA z. B. 8 Ordinary Shares
+            # pro ADS. Der Aktienkurs (get_current_price_per_share) ist aber
+            # immer der ADS-Preis, daher würde "Ordinary Shares Number" die
+            # Market Cap um den ADS-Verhältnis-Faktor überhöhen. Für solche
+            # Symbole direkt zum Yahoo-Fallback springen, dessen
+            # sharesOutstanding bereits in ADS-Einheiten vorliegt.
+            #
+
+            if not self.sec_source.is_foreign_private_issuer(symbol):
+                try:
+                    sec_result = self.sec_source.get_balance_sheet_line_item(
+                        symbol=symbol,
+                        line_item="Ordinary Shares Number",
+                        frequency="annual",
+                        scope="core",
+                    )
+
+                    if (
+                            isinstance(sec_result, dict)
+                            and "error" not in sec_result
+                            and sec_result.get("value") is not None
+                    ):
+                        result = {
+                            "shares_outstanding": float(sec_result["value"]),
+                            "symbol": symbol.upper(),
+                            "date": sec_result.get("date"),
+                            "source": "SEC"
+                        }
+
+                        self._cache_data(result, symbol, data_type)
+                        return result
+
+                except Exception:
+                    pass
+
+            #
+            # ==========================================================
+            # 2. YAHOO FALLBACK
+            # ==========================================================
+            #
+
             stock = yf.Ticker(symbol)
+
             shares = stock.info.get("sharesOutstanding")
+
             if shares is None:
-                raise ValueError(f"Keine Daten zu ausstehenden Aktien für {symbol} gefunden.")
-            return shares
+                return {
+                    "error": f"Keine Daten zu ausstehenden Aktien für {symbol} gefunden.",
+                    "symbol": symbol
+                }
+
+            result = {
+                "shares_outstanding": float(shares),
+                "symbol": symbol.upper(),
+                "date": None,
+                "source": "Yahoo Finance"
+            }
+
+            self._cache_data(result, symbol, data_type)
+
+            return result
+
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen der ausstehenden Aktien für {symbol}: {str(e)}"}
+            return {
+                "error": f"Fehler beim Abrufen der ausstehenden Aktien für {symbol}: {str(e)}",
+                "symbol": symbol
+            }
+
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_dividend_data(self, symbol, use_cache=True):
@@ -778,133 +1500,232 @@ class DataLoader:
             return {"error": f"Fehler beim Abrufen der Dividendenhistorie für {symbol}: {str(e)}"}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
-    def get_paid_dividends(self, symbol: str, frequency: str = "annual", use_cache: bool = True) -> dict:
+    def get_paid_dividends(
+            self,
+            symbol: str,
+            frequency: str = "annual",
+            use_cache: bool = True
+    ) -> dict:
         """
-        Ruft den Gesamtbetrag der ausgezahlten Dividenden für ein gegebenes Aktiensymbol ab,
-        basierend auf der Cash Flow-Rechnung von Yahoo Finance.
+        Ruft die ausgezahlten Dividenden ab.
 
-        Args:
-            symbol (str): Aktiensymbol (z. B. 'KO').
-            frequency (str): 'annual' für jährliche Daten, 'quarterly' für quartalsweise Daten (Standard: 'annual').
-            use_cache (bool): Ob der Cache verwendet werden soll (Standard: True).
+        Priorität:
+        1. SEC Company Facts
+        2. Yahoo Finance Fallback
 
         Returns:
-            dict: Enthält den Betrag der ausgezahlten Dividenden.
-                  Beispiel:
-                  {
-                      "paid_dividends": -8340000000.0,
-                      "symbol": "KO",
-                      "frequency": "annual",
-                      "date": "2024-12-31"
-                  }
-                  oder bei Fehler:
-                  {
-                      "error": "Fehlerbeschreibung",
-                      "symbol": symbol
-                  }
-        """
-        if frequency not in ["annual", "quarterly"]:
-            return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
+            {
+                "paid_dividends": -8340000000.0,
+                "symbol": "KO",
+                "frequency": "annual",
+                "date": "2024-12-31",
+                "source": "SEC"
+            }
 
-        # Cache-Daten-Typ für den Schlüssel
+        oder
+
+            {
+                "error": "...",
+                "symbol": "KO"
+            }
+        """
+
+        if frequency not in ["annual", "quarterly"]:
+            return {
+                "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
+                "symbol": symbol
+            }
+
         data_type = f"paid_dividends_{frequency}"
 
-        # Versuche, Daten aus dem Cache zu laden
+        # Cache prüfen
         if use_cache:
             cached_data = self._load_cached_data(symbol, data_type)
             if cached_data is not None:
                 return cached_data
 
         try:
-            # Ticker-Objekt erstellen
+
+            #
+            # ==========================================================
+            # 1. SEC PRIORITÄT
+            # ==========================================================
+            #
+
+            try:
+
+                sec_result = self.sec_source.get_cashflow_statement_line_item(
+                    symbol=symbol,
+                    line_item="Dividends Paid",
+                    frequency=frequency,
+                    scope="core",
+                )
+
+                if (
+                        isinstance(sec_result, dict)
+                        and "error" not in sec_result
+                        and sec_result.get("value") is not None
+                ):
+
+                    result = {
+                        "paid_dividends": float(sec_result["value"]),
+                        "symbol": symbol.upper(),
+                        "frequency": frequency,
+                        "date": sec_result.get("date"),
+                        "source": "SEC"
+                    }
+
+                    if use_cache:
+                        self._cache_data(result, symbol, data_type)
+
+                    return result
+
+            except Exception:
+                pass
+
+            #
+            # ==========================================================
+            # 2. YAHOO FALLBACK
+            # ==========================================================
+            #
+
             stock = yf.Ticker(symbol)
 
-            # Cash Flow-Daten abrufen
             if frequency == "annual":
                 cashflow = stock.cashflow
-            else:  # quarterly
+            else:
                 cashflow = stock.quarterly_cashflow
 
-            # Prüfen, ob Cash Flow-Daten verfügbar sind
             if not isinstance(cashflow, pd.DataFrame) or cashflow.empty:
-                raise ValueError(f"Keine Cash Flow-Daten für {symbol} ({frequency}) gefunden.")
+                return {
+                    "error": f"Keine Cash Flow-Daten für {symbol} ({frequency}) gefunden.",
+                    "symbol": symbol
+                }
 
-            # Dividenden ausgezahlt ermitteln
-            dividends_paid = 0.0  # Standardwert, wenn keine Dividenden gefunden werden
-            for label in ["Dividends Paid", "Common Stock Dividends Paid", "Preferred Stock Dividends Paid",
-                          "Total Dividends Paid", "Cash Dividends Paid"]:
+            dividends_paid = None
+
+            for label in [
+                "Dividends Paid",
+                "Common Stock Dividends Paid",
+                "Preferred Stock Dividends Paid",
+                "Total Dividends Paid",
+                "Cash Dividends Paid",
+            ]:
+
                 if label in cashflow.index:
-                    dividends_paid = cashflow.loc[label].iloc[0]
-                    if pd.notna(dividends_paid):
+
+                    value = cashflow.loc[label].iloc[0]
+
+                    if pd.notna(value):
+                        dividends_paid = value
                         break
 
-            # Datum extrahieren
+            #
+            # Falls Yahoo nichts findet:
+            # wie bisher 0 zurückgeben
+            #
+
+            if dividends_paid is None or pd.isna(dividends_paid):
+                dividends_paid = 0.0
+
             latest_date = cashflow.columns[0]
+
             if not isinstance(latest_date, pd.Timestamp):
                 latest_date = pd.to_datetime(latest_date)
 
-            # Ergebnis-Dictionary erstellen
             result = {
                 "paid_dividends": float(dividends_paid),
-                "symbol": symbol,
+                "symbol": symbol.upper(),
                 "frequency": frequency,
-                "date": latest_date.strftime("%Y-%m-%d")
+                "date": latest_date.strftime("%Y-%m-%d"),
+                "source": "Yahoo Finance"
             }
 
-            # Ergebnis im Cache speichern, wenn Cache aktiviert
             if use_cache:
                 self._cache_data(result, symbol, data_type)
 
             return result
 
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen der ausgezahlten Dividenden für {symbol} ({frequency}): {str(e)}",
-                    "symbol": symbol}
-
+            return {
+                "error": f"Fehler beim Abrufen der ausgezahlten Dividenden für {symbol} ({frequency}): {str(e)}",
+                "symbol": symbol
+            }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_net_debt_data(self, symbol, frequency="annual"):
         """
         Ruft Daten für die Berechnung des Nettoschuldenstands ab.
-        frequency: 'annual' für jährliche Daten, 'quarterly' für quartalsweise Daten.
+        frequency: 'annual' oder 'quarterly'
         """
         try:
             balance_sheet = self.get_balance_sheet(symbol, frequency=frequency)
             if isinstance(balance_sheet, dict) and "error" in balance_sheet:
                 return balance_sheet
 
-            # Versuche, Net Debt direkt zu holen
-            if "Net Debt" in balance_sheet.index:
-                net_debt = balance_sheet.loc["Net Debt"].iloc[0]
-                total_debt = None
-                cash = None
-            else:
-                # Fallback auf Berechnung mit Total Debt und Cash
-                if "Total Debt" in balance_sheet.index:
-                    total_debt = balance_sheet.loc["Total Debt"].iloc[0]
-                elif "Long Term Debt" in balance_sheet.index and "Short Term Debt" in balance_sheet.index:
-                    total_debt = balance_sheet.loc["Long Term Debt"].iloc[0] + \
-                                 balance_sheet.loc["Short Term Debt"].iloc[0]
-                else:
-                    raise ValueError(f"Keine Schulden-Daten für {symbol} ({frequency}) gefunden.")
+            if balance_sheet is None or getattr(balance_sheet, "empty", True):
+                return {"error": f"Keine Bilanzdaten für {symbol} ({frequency}) gefunden.", "symbol": symbol}
 
-                if "Cash" in balance_sheet.index:
-                    cash = balance_sheet.loc["Cash"].iloc[0]
-                elif "Cash And Cash Equivalents" in balance_sheet.index:
-                    cash = balance_sheet.loc["Cash And Cash Equivalents"].iloc[0]
-                else:
-                    raise ValueError(f"Keine Cash-Daten für {symbol} ({frequency}) gefunden.")
+            date_col = balance_sheet.columns[0]
+            date = date_col.strftime("%Y-%m-%d") if hasattr(date_col, "strftime") else str(date_col)
+
+            # Cash holen
+            cash = None
+            for label in [
+                "Cash And Cash Equivalents",
+                "Cash Cash Equivalents And Short Term Investments",
+                "Cash",
+            ]:
+                if label in balance_sheet.index and pd.notna(balance_sheet.loc[label].iloc[0]):
+                    cash = float(balance_sheet.loc[label].iloc[0])
+                    break
+
+            if cash is None:
+                return {
+                    "error": f"Keine Cash-Daten für {symbol} ({frequency}) gefunden.",
+                    "symbol": symbol
+                }
+
+            # Total Debt holen oder aus Einzelpositionen berechnen
+            total_debt = None
+
+            if "Total Debt" in balance_sheet.index and pd.notna(balance_sheet.loc["Total Debt"].iloc[0]):
+                total_debt = float(balance_sheet.loc["Total Debt"].iloc[0])
+            else:
+                debt_parts = []
+
+                for label in [
+                    "Long Term Debt",
+                    "Short Term Debt",
+                    "Current Debt",
+                    "Long Term Debt And Capital Lease Obligation",
+                    "Current Debt And Capital Lease Obligation",
+                ]:
+                    if label in balance_sheet.index and pd.notna(balance_sheet.loc[label].iloc[0]):
+                        debt_parts.append(float(balance_sheet.loc[label].iloc[0]))
+
+                total_debt = sum(debt_parts) if debt_parts else 0.0
+
+            # Net Debt direkt verwenden, falls vorhanden und gültig
+            if "Net Debt" in balance_sheet.index and pd.notna(balance_sheet.loc["Net Debt"].iloc[0]):
+                net_debt = float(balance_sheet.loc["Net Debt"].iloc[0])
+            else:
                 net_debt = total_debt - cash
 
-            data = {
-                "total_debt": total_debt,
-                "cash": cash,
-                "net_debt": net_debt,
-                "frequency": frequency
+            return {
+                "total_debt": float(total_debt),
+                "cash": float(cash),
+                "net_debt": float(net_debt),
+                "symbol": symbol,
+                "frequency": frequency,
+                "date": date
             }
-            return data
+
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen der Nettoschuldendaten für {symbol} ({frequency}): {str(e)}"}
+            return {
+                "error": f"Fehler beim Abrufen der Nettoschuldendaten für {symbol} ({frequency}): {str(e)}",
+                "symbol": symbol
+            }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_ebitda_data(self, symbol, frequency="annual"):
@@ -912,15 +1733,61 @@ class DataLoader:
             financials = self.get_stock_financials(symbol, frequency=frequency)
             if isinstance(financials, dict) and "error" in financials:
                 return financials
-            if "EBITDA" not in financials.index:
-                raise ValueError(f"Keine EBITDA-Daten für {symbol} ({frequency}) gefunden.")
-            data = {
-                "ebitda": financials.loc["EBITDA"].iloc[0],
-                "frequency": frequency
+
+            if not isinstance(financials, pd.DataFrame) or financials.empty:
+                return {"error": f"Keine Finanzdaten für {symbol} ({frequency}) gefunden.", "symbol": symbol}
+
+            latest_date = financials.columns[0]
+            date = latest_date.strftime("%Y-%m-%d") if hasattr(latest_date, "strftime") else str(latest_date)
+
+            # 1. Direktes EBITDA
+            if "EBITDA" in financials.index and pd.notna(financials.loc["EBITDA"].iloc[0]):
+                ebitda = float(financials.loc["EBITDA"].iloc[0])
+            else:
+                # 2. Fallback: EBIT + Abschreibungen
+                ebit = None
+                for label in ["EBIT", "Operating Income"]:
+                    if label in financials.index and pd.notna(financials.loc[label].iloc[0]):
+                        ebit = float(financials.loc[label].iloc[0])
+                        break
+
+                depreciation = None
+                for label in [
+                    "Depreciation And Amortization",
+                    "Depreciation Depletion And Amortization",
+                    "Depreciation",
+                    "Amortization Of Intangible Assets",
+                ]:
+                    if label in financials.index and pd.notna(financials.loc[label].iloc[0]):
+                        depreciation = float(financials.loc[label].iloc[0])
+                        break
+
+                if ebit is None:
+                    return {
+                        "error": f"Keine EBIT-Daten für EBITDA-Berechnung bei {symbol} ({frequency}) gefunden.",
+                        "symbol": symbol
+                    }
+
+                if depreciation is None:
+                    return {
+                        "error": f"Keine Abschreibungsdaten für EBITDA-Berechnung bei {symbol} ({frequency}) gefunden.",
+                        "symbol": symbol
+                    }
+
+                ebitda = ebit + depreciation
+
+            return {
+                "ebitda": float(ebitda),
+                "symbol": symbol,
+                "frequency": frequency,
+                "date": date
             }
-            return data
+
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen der EBITDA-Daten für {symbol} ({frequency}): {str(e)}"}
+            return {
+                "error": f"Fehler beim Abrufen der EBITDA-Daten für {symbol} ({frequency}): {str(e)}",
+                "symbol": symbol
+            }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_ebit_data(self, symbol, use_cache=True, frequency="annual"):
@@ -999,31 +1866,7 @@ class DataLoader:
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_interest_expense_data(self, symbol, use_cache=True, frequency="annual"):
-        """
-        Ruft die Zinsaufwendungen (Interest Expenses) eines Unternehmens ab.
-
-        Args:
-            symbol (str): Aktiensymbol (z. B. 'AAPL').
-            use_cache (bool): Ob der Cache verwendet werden soll (Standard: True).
-            frequency (str): Zeitraum, entweder 'annual' oder 'quarterly' (Standard: 'annual').
-
-        Returns:
-            dict: Enthält die Zinsaufwendungen und den Zeitraum.
-                  Beispiel:
-                  {
-                      "interest_expense": 12345678.0,
-                      "symbol": "AAPL",
-                      "frequency": "annual",
-                      "date": "2024-12-31"
-                  }
-                  oder bei Fehler:
-                  {
-                      "error": "Fehlerbeschreibung",
-                      "symbol": "AAPL"
-                  }
-        """
-        # Cache-Schlüssel mit frequency erstellen
-        cache_key = f"interest_expense_{frequency}"
+        cache_key = f"interest_expense_all_{frequency}"
 
         if use_cache:
             cached_data = self._load_cached_data(symbol, cache_key)
@@ -1031,48 +1874,108 @@ class DataLoader:
                 return cached_data
 
         try:
-            financials = self.get_stock_financials(symbol, frequency=frequency)
-            if isinstance(financials, dict) and "error" in financials:
-                # Füge den symbol-Schlüssel zum Fehler-Dictionary hinzu
-                financials["symbol"] = symbol
-                return financials
+            facts = self.sec_source.get_company_facts(symbol, use_cache=use_cache)
 
-            if "Interest Expense" not in financials.index:
-                error = {
-                    "error": f"Keine Zinsaufwendungen für {symbol} ({frequency}) gefunden.",
-                    "symbol": symbol
+            if isinstance(facts, dict) and "error" in facts:
+                facts["symbol"] = symbol
+                return facts
+
+            us_gaap = facts.get("facts", {}).get("us-gaap", {})
+
+            interest_tags = [
+                "InterestExpense",
+                "InterestExpenseDebt",
+                "InterestExpenseNonoperating",
+                "FinanceLeaseInterestExpense",
+                "InterestCostsIncurred",
+                "InterestPaid",
+                "InterestPaidNet",
+                "InterestOnConvertibleDebtNetOfTax",
+                "InterestIncomeExpenseNet",
+                "InterestIncomeExpenseNonoperatingNet",
+                "IncomeTaxExaminationInterestExpense",
+                "UnrecognizedTaxBenefitsIncomeTaxPenaltiesAndInterestExpense",
+                "UnrecognizedTaxBenefitsInterestOnIncomeTaxesExpense",
+                "FinanceLeaseInterestPaymentOnLiability",
+            ]
+
+            items = []
+
+            for tag in interest_tags:
+                fact = us_gaap.get(tag)
+
+                if not fact:
+                    continue
+
+                label = fact.get("label") or tag
+                description = fact.get("description") or ""
+                units = fact.get("units", {})
+
+                for unit, values in units.items():
+                    series = self.sec_source._fact_values_to_series(
+                        values=values,
+                        frequency=frequency,
+                    )
+
+                    if series is None or series.dropna().empty:
+                        continue
+
+                    clean_series = series.dropna()
+                    latest_date = clean_series.index[0]
+                    latest_value = clean_series.iloc[0]
+
+                    date_str = (
+                        latest_date.strftime("%Y-%m-%d")
+                        if isinstance(latest_date, pd.Timestamp)
+                        else str(latest_date)
+                    )
+
+                    items.append(
+                        {
+                            "tag": tag,
+                            "label": label,
+                            "description": description,
+                            "unit": unit,
+                            "date": date_str,
+                            "value": float(latest_value),
+                            "abs_value": abs(float(latest_value)),
+                            "series": {
+                                (
+                                    date.strftime("%Y-%m-%d")
+                                    if isinstance(date, pd.Timestamp)
+                                    else str(date)
+                                ): float(value)
+                                for date, value in clean_series.items()
+                            },
+                        }
+                    )
+
+            if not items:
+                return {
+                    "error": f"Keine Interest-Expense-Tags für {symbol} ({frequency}) gefunden.",
+                    "symbol": symbol,
                 }
-                return error
 
-            interest_expense = financials.loc["Interest Expense"].iloc[0]
-            if pd.isna(interest_expense):
-                error = {
-                    "error": f"Ungültige Zinsaufwendungen für {symbol} ({frequency}): {interest_expense}.",
-                    "symbol": symbol
-                }
-                return error
-
-            # Konvertiere das Datum (pandas.Timestamp) in einen String
-            date_str = financials.columns[0].strftime("%Y-%m-%d") if isinstance(financials.columns[0],
-                                                                                pd.Timestamp) else str(
-                financials.columns[0])
+            items = sorted(items, key=lambda x: x["date"], reverse=True)
 
             data = {
-                "interest_expense": abs(float(interest_expense)),  # Verwende abs(), um positive Werte sicherzustellen
                 "symbol": symbol,
                 "frequency": frequency,
-                "date": date_str
+                "interest_expense_items": items,
+                "count": len(items),
+                "latest_item": items[0],
             }
+
             if use_cache:
                 self._cache_data(data, symbol, cache_key)
+
             return data
 
         except Exception as e:
-            error = {
-                "error": f"Fehler beim Abrufen der Zinsaufwendungen für {symbol} ({frequency}): {str(e)}",
-                "symbol": symbol
+            return {
+                "error": f"Fehler beim Abrufen der Interest-Expense-Daten für {symbol} ({frequency}): {str(e)}",
+                "symbol": symbol,
             }
-            return error
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_free_cashflow(self, symbol: str, frequency: str = "annual") -> dict:
@@ -1100,7 +2003,10 @@ class DataLoader:
                   }
         """
         if frequency not in ["annual", "quarterly"]:
-            return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
+            return {
+                "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
+                "symbol": symbol
+            }
 
         # Cache-Daten-Typ für den Schlüssel
         data_type = f"free_cashflow_{frequency}"
@@ -1111,82 +2017,121 @@ class DataLoader:
             return cached_data
 
         try:
-            # Ticker-Objekt erstellen
-            ticker = yf.Ticker(symbol)
+            # SEC-Cashflow-Daten abrufen
+            cashflow_data = self.sec_source.get_cashflow_statement(
+                symbol=symbol,
+                frequency=frequency,
+                use_cache=True,
+                scope="core"
+            )
 
-            # Cashflow-Daten abrufen
-            if frequency == "annual":
-                cashflow_data = ticker.cashflow
-            else:  # quarterly
-                cashflow_data = ticker.quarterly_cashflow
+            if isinstance(cashflow_data, dict) and "error" in cashflow_data:
+                return cashflow_data
 
             if cashflow_data.empty:
-                return {"error": f"Keine Cashflow-Daten für {symbol} ({frequency}) gefunden.", "symbol": symbol}
+                return {
+                    "error": f"Keine Cashflow-Daten für {symbol} ({frequency}) gefunden.",
+                    "symbol": symbol
+                }
 
-            # Datum extrahieren (für spätere Verwendung)
+            # Standard-Datum (neueste Spalte)
             latest_date = cashflow_data.columns[0].strftime("%Y-%m-%d")
 
-            # Schritt 1: Prüfen, ob Free Cash Flow direkt verfügbar ist
-            free_cashflow_label = "Free Cash Flow"
-            if free_cashflow_label in cashflow_data.index:
-                free_cashflow = cashflow_data.loc[free_cashflow_label].iloc[0]
-                if not pd.isna(free_cashflow):
-                    # Ergebnis-Dictionary erstellen
+            #
+            # Schritt 1:
+            # Reported Free Cash Flow bevorzugen
+            #
+
+            if "Free Cash Flow" in cashflow_data.index:
+
+                fcf_series = cashflow_data.loc["Free Cash Flow"].dropna()
+
+                if not fcf_series.empty:
+                    free_cashflow = fcf_series.iloc[0]
+
                     result = {
                         "free_cashflow": float(free_cashflow),
                         "symbol": symbol,
                         "frequency": frequency,
-                        "date": latest_date
+                        "date": fcf_series.index[0].strftime("%Y-%m-%d")
                     }
-                    # Ergebnis im Cache speichern
+
                     self._cache_data(result, symbol, data_type)
+
                     return result
 
-            # Schritt 2: Fallback auf Berechnung, wenn Free Cash Flow fehlt oder NaN ist
-            # Operativen Cashflow ermitteln
+            #
+            # Schritt 2:
+            # Fallback auf Berechnung
+            #
+
             operating_cashflow = None
-            for label in ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"]:
+
+            for label in [
+                "Operating Cash Flow",
+                "Cash Flow From Continuing Operating Activities",
+            ]:
                 if label in cashflow_data.index:
-                    operating_cashflow = cashflow_data.loc[label].iloc[0]
-                    if not pd.isna(operating_cashflow):
+
+                    series = cashflow_data.loc[label].dropna()
+
+                    if not series.empty:
+                        operating_cashflow = series.iloc[0]
                         break
+
             if operating_cashflow is None or pd.isna(operating_cashflow):
                 return {
-                    "error": f"Kein operativer Cashflow für {symbol} ({frequency}) gefunden. Verfügbare Labels: {list(cashflow_data.index)}",
+                    "error": (
+                        f"Kein operativer Cashflow für {symbol} ({frequency}) gefunden. "
+                        f"Verfügbare Labels: {list(cashflow_data.index)}"
+                    ),
                     "symbol": symbol
                 }
 
-            # Capital Expenditures ermitteln
+            #
+            # CapEx ermitteln
+            #
+
             capex = None
-            for label in ["Capital Expenditure", "Purchase Of PPE", "Capital Expenditure Reported"]:
+
+            for label in [
+                "Capital Expenditure",
+                "Purchase Of PPE",
+                "Capital Expenditure Reported",
+            ]:
                 if label in cashflow_data.index:
-                    capex = cashflow_data.loc[label].iloc[0]
-                    if not pd.isna(capex):
+
+                    series = cashflow_data.loc[label].dropna()
+
+                    if not series.empty:
+                        capex = series.iloc[0]
                         break
-            if capex is None or pd.isna(capex):
-                # Fallback: Net PPE Purchase And Sale minus Sale Of PPE
-                if "Net PPE Purchase And Sale" in cashflow_data.index:
-                    net_ppe = cashflow_data.loc["Net PPE Purchase And Sale"].iloc[0]
-                    sale_of_ppe = cashflow_data.loc["Sale Of PPE"].iloc[
-                        0] if "Sale Of PPE" in cashflow_data.index else 0
-                    capex = net_ppe - sale_of_ppe if not (pd.isna(net_ppe) or pd.isna(sale_of_ppe)) else None
 
             if capex is None or pd.isna(capex):
                 return {
-                    "error": f"Keine Capital Expenditures für {symbol} ({frequency}) gefunden. Verfügbare Labels: {list(cashflow_data.index)}",
+                    "error": (
+                        f"Keine Capital Expenditures für {symbol} ({frequency}) gefunden. "
+                        f"Verfügbare Labels: {list(cashflow_data.index)}"
+                    ),
                     "symbol": symbol
                 }
 
-            # Free Cashflow berechnen: FCF = Operating Cashflow - CapEx
-            # CapEx ist negativ in yfinance, daher addieren
+            #
+            # SEC verwendet bereits Yahoo-kompatible Vorzeichen:
+            # CapEx negativ => FCF = OCF + CapEx
+            #
+
             free_cashflow = operating_cashflow + capex
 
-            # Prüfen auf ungültige Werte
             if pd.isna(free_cashflow):
-                return {"error": f"Ungültiger berechneter Free Cashflow für {symbol} ({frequency}): {free_cashflow}.",
-                        "symbol": symbol}
+                return {
+                    "error": (
+                        f"Ungültiger berechneter Free Cashflow "
+                        f"für {symbol} ({frequency}): {free_cashflow}."
+                    ),
+                    "symbol": symbol
+                }
 
-            # Ergebnis-Dictionary erstellen
             result = {
                 "free_cashflow": float(free_cashflow),
                 "symbol": symbol,
@@ -1194,14 +2139,18 @@ class DataLoader:
                 "date": latest_date
             }
 
-            # Ergebnis im Cache speichern
             self._cache_data(result, symbol, data_type)
+
             return result
 
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen des Free Cashflows für {symbol} ({frequency}): {str(e)}",
-                    "symbol": symbol}
-
+            return {
+                "error": (
+                    f"Fehler beim Abrufen des Free Cashflows "
+                    f"für {symbol} ({frequency}): {str(e)}"
+                ),
+                "symbol": symbol
+            }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_operating_cashflow(self, symbol: str, frequency: str = "annual") -> dict:
@@ -1228,7 +2177,10 @@ class DataLoader:
                   }
         """
         if frequency not in ["annual", "quarterly"]:
-            return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
+            return {
+                "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
+                "symbol": symbol
+            }
 
         # Cache-Daten-Typ für den Schlüssel
         data_type = f"operating_cashflow_{frequency}"
@@ -1239,31 +2191,45 @@ class DataLoader:
             return cached_data
 
         try:
-            # Ticker-Objekt erstellen
-            ticker = yf.Ticker(symbol)
+            # SEC-Cashflow-Daten abrufen
+            cashflow_data = self.sec_source.get_cashflow_statement(
+                symbol=symbol,
+                frequency=frequency,
+                use_cache=True,
+                scope="core"
+            )
 
-            # Cashflow-Daten abrufen
-            if frequency == "annual":
-                cashflow_data = ticker.cashflow
-            else:  # quarterly
-                cashflow_data = ticker.quarterly_cashflow
+            if isinstance(cashflow_data, dict) and "error" in cashflow_data:
+                return cashflow_data
 
             if cashflow_data.empty:
-                return {"error": f"Keine Cashflow-Daten für {symbol} ({frequency}) gefunden.", "symbol": symbol}
+                return {
+                    "error": f"Keine Cashflow-Daten für {symbol} ({frequency}) gefunden.",
+                    "symbol": symbol
+                }
 
             # Datum extrahieren
             latest_date = cashflow_data.columns[0].strftime("%Y-%m-%d")
 
             # Operativen Cashflow ermitteln
             operating_cashflow = None
-            for label in ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"]:
+
+            for label in [
+                "Operating Cash Flow",
+                "Cash Flow From Continuing Operating Activities",
+            ]:
                 if label in cashflow_data.index:
                     operating_cashflow = cashflow_data.loc[label].iloc[0]
+
                     if not pd.isna(operating_cashflow):
                         break
+
             if operating_cashflow is None or pd.isna(operating_cashflow):
                 return {
-                    "error": f"Kein operativer Cashflow für {symbol} ({frequency}) gefunden. Verfügbare Labels: {list(cashflow_data.index)}",
+                    "error": (
+                        f"Kein operativer Cashflow für {symbol} ({frequency}) gefunden. "
+                        f"Verfügbare Labels: {list(cashflow_data.index)}"
+                    ),
                     "symbol": symbol
                 }
 
@@ -1277,11 +2243,17 @@ class DataLoader:
 
             # Ergebnis im Cache speichern
             self._cache_data(result, symbol, data_type)
+
             return result
 
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen des operativen Cashflows für {symbol} ({frequency}): {str(e)}",
-                    "symbol": symbol}
+            return {
+                "error": (
+                    f"Fehler beim Abrufen des operativen Cashflows "
+                    f"für {symbol} ({frequency}): {str(e)}"
+                ),
+                "symbol": symbol
+            }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_revenue(self, symbol: str, frequency: str = "annual") -> dict:
@@ -1308,46 +2280,60 @@ class DataLoader:
                   }
         """
         if frequency not in ["annual", "quarterly"]:
-            return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
+            return {
+                "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
+                "symbol": symbol
+            }
 
-        # Cache-Daten-Typ für den Schlüssel
         data_type = f"revenue_{frequency}"
 
-        # Versuche, Daten aus dem Cache zu laden
         cached_data = self._load_cached_data(symbol, data_type)
-        if cached_data is not None:
+        if cached_data is not None and "error" not in cached_data:
             return cached_data
 
         try:
-            # Ticker-Objekt erstellen
-            ticker = yf.Ticker(symbol)
+            financial_data = self.get_stock_financials(
+                symbol=symbol,
+                frequency=frequency,
+                use_cache=True
+            )
 
-            # Finanzdaten abrufen
-            if frequency == "annual":
-                financial_data = ticker.financials
-            else:  # quarterly
-                financial_data = ticker.quarterly_financials
+            if isinstance(financial_data, dict) and "error" in financial_data:
+                return financial_data
 
-            if financial_data.empty:
-                return {"error": f"Keine Finanzdaten für {symbol} ({frequency}) gefunden.", "symbol": symbol}
+            if not isinstance(financial_data, pd.DataFrame) or financial_data.empty:
+                return {
+                    "error": f"Keine Finanzdaten für {symbol} ({frequency}) gefunden.",
+                    "symbol": symbol
+                }
 
-            # Datum extrahieren
-            latest_date = financial_data.columns[0].strftime("%Y-%m-%d")
+            latest_date = financial_data.columns[0]
+            if isinstance(latest_date, pd.Timestamp):
+                latest_date = latest_date.strftime("%Y-%m-%d")
+            else:
+                latest_date = str(latest_date)
 
-            # Umsatz ermitteln
             revenue = None
-            for label in ["Total Revenue", "Revenue"]:
+
+            for label in [
+                "Revenue",
+                "Total Revenue",
+                "Sales Revenue Net"
+            ]:
                 if label in financial_data.index:
                     revenue = financial_data.loc[label].iloc[0]
                     if not pd.isna(revenue):
                         break
+
             if revenue is None or pd.isna(revenue):
                 return {
-                    "error": f"Kein Umsatz für {symbol} ({frequency}) gefunden. Verfügbare Labels: {list(financial_data.index)}",
+                    "error": (
+                        f"Kein Umsatz für {symbol} ({frequency}) gefunden. "
+                        f"Verfügbare Labels: {list(financial_data.index)}"
+                    ),
                     "symbol": symbol
                 }
 
-            # Ergebnis-Dictionary erstellen
             result = {
                 "revenue": float(revenue),
                 "symbol": symbol,
@@ -1355,12 +2341,14 @@ class DataLoader:
                 "date": latest_date
             }
 
-            # Ergebnis im Cache speichern
             self._cache_data(result, symbol, data_type)
             return result
 
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen des Umsatzes für {symbol} ({frequency}): {str(e)}", "symbol": symbol}
+            return {
+                "error": f"Fehler beim Abrufen des Umsatzes für {symbol} ({frequency}): {str(e)}",
+                "symbol": symbol
+            }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_inventory(self, symbol: str, frequency: str = "annual") -> dict:
@@ -1387,46 +2375,56 @@ class DataLoader:
                   }
         """
         if frequency not in ["annual", "quarterly"]:
-            return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
+            return {
+                "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
+                "symbol": symbol
+            }
 
-        # Cache-Daten-Typ für den Schlüssel
         data_type = f"inventory_{frequency}"
 
-        # Versuche, Daten aus dem Cache zu laden
         cached_data = self._load_cached_data(symbol, data_type)
         if cached_data is not None:
             return cached_data
 
         try:
-            # Ticker-Objekt erstellen
-            ticker = yf.Ticker(symbol)
+            balance_data = self.get_balance_sheet(
+                symbol=symbol,
+                frequency=frequency,
+            )
 
-            # Bilanzdaten abrufen
-            if frequency == "annual":
-                balance_data = ticker.balance_sheet
-            else:  # quarterly
-                balance_data = ticker.quarterly_balance_sheet
+            if isinstance(balance_data, dict) and "error" in balance_data:
+                return balance_data
 
-            if balance_data.empty:
-                return {"error": f"Keine Bilanzdaten für {symbol} ({frequency}) gefunden.", "symbol": symbol}
+            if not isinstance(balance_data, pd.DataFrame) or balance_data.empty:
+                return {
+                    "error": f"Keine Bilanzdaten für {symbol} ({frequency}) gefunden.",
+                    "symbol": symbol
+                }
 
-            # Datum extrahieren
-            latest_date = balance_data.columns[0].strftime("%Y-%m-%d")
+            latest_date = balance_data.columns[0]
+            if isinstance(latest_date, pd.Timestamp):
+                latest_date = latest_date.strftime("%Y-%m-%d")
+            else:
+                latest_date = str(latest_date)
 
-            # Vorräte ermitteln
             inventory = None
-            for label in ["Inventory", "Total Inventories"]:
+
+            for label in [
+                "Inventory",
+                "Inventories",
+                "Total Inventories",
+            ]:
                 if label in balance_data.index:
                     inventory = balance_data.loc[label].iloc[0]
-                    if not pd.isna(inventory):
+                    if pd.notna(inventory):
                         break
+
             if inventory is None or pd.isna(inventory):
                 return {
                     "error": f"Keine Vorräte für {symbol} ({frequency}) gefunden. Verfügbare Labels: {list(balance_data.index)}",
                     "symbol": symbol
                 }
 
-            # Ergebnis-Dictionary erstellen
             result = {
                 "inventory": float(inventory),
                 "symbol": symbol,
@@ -1434,13 +2432,15 @@ class DataLoader:
                 "date": latest_date
             }
 
-            # Ergebnis im Cache speichern
             self._cache_data(result, symbol, data_type)
+
             return result
 
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen der Vorräte für {symbol} ({frequency}): {str(e)}", "symbol": symbol}
-
+            return {
+                "error": f"Fehler beim Abrufen der Vorräte für {symbol} ({frequency}): {str(e)}",
+                "symbol": symbol
+            }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_payout_ratio_data_annual(self, symbol):
@@ -1648,36 +2648,71 @@ class DataLoader:
                 datetime.strptime(start_date, '%Y-%m-%d')
             except ValueError:
                 return {"error": "start_date muss im Format 'YYYY-MM-DD' sein."}
+
         if end_date:
             try:
                 datetime.strptime(end_date, '%Y-%m-%d')
             except ValueError:
                 return {"error": "end_date muss im Format 'YYYY-MM-DD' sein."}
-        if start_date and end_date and datetime.strptime(end_date, '%Y-%m-%d') <= datetime.strptime(start_date, '%Y-%m-%d'):
+
+        if start_date and end_date and datetime.strptime(end_date, '%Y-%m-%d') <= datetime.strptime(start_date,
+                                                                                                    '%Y-%m-%d'):
             return {"error": "end_date muss nach start_date liegen."}
+
+        cache_key = f"cpi_inflation_data_{start_date}_{end_date}" if start_date and end_date else "cpi_inflation_data"
+
         if use_cache:
-            cache_key = f"cpi_inflation_data_{start_date}_{end_date}" if start_date and end_date else "cpi_inflation_data"
             cached_data = self._load_cached_data(cache_key, "inflation_data")
             if cached_data is not None and "error" not in cached_data:
                 return cached_data
+
         try:
-            api_key = '87050e1670abe158b4dbaebdc8910d49'
+            api_key = os.environ["FRED_API_KEY"]
             series_id = 'CPIAUCSL'
             url = f'https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={api_key}&file_type=json'
+
             if start_date and end_date:
                 url += f'&observation_start={start_date}&observation_end={end_date}'
+
             response = requests.get(url)
             response.raise_for_status()
-            data = response.json()['observations']
-            if len(data) < 2:
-                raise ValueError("Nicht genügend CPI-Daten für die Berechnung der Inflationsrate.")
-            cpi_data = [{'date': entry['date'], 'value': float(entry['value'])} for entry in data]
+
+            observations = response.json()['observations']
+
+            cpi_data = []
+            for entry in observations:
+                raw_value = entry.get("value")
+
+                if raw_value in [None, "", "."]:
+                    continue
+
+                try:
+                    value = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+
+                cpi_data.append({
+                    'date': entry['date'],
+                    'value': value
+                })
+
+            if len(cpi_data) < 2:
+                return {"error": "Nicht genügend gültige CPI-Daten für die Berechnung der Inflationsrate."}
+
             if use_cache:
-                cache_key = f"cpi_inflation_data_{start_date}_{end_date}" if start_date and end_date else "cpi_inflation_data"
                 self._cache_data(cpi_data, cache_key, "inflation_data")
+
             return cpi_data
+
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen der Inflationsdaten: {str(e)}"}
+            # Nicht str(e) an den Client zurückgeben: requests hängt bei
+            # HTTPError/raise_for_status die volle Request-URL inkl.
+            # api_key-Query-Parameter in die Exception-Message — das würde
+            # den FRED_API_KEY an den Browser leaken. Voller Fehler nur ins
+            # Server-Log, Client bekommt eine sichere, aber weiterhin
+            # quellenbenannte Meldung.
+            self.logger.error(f"Fehler beim Abrufen der Inflationsdaten (FRED): {describe_exception(e)}")
+            return {"error": "Inflationsdaten von der FRED-API aktuell nicht verfügbar. Bitte versuche es später erneut."}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_gdp_data_grpwth(self, use_cache=True):
@@ -1686,7 +2721,7 @@ class DataLoader:
             if cached_data is not None and "error" not in cached_data:
                 return cached_data
         try:
-            api_key = '87050e1670abe158b4dbaebdc8910d49'
+            api_key = os.environ["FRED_API_KEY"]
             series_id = 'GDPC1'
             url = f'https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={api_key}&file_type=json'
             response = requests.get(url)
@@ -1718,7 +2753,11 @@ class DataLoader:
                 self._cache_data(data, "gdp_data", "gdp_value")
             return data
         except Exception as e:
-            return {"error": f"Fehler beim Abrufen der BIP-Daten: {str(e)}"}
+            # Siehe Kommentar in get_inflation_data zum FRED_API_KEY-Leak-Risiko
+            # über requests-Exception-Messages — str(e) bewusst nicht an den
+            # Client zurückgeben.
+            self.logger.error(f"Fehler beim Abrufen der BIP-Daten (FRED): {describe_exception(e)}")
+            return {"error": "BIP-Daten von der FRED-API aktuell nicht verfügbar. Bitte versuche es später erneut."}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_company_profits(self, symbol, use_cache=True, frequency="annual"):
@@ -1777,105 +2816,106 @@ class DataLoader:
             return {"error": f"Fehler beim Abrufen der Gewinndaten für {symbol}: {str(e)}"}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
-    def get_enterprise_value(self, symbol: str, use_cache = True, frequency: str = "annual") -> dict:
+    def get_enterprise_value(self, symbol: str, use_cache=True, frequency: str = "annual") -> dict:
         """
-        Berechnet den Enterprise Value (EV) eines Unternehmens.
-        Priorisiert die eigene Berechnung; bei NaN-Werten für net_debt greift es auf yfinance zurück.
-        Formel: EV = Marktkapitalisierung + Gesamtverbindlichkeiten - Liquide Mittel
+        Berechnet den Enterprise Value (EV).
 
-        Args:
-            symbol (str): Aktiensymbol (z. B. 'AAPL').
-            frequency (str): 'annual' für jährliche Daten (TTM), 'quarterly' für quartalsweise Daten.
-
-        Returns:
-            dict: Enthält den Enterprise Value, Symbol und Frequenz, oder Fehlerdetails mit Symbol.
+        Formel:
+            EV = Market Cap + Net Debt
         """
-        try:
-            if use_cache:
-                cached_data = self._load_cached_data(symbol, f"enterprise_value{frequency}")
-                if cached_data is not None and "error" not in cached_data:
-                    return cached_data
 
-            # Prüfen, ob Frequenz gültig ist
-            if frequency not in ["annual", "quarterly"]:
-                return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
-                        "symbol": symbol}
-
-            # Daten abrufen
-            current_price = self.get_current_price_per_share(symbol)
-            shares = self.get_shares_outstanding(symbol)
-            net_debt_data = self.get_net_debt_data(symbol, frequency=frequency)
-
-            # Fehlerprüfung für Daten
-            if isinstance(current_price, dict) and "error" in current_price:
-                error_msg = current_price["error"]
-                if "HTTP Error 404" in error_msg:
-                    error_msg = f"Ungültiges Symbol: {symbol}. {error_msg}"
-                return {"error": error_msg, "symbol": symbol}
-            if isinstance(shares, dict) and "error" in shares:
-                return {"error": shares["error"], "symbol": symbol}
-            if isinstance(net_debt_data, dict) and "error" in net_debt_data:
-                return {"error": net_debt_data["error"], "symbol": symbol}
-
-            # Werte extrahieren
-            total_debt = net_debt_data["total_debt"]
-            cash = net_debt_data["cash"]
-            net_debt = net_debt_data["net_debt"]
-
-            # Prüfen auf ungültige Werte
-            if shares <= 0:
-                return {"error": f"Ungültige Anzahl ausstehender Aktien für {symbol}: {shares}.", "symbol": symbol}
-            if current_price <= 0:
-                return {"error": f"Ungültiger Aktienkurs für {symbol}: {current_price}.", "symbol": symbol}
-            if total_debt is None and cash is None:
-                # Verwende net_debt direkt, wenn total_debt und cash nicht verfügbar sind
-                if net_debt is None or net_debt != net_debt:  # Prüft auf NaN
-                    # Fallback auf yfinance für NaN-Werte
-                    try:
-                        ticker = yf.Ticker(symbol)
-                        enterprise_value = ticker.info.get('enterpriseValue')
-                        if enterprise_value is not None and isinstance(enterprise_value,
-                                                                       (int, float)) and enterprise_value > 0:
-                            return {
-                                "enterprise_value": float(enterprise_value),
-                                "symbol": symbol,
-                                "frequency": frequency
-                            }
-                        else:
-                            return {
-                                "error": f"Kein gültiger Enterprise Value von yfinance für {symbol} ({frequency}) verfügbar.",
-                                "symbol": symbol}
-                    except Exception as yf_error:
-                        return {
-                            "error": f"Keine gültigen Nettoschulden-Daten für {symbol} ({frequency}) verfügbar, und yfinance fehlgeschlagen: {str(yf_error)}",
-                            "symbol": symbol}
-            else:
-                # Verwende total_debt und cash, wenn verfügbar
-                if total_debt is None:
-                    return {"error": f"Keine Schulden-Daten für {symbol} ({frequency}) verfügbar.", "symbol": symbol}
-                if cash is None:
-                    return {"error": f"Keine Liquiditäts-Daten für {symbol} ({frequency}) verfügbar.", "symbol": symbol}
-                net_debt = total_debt - cash
-
-            # Marktkapitalisierung berechnen
-            market_cap = current_price * shares
-
-            # Enterprise Value berechnen
-            enterprise_value = market_cap + net_debt
-
-            # Ergebnis zurückgeben
-            data = {
-                "enterprise_value": float(enterprise_value),
-                "symbol": symbol,
-                "frequency": frequency
+        if frequency not in ["annual", "quarterly"]:
+            return {
+                "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
+                "symbol": symbol
             }
-            if use_cache:
-                self._cache_data(data, symbol, f"enterprise_value{frequency}")
 
-            return data
+        cache_key = f"enterprise_value{frequency}"
+
+        if use_cache:
+            cached_data = self._load_cached_data(symbol, cache_key)
+            if cached_data is not None and "error" not in cached_data:
+                return cached_data
+
+        try:
+            market_cap_data = self.get_market_cap(
+                symbol=symbol,
+                use_cache=use_cache
+            )
+
+            if isinstance(market_cap_data, dict) and "error" in market_cap_data:
+                return {
+                    "error": market_cap_data["error"],
+                    "symbol": symbol
+                }
+
+            market_cap = market_cap_data.get("market_cap")
+
+            if market_cap is None or pd.isna(market_cap) or market_cap <= 0:
+                return {
+                    "error": f"Ungültige Marktkapitalisierung für {symbol}: {market_cap}",
+                    "symbol": symbol
+                }
+
+            net_debt_data = self.get_net_debt_data(
+                symbol=symbol,
+                frequency=frequency
+            )
+
+            if isinstance(net_debt_data, dict) and "error" in net_debt_data:
+                return {
+                    "error": net_debt_data["error"],
+                    "symbol": symbol
+                }
+
+            net_debt = net_debt_data.get("net_debt")
+
+            if net_debt is None or pd.isna(net_debt):
+                total_debt = net_debt_data.get("total_debt")
+                cash = net_debt_data.get("cash")
+
+                if total_debt is None or pd.isna(total_debt):
+                    return {
+                        "error": f"Keine gültigen Schulden-Daten für {symbol} ({frequency}) verfügbar.",
+                        "symbol": symbol
+                    }
+
+                if cash is None or pd.isna(cash):
+                    return {
+                        "error": f"Keine gültigen Liquiditäts-Daten für {symbol} ({frequency}) verfügbar.",
+                        "symbol": symbol
+                    }
+
+                net_debt = float(total_debt) - float(cash)
+
+            enterprise_value = float(market_cap) + float(net_debt)
+
+            if pd.isna(enterprise_value) or enterprise_value <= 0:
+                return {
+                    "error": f"Ungültiger Enterprise Value für {symbol} ({frequency}): {enterprise_value}",
+                    "symbol": symbol
+                }
+
+            result = {
+                "enterprise_value": float(enterprise_value),
+                "market_cap": float(market_cap),
+                "net_debt": float(net_debt),
+                "symbol": symbol.upper(),
+                "frequency": frequency,
+                "date": net_debt_data.get("date"),
+                "source": "Market Cap + SEC Net Debt"
+            }
+
+            if use_cache:
+                self._cache_data(result, symbol, cache_key)
+
+            return result
 
         except Exception as e:
-            return {"error": f"Fehler beim Berechnen des Enterprise Value für {symbol}: {str(e)}", "symbol": symbol}
+            return {
+                "error": f"Fehler beim Berechnen des Enterprise Value für {symbol}: {str(e)}",
+                "symbol": symbol
+            }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_minority_interest(self, symbol: str, frequency: str = "annual", use_cache: bool = True) -> dict:
@@ -2010,9 +3050,17 @@ class DataLoader:
             return {"error": f"Fehler beim Abrufen der Vorzugsaktien für {symbol} ({frequency}): {str(e)}",
                     "symbol": symbol}
 
+    def _cache_duration_for(self, data_type: str) -> timedelta:
+        lowered = data_type.lower()
+        if "historical" in lowered:
+            return HISTORICAL_CACHE_TTL
+        if any(keyword in lowered for keyword in PRICE_SENSITIVE_CACHE_KEYWORDS):
+            return LIVE_CACHE_TTL
+        return FUNDAMENTAL_CACHE_TTL
+
     def _load_cached_data(self, symbol, data_type):
         filepath = os.path.join(self.cache_dir, f"{symbol}_{data_type}.json")
-        cache_duration = timedelta(days=600) if "historical" in data_type else timedelta(minutes=10)
+        cache_duration = self._cache_duration_for(data_type)
         if os.path.exists(filepath) and (
                 datetime.now() - datetime.fromtimestamp(os.path.getmtime(filepath))) < cache_duration:
             with open(filepath, "r") as f:

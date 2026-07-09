@@ -1,15 +1,36 @@
 # api/routes/analyze.py
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends, Request
+from sqlalchemy import case, func, or_
+from sqlalchemy.orm import Session
 from typing import Callable, Dict
 import inspect
-import traceback
-import threading
+import logging
 
-from api.services.job_manager import job_manager
+from api.core.rate_limit import limiter
+
+from api.services.event_service import log_event
+from api.services.job_manager import (
+    job_manager,
+    GENERIC_JOB_ERROR,
+    TOO_MANY_ACTIVE_JOBS_DETAIL,
+)
 from api.utils.json_sanitize import make_json_safe
+from api.core.dependencies import get_current_user, require_analysis_access, get_db
+from api.core.database import SessionLocal
+from api.models.symbol import Symbol
+from api.models.user import User
+from api.crud.analysis_history import (
+    create_history_entry,
+    update_history_status,
+    get_recent_history,
+    get_history_entry,
+)
+from api.schemas.analysis_history import AnalysisHistoryEntry, AnalysisHistorySnapshot
 from agent.AgentAction import AgentAction
 
 router = APIRouter(prefix="/analyze", tags=["analyze"])
+
+logger = logging.getLogger(__name__)
 
 
 # =============================
@@ -18,13 +39,78 @@ router = APIRouter(prefix="/analyze", tags=["analyze"])
 
 _action_instance: AgentAction | None = None
 
+# Popular-Fallback fuer die leere Suche (Fokus-Dropdown ohne Eingabe) und
+# fuer den Fall, dass scripts/import_symbols.py noch nie gelaufen ist (dann
+# ist die symbols-Tabelle leer) - die ehemals fest kuratierten 23 Symbole,
+# jetzt nur noch als Ticker-Liste statt eigener Datenquelle.
+POPULAR_SYMBOLS = [
+    "AAPL", "MO", "GOOGL", "TSLA", "AMD", "PYPL", "NVDA", "NKE", "UNH",
+    "XPEV", "OCGN", "UAA", "BABA", "LUMN", "TTWO", "BIDU", "JD", "CRSP",
+    "NVO", "NFLX", "BYD", "SAP", "ILMN",
+]
+
+
 @router.get("/symbols")
-def get_symbols():
-    data = getattr(get_action(), "COMPANY_SECTORS", {}) or {}
-    return [
-        {"symbol": sym, "sectors": sectors}
-        for sym, sectors in sorted(data.items())
-    ]
+@limiter.limit("60/minute")
+def search_symbols(
+    request: Request,
+    query: str = Query("", max_length=50),
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Durchsucht das NYSE+NASDAQ-Symbol-Universum (siehe
+    scripts/import_symbols.py) nach Symbol oder Firmennamen - ersetzt die
+    fruehere "alle 23 Symbole auf einmal laden"-Route, da das komplette
+    Universum (~6-7k Zeilen) fuers Frontend-Autocomplete zu gross waere.
+    `sectors` bleibt aus Kompatibilitaetsgruenden ein Array (Dropdown-Code
+    degradiert damit sauber, auch wenn Branche noch nicht angereichert ist).
+    """
+    clean_query = query.strip()
+
+    if not clean_query:
+        rows = (
+            db.query(Symbol)
+            .filter(Symbol.symbol.in_(POPULAR_SYMBOLS), Symbol.is_active.is_(True))
+            .all()
+        )
+        # Fallback, falls der Import-Lauf noch nie stattfand.
+        if not rows:
+            return [{"symbol": s, "name": s, "sectors": []} for s in POPULAR_SYMBOLS[:limit]]
+        order = {s: i for i, s in enumerate(POPULAR_SYMBOLS)}
+        rows.sort(key=lambda r: order.get(r.symbol, len(order)))
+        return [_symbol_to_dict(r) for r in rows[:limit]]
+
+    pattern_prefix = f"{clean_query}%"
+    pattern_contains = f"%{clean_query}%"
+
+    rank = case(
+        (Symbol.symbol.ilike(clean_query), 0),
+        (Symbol.symbol.ilike(pattern_prefix), 1),
+        (Symbol.name.ilike(pattern_prefix), 2),
+        else_=3,
+    )
+
+    rows = (
+        db.query(Symbol)
+        .filter(
+            Symbol.is_active.is_(True),
+            or_(Symbol.symbol.ilike(pattern_contains), Symbol.name.ilike(pattern_contains)),
+        )
+        .order_by(rank, func.length(Symbol.symbol), Symbol.symbol)
+        .limit(limit)
+        .all()
+    )
+
+    return [_symbol_to_dict(r) for r in rows]
+
+
+def _symbol_to_dict(row: Symbol) -> dict:
+    return {
+        "symbol": row.symbol,
+        "name": row.name,
+        "sectors": [s for s in (row.industry, row.sector) if s],
+    }
+
 
 def get_action() -> AgentAction:
     global _action_instance
@@ -45,49 +131,75 @@ def _norm_symbol(symbol: str) -> str:
 # =============================
 
 @router.get("/wachstumswerte")
-def wachstumswerte(symbol: str, frequency: str = "annual"):
+def wachstumswerte(
+    symbol: str,
+    frequency: str = "annual",
+    current_user: User = Depends(require_analysis_access),
+):
     return make_json_safe(
         get_action().analyze_wachstumswerte(_norm_symbol(symbol), frequency)
     )
 
 
 @router.get("/dividendenwerte")
-def dividendenwerte(symbol: str):
+def dividendenwerte(
+    symbol: str,
+    current_user: User = Depends(require_analysis_access),
+):
     return make_json_safe(
         get_action().analyze_dividend_companies(_norm_symbol(symbol))
     )
 
 
 @router.get("/average-grower")
-def average_grower(symbol: str):
+def average_grower(
+    symbol: str,
+    current_user: User = Depends(require_analysis_access),
+):
     return make_json_safe(
         get_action().analyze_average_grower(_norm_symbol(symbol))
     )
 
 
 @router.get("/typische-zykliker")
-def typische_zykliker(symbol: str, frequency: str = "annual"):
+def typische_zykliker(
+    symbol: str,
+    frequency: str = "annual",
+    current_user: User = Depends(require_analysis_access),
+):
     return make_json_safe(
         get_action().analyze_typical_cyclers(_norm_symbol(symbol), frequency)
     )
 
 
 @router.get("/turnarounds")
-def turnarounds(symbol: str, frequency: str = "annual"):
+def turnarounds(
+    symbol: str,
+    frequency: str = "annual",
+    current_user: User = Depends(require_analysis_access),
+):
     return make_json_safe(
         get_action().analyze_cycler_turnarounds(_norm_symbol(symbol), frequency)
     )
 
 
 @router.get("/optionality")
-def optionality(symbol: str, frequency: str = "annual"):
+def optionality(
+    symbol: str,
+    frequency: str = "annual",
+    current_user: User = Depends(require_analysis_access),
+):
     return make_json_safe(
         get_action().analyze_optionality(_norm_symbol(symbol), frequency)
     )
 
 
 @router.get("/asset-play")
-def asset_play(symbol: str, frequency: str = "annual"):
+def asset_play(
+    symbol: str,
+    frequency: str = "annual",
+    current_user: User = Depends(require_analysis_access),
+):
     return make_json_safe(
         get_action().analyze_asset_play(_norm_symbol(symbol), frequency)
     )
@@ -122,23 +234,41 @@ def get_analysis_registry() -> Dict[str, Callable[..., dict]]:
 
 
 @router.post("/{mode}/start")
+@limiter.limit("30/minute")
 def start_single_analysis(
+    request: Request,
     mode: str,
     symbol: str = Query(...),
     frequency: str = Query("annual"),
+    current_user: User = Depends(require_analysis_access),
+    db: Session = Depends(get_db),
 ):
     registry = get_analysis_registry()
 
     if mode not in registry:
         raise HTTPException(status_code=404, detail="Unknown analysis mode")
 
+    if (
+        job_manager.count_active_jobs(current_user.id)
+        >= job_manager.max_active_jobs_per_user
+    ):
+        raise HTTPException(status_code=429, detail=TOO_MANY_ACTIVE_JOBS_DETAIL)
+
     symbol = _norm_symbol(symbol)
     pretty_name = DISPLAY_NAME.get(mode, mode)
     key = f"{pretty_name}|{frequency}"
 
-    job_id = job_manager.create_job(symbol=symbol, total=1)
+    job_id = job_manager.create_job(symbol=symbol, total=1, user_id=current_user.id)
+    create_history_entry(db, current_user.id, job_id, symbol, mode, frequency)
+    log_event(
+        db,
+        "analysis_started",
+        user_id=current_user.id,
+        metadata={"mode": mode, "frequency": frequency, "symbol": symbol},
+    )
 
     def run():
+        history_db = SessionLocal()
         try:
             job_manager.set_current(job_id, "Starte Analyse…")
 
@@ -163,12 +293,22 @@ def start_single_analysis(
             job_manager.set_current(job_id, "Speichere Ergebnis…")
             job_manager.add_result(job_id, key, safe_result)
             job_manager.set_done(job_id)
+            snapshot = job_manager.get_result(job_id)["results"]
+            update_history_status(history_db, job_id, "done", snapshot)
 
-        except Exception as e:
-            traceback.print_exc()
-            job_manager.set_error(job_id, str(e))
+        except Exception:
+            logger.exception(
+                "Single analysis job failed: job_id=%s symbol=%s mode=%s",
+                job_id,
+                symbol,
+                mode,
+            )
+            job_manager.set_error(job_id, GENERIC_JOB_ERROR)
+            update_history_status(history_db, job_id, "error")
+        finally:
+            history_db.close()
 
-    threading.Thread(target=run, daemon=True).start()
+    job_manager.submit(run)
 
     return {
         "job_id": job_id,
@@ -178,17 +318,45 @@ def start_single_analysis(
     }
 
 
+@router.get("/history", response_model=list[AnalysisHistoryEntry])
+def get_analysis_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_recent_history(db, current_user.id, limit=10)
+
+
+@router.get("/history/{history_id}/snapshot", response_model=AnalysisHistorySnapshot)
+def get_analysis_history_snapshot(
+    history_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    entry = get_history_entry(db, current_user.id, history_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="History entry not found")
+    return entry
+
+
 @router.get("/{mode}/{job_id}/progress")
-def get_single_progress(mode: str, job_id: str):
-    p = job_manager.get_progress(job_id)
+def get_single_progress(
+    mode: str,
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    p = job_manager.get_progress(job_id, user_id=current_user.id)
     if not p:
         raise HTTPException(status_code=404, detail="Job not found")
     return p
 
 
 @router.get("/{mode}/{job_id}/result")
-def get_single_result(mode: str, job_id: str):
-    r = job_manager.get_result(job_id)
+def get_single_result(
+    mode: str,
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    r = job_manager.get_result(job_id, user_id=current_user.id)
     if not r:
         raise HTTPException(status_code=404, detail="Job not found")
     return r
