@@ -13,6 +13,9 @@ dist/
 # OS
 .DS_Store
 
+# Internes Launch-Tracking-Dokument - bleibt lokal, nicht Teil des Repos
+LAUNCH.md
+
 # Claude Code worktree artifacts (nested git working copies, not source)
 .claude/worktrees/
 
