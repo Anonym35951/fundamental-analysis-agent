@@ -90,7 +90,7 @@ def get_metric_history(
 
     try:
         raw_result = call_metric(action, key, symbol, params)
-        result = _wrap_metric_result(raw_result, None)
+        result = _wrap_metric_result(raw_result, None, key)
     except Exception:
         logger.exception("Metric history failed: key=%s symbol=%s", key, symbol)
         result = {"value": None, "error": _GENERIC_METRIC_ERROR}
@@ -98,7 +98,40 @@ def get_metric_history(
     return {"key": key, "symbol": symbol, **result}
 
 
+def _pick_primary_numeric_value(value: dict, metric_key: str):
+    """Mirrors pickPrimaryObjectValue in
+    frontend/src/components/compare/ComparePivotTable.tsx - a criterion on a
+    "dict"-shaped metric (result_shape="dict" in metric_catalog.py, e.g.
+    analyze_payout_ratio, calculate_current_dividend_yield) must be
+    evaluated against the exact same field the results table actually
+    displays for that dict, not the dict itself. Keep both in sync if
+    either changes."""
+    if metric_key == "get_current_tbv_and_price" and "price_to_tbv" in value:
+        candidate = value.get("price_to_tbv")
+        return candidate if isinstance(candidate, (int, float)) and not isinstance(candidate, bool) else None
+
+    for key, val in value.items():
+        if key in metric_key or "rate" in key:
+            return val if isinstance(val, (int, float)) and not isinstance(val, bool) else None
+
+    for val in value.values():
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            return val
+
+    return None
+
+
 def _evaluate_criterion(operator: str, threshold: float, value) -> bool | None:
+    # make_json_safe turns float("inf")/float("-inf") into these strings for
+    # JSON-safety before a criterion ever sees the value (see
+    # api/utils/json_sanitize.py) - e.g. calculate_net_debt_to_ebitda /
+    # calculate_interest_coverage_ratio's debt-free edge case. Undo that here
+    # so a threshold still evaluates correctly instead of silently no-op'ing.
+    if value == "inf":
+        value = float("inf")
+    elif value == "-inf":
+        value = float("-inf")
+
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         return None
     if operator == ">":
@@ -112,7 +145,7 @@ def _evaluate_criterion(operator: str, threshold: float, value) -> bool | None:
     return None
 
 
-def _wrap_metric_result(raw, criterion: dict | None) -> dict:
+def _wrap_metric_result(raw, criterion: dict | None, metric_key: str = "") -> dict:
     # A bare None (e.g. get_max_historical_stock_data giving up after
     # exhausting its retries, or legitimately finding no data) matched none
     # of the branches below and fell through to {"value": None} with no
@@ -141,7 +174,14 @@ def _wrap_metric_result(raw, criterion: dict | None) -> dict:
     result = {"value": safe}
 
     if criterion is not None:
-        meets = _evaluate_criterion(criterion["operator"], criterion["threshold"], safe)
+        # "dict"-shaped metrics (result_shape="dict" in metric_catalog.py,
+        # e.g. analyze_payout_ratio, calculate_current_dividend_yield,
+        # get_current_tbv_and_price) return several fields under "value" -
+        # the criterion has to be evaluated against the one field the table
+        # actually displays, not the dict as a whole (which is never
+        # int/float and would always make _evaluate_criterion no-op).
+        criterion_value = _pick_primary_numeric_value(safe, metric_key) if isinstance(safe, dict) else safe
+        meets = _evaluate_criterion(criterion["operator"], criterion["threshold"], criterion_value)
         if meets is not None:
             # numpy-abgeleitete Werte (z. B. ein KGV aus einer Pandas-Series)
             # machen `value > threshold` zu einem numpy.bool_/numpy.bool statt
@@ -202,7 +242,7 @@ def _launch_custom_job(
                 try:
                     raw_result = call_metric(action, selection.key, symbol, params)
                     criterion = selection.criterion.model_dump() if selection.criterion else None
-                    metric_result = _wrap_metric_result(raw_result, criterion)
+                    metric_result = _wrap_metric_result(raw_result, criterion, selection.key)
                 except Exception:
                     logger.exception(
                         "Custom metric failed: job_id=%s key=%s symbol=%s",
