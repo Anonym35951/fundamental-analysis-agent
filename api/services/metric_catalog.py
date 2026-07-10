@@ -74,6 +74,34 @@ MIN_YEARS_PARAM = MetricParam(name="min_years", type="number", default=10.0)
 THRESHOLD_PARAM = MetricParam(name="threshold", type="number", default=75.0)
 
 
+def _coerce_param_value(value: Any, annotation: Any) -> Any:
+    """A "number"-typed param (threshold, min_years, years) arriving as a
+    JSON string reaches a Model.py method typed float/int and crashes a
+    downstream numeric comparison - not always with a plain Python
+    TypeError, but sometimes with a confusing numpy ufunc error whenever
+    the other operand happens to be a numpy scalar (e.g. "ufunc 'greater'
+    did not contain a loop with signature matching types (Float64DType,
+    StrDType) -> None", live bug 2026-07-10, analyze_payout_ratio). The
+    frontend now sends real JSON numbers for these params, but a custom
+    analysis definition saved before that fix still has the old string
+    value persisted in the database - coerce here, at the one place every
+    generically-dispatched metric call passes through, so it's fixed for
+    already-saved definitions too, not just newly-edited ones."""
+    if not isinstance(value, str) or annotation is inspect.Parameter.empty:
+        return value
+    if annotation is float:
+        try:
+            return float(value)
+        except ValueError:
+            return value
+    if annotation is int:
+        try:
+            return int(value)
+        except ValueError:
+            return value
+    return value
+
+
 def _generic_call(action: AgentAction, symbol: Optional[str], params: dict, key: str, requires_symbol: bool) -> Any:
     """Maps the stored `params` dict onto the real Model.py method's keyword
     arguments via introspection, so most MetricSpec entries don't need a
@@ -81,7 +109,10 @@ def _generic_call(action: AgentAction, symbol: Optional[str], params: dict, key:
     already used in api/routes/analyze.py's start_single_analysis_job."""
     fn = getattr(action.model, key)
     sig = inspect.signature(fn)
-    kwargs = {k: v for k, v in params.items() if k in sig.parameters and v is not None}
+    kwargs = {
+        k: _coerce_param_value(v, sig.parameters[k].annotation)
+        for k, v in params.items() if k in sig.parameters and v is not None
+    }
     if requires_symbol:
         return fn(symbol, **kwargs)
     return fn(**kwargs)
