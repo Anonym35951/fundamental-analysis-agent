@@ -89,9 +89,19 @@ def test_get_current_price_per_share_does_not_call_alpha_vantage_when_yahoo_succ
     mock_av_get.assert_not_called()
 
 
-def test_get_current_price_per_share_falls_back_to_alpha_vantage_when_yahoo_exhausted(loader):
+def test_get_current_price_per_share_falls_back_to_alpha_vantage_delayed_tier(loader):
+    """Live gegen die echte API verifiziert (2026-07-10): der bezahlte
+    "15-Minuten-verzögert"-Tarif (entitlement=delayed, den dieser Account
+    hat) liefert den Preis unter "Global Quote - DATA DELAYED BY 15
+    MINUTES", NICHT unter "Global Quote" - ein hartkodierter exakter Key
+    hätte hier still None zurückgegeben und den RetryError re-raised, obwohl
+    der Fallback eigentlich einen validen Preis hatte (live bei MO/PYPL
+    beobachtet: KGV/KUV schlugen mit RetryError fehl, obwohl Alpha Vantage
+    einen Preis geliefert hätte)."""
     mock_response = MagicMock()
-    mock_response.json.return_value = {"Global Quote": {"05. price": "88.20"}}
+    mock_response.json.return_value = {
+        "Global Quote - DATA DELAYED BY 15 MINUTES": {"05. price": "88.20"}
+    }
 
     with patch("agent.DataLoader.yf.Ticker", side_effect=ConnectionError("429 Too Many Requests")) as mock_ticker_cls, \
             patch("agent.DataLoader.requests.get", return_value=mock_response) as mock_av_get:
@@ -103,6 +113,20 @@ def test_get_current_price_per_share_falls_back_to_alpha_vantage_when_yahoo_exha
     _, kwargs = mock_av_get.call_args
     assert kwargs["params"]["function"] == "GLOBAL_QUOTE"
     assert kwargs["params"]["entitlement"] == "delayed"
+
+
+def test_get_current_price_per_share_falls_back_to_alpha_vantage_realtime_tier(loader):
+    """Der kostenlose/Realtime-Tarif liefert den Preis unter dem einfachen
+    Key "Global Quote" - muss weiterhin funktionieren, falls der Account
+    später auf einen anderen Tarif wechselt."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"Global Quote": {"05. price": "42.00"}}
+
+    with patch("agent.DataLoader.yf.Ticker", side_effect=ConnectionError("429 Too Many Requests")), \
+            patch("agent.DataLoader.requests.get", return_value=mock_response):
+        price = loader.get_current_price_per_share("TSLA")
+
+    assert price == 42.00
 
 
 def test_get_current_price_per_share_raises_when_alpha_vantage_rate_limited(loader):

@@ -1057,7 +1057,16 @@ class DataLoader:
             if "Note" in data or "Information" in data or "Error Message" in data:
                 self.logger.warning(f"Alpha-Vantage-Fallback für {symbol} liefert kein Quote: {data}")
                 return None
-            raw_price = (data.get("Global Quote") or {}).get("05. price")
+            # Der Objekt-Key hängt vom Entitlement ab: das kostenlose/Realtime-
+            # Tier liefert "Global Quote", der bezahlte "15-Minuten-verzögert"-
+            # Tarif (entitlement=delayed) liefert stattdessen
+            # "Global Quote - DATA DELAYED BY 15 MINUTES" - live gegen die
+            # echte API verifiziert (siehe LAUNCH.md P2-22). Ein hartkodierter
+            # exakter Key-Match auf "Global Quote" findet bei diesem Tarif
+            # nichts, gibt still None zurück und lässt den eigentlich
+            # erfolgreichen Fallback fehlschlagen.
+            quote_key = next((k for k in data if k.startswith("Global Quote")), None)
+            raw_price = data.get(quote_key, {}).get("05. price") if quote_key else None
             return float(raw_price) if raw_price else None
         except Exception as e:
             self.logger.warning(f"Alpha-Vantage-Fallback für {symbol} fehlgeschlagen: {e}")
