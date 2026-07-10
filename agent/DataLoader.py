@@ -1558,27 +1558,34 @@ class DataLoader:
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_dividend_history(self, symbol, use_cache=True):
-        """Ruft die Rohdaten der Dividenden der letzten 20 Jahre ab (als DataFrame mit Spalte 'dividend')."""
+        """Ruft die Rohdaten der Dividenden der letzten 20 Jahre ab (als DataFrame mit Spalte 'dividend').
+
+        Bewusst kein try/except um den Netzwerk-Call (P2-12-Muster, siehe
+        get_max_historical_stock_data): @retry oben braucht eine tatsächlich
+        propagierende Exception, um bei transienten Yahoo-Fehlern (401/429,
+        Timeouts - v. a. von Cloud-IPs wie Render) erneut zu versuchen. Die
+        vorherige Version fing hier jede Exception intern ab und gab sofort
+        ein Error-Dict zurück, wodurch @retry nie einen Fehler sah und nie
+        griff. "Keine Dividendenhistorie" (dividends.empty) bleibt bewusst
+        KEIN Retry-Fall - gültige Antwort, kein transienter Fehler."""
         if use_cache:
             cached_data = self._load_cached_data(symbol, "dividend_history")
             if cached_data is not None and "error" not in cached_data:
                 return cached_data
-        try:
-            stock = yf.Ticker(symbol)
-            dividends = stock.dividends
-            if dividends.empty:
-                raise ValueError(f"Keine Dividendenhistorie für {symbol} gefunden.")
 
-            # auf 20 Jahre (≈80 Einträge) begrenzen und in DataFrame verwandeln
-            df = dividends.tail(80).to_frame(name="dividend")
-            df.index = pd.to_datetime(df.index)  # sicherheitshalber
-            data = {"dividends_history": df}
+        stock = yf.Ticker(symbol)
+        dividends = stock.dividends
+        if dividends.empty:
+            return {"error": f"Keine Dividendenhistorie für {symbol} gefunden."}
 
-            if use_cache:
-                self._cache_data(data, symbol, "dividend_history")
-            return data
-        except Exception as e:
-            return {"error": f"Fehler beim Abrufen der Dividendenhistorie für {symbol}: {str(e)}"}
+        # auf 20 Jahre (≈80 Einträge) begrenzen und in DataFrame verwandeln
+        df = dividends.tail(80).to_frame(name="dividend")
+        df.index = pd.to_datetime(df.index)  # sicherheitshalber
+        data = {"dividends_history": df}
+
+        if use_cache:
+            self._cache_data(data, symbol, "dividend_history")
+        return data
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_paid_dividends(
@@ -2524,6 +2531,40 @@ class DataLoader:
             }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
+    def _fetch_yahoo_info(self, symbol):
+        """Isolierter, retry-fähiger Yahoo-`.info`-Zugriff (P2-12-Muster,
+        siehe _fetch_yahoo_price). Exceptions propagieren bewusst, damit
+        @retry bei transienten Fehlern greift."""
+        return yf.Ticker(symbol).info
+
+    @staticmethod
+    def _sum_dividends_last_365_days(dividends_history: pd.DataFrame) -> float:
+        """Summiert die "dividend"-Spalte über die letzten 365 Tage.
+
+        Zwei Fallstricke, live gegen echte Daten gefunden (2026-07-10):
+        1. dividends_history hat genau eine Spalte ("dividend") - .sum() auf
+           dem gefilterten DataFrame statt der Spalte summiert spaltenweise
+           und liefert eine 1-Element-Series statt eines Skalars.
+        2. Nach einem JSON-Cache-Roundtrip (DataLoader._cache_data/
+           _load_cached_data) verliert der DatetimeIndex seine Zeitzone
+           (siehe Model.calculate_historical_dividend_yield_average, dieselbe
+           bekannte Ursache) - ein Vergleich gegen ein tz-aware
+           pd.Timestamp.now(tz=...) crasht dann mit "Invalid comparison
+           between dtype=datetime64[ns] and Timestamp". Frisch von Yahoo
+           geladene (ungecachte) Daten bleiben dagegen tz-aware.
+        """
+        end_date = pd.Timestamp.now(tz="America/New_York")
+        start_date = end_date - pd.Timedelta(days=365)
+        if dividends_history.index.tz is None:
+            end_date = end_date.tz_localize(None)
+            start_date = start_date.tz_localize(None)
+        return float(
+            dividends_history.loc[
+                (dividends_history.index >= start_date) & (dividends_history.index <= end_date),
+                "dividend",
+            ].sum()
+        )
+
     def get_payout_ratio_data_annual(self, symbol):
         """
         Ruft Daten ab und berechnet die Ausschüttungsquote über das letzte Jahr auf EPS-Basis.
@@ -2533,15 +2574,39 @@ class DataLoader:
         1. Prüfen, ob stock.info["payoutRatio"] verfügbar ist. Falls ja, direkt anwenden.
         2. Falls nicht, Fallback auf trailingEPS und Dividendenhistorie.
         3. Falls trailingEPS nicht verfügbar, Berechnung wie bisher mit Net Income.
+
+        Schritt 1+2 brauchen Yahoo `.info` (über _fetch_yahoo_info mit Retry);
+        schlägt der Zugriff auch nach 3 Versuchen fehl (P2-22: Yahoo blockt
+        Cloud-IPs wiederkehrend, nicht nur transient), fällt die Methode auf
+        Schritt 3 zurück, der ausschließlich SEC-Fundamentaldaten nutzt und
+        von Yahoo unabhängig ist - statt die gesamte Berechnung mit einem
+        einzigen Fehler abzubrechen, obwohl ein funktionierender Fallback-Pfad
+        bereits existiert.
         """
         try:
-            stock = yf.Ticker(symbol)
-            shares = self.get_shares_outstanding(symbol)
-            if isinstance(shares, dict) and "error" in shares:
-                return shares
+            shares_result = self.get_shares_outstanding(symbol)
+            if isinstance(shares_result, dict) and "error" in shares_result:
+                return shares_result
+            # get_shares_outstanding gibt bei Erfolg ein Dict
+            # {"shares_outstanding": X, ...} zurück, keine nackte Zahl (siehe
+            # Model._resolve_shares_outstanding, das dasselbe Dict analog
+            # entpackt) - ohne dieses Entpacken würde "shares > 0" weiter
+            # unten mit TypeError crashen, sobald Schritt 3 erreicht wird.
+            shares = shares_result.get("shares_outstanding") if isinstance(shares_result, dict) else shares_result
+            if not isinstance(shares, (int, float)) or not (shares > 0):
+                return {"error": f"Ungültige Anzahl ausstehender Aktien für {symbol}: {shares}"}
+
+            info = {}
+            try:
+                info = self._fetch_yahoo_info(symbol)
+            except Exception as e:
+                self.logger.warning(
+                    f"Yahoo .info für {symbol} nach Retries nicht verfügbar ({describe_exception(e)}), "
+                    "falle auf SEC-Berechnung zurück."
+                )
 
             # Schritt 1: Prüfen, ob payoutRatio verfügbar ist
-            payout_ratio = stock.info.get("payoutRatio")
+            payout_ratio = info.get("payoutRatio")
             if payout_ratio is not None and not pd.isna(payout_ratio) and payout_ratio >= 0:
                 return {
                     "payout_ratio_eps": round(payout_ratio * 100, 2),
@@ -2552,7 +2617,7 @@ class DataLoader:
                 }
 
             # Schritt 2: Fallback auf trailingEps
-            trailing_eps = stock.info.get("trailingEps")
+            trailing_eps = info.get("trailingEps")
             if trailing_eps is not None and not pd.isna(trailing_eps) and trailing_eps > 0:
                 dividend_history = self.get_dividend_history(symbol)
                 if isinstance(dividend_history, dict) and "error" in dividend_history:
@@ -2567,13 +2632,7 @@ class DataLoader:
                         "shares_outstanding": shares,
                         "warning": f"Keine Dividendenhistorie für {symbol}, Payout Ratio auf 0 gesetzt"
                     }
-                end_date = pd.Timestamp.now(tz="America/New_York")
-                start_date = end_date - pd.Timedelta(days=365)
-                dps = dividends_history[
-                    (dividends_history.index >= start_date) &
-                    (dividends_history.index <= end_date)
-                    ].sum()
-                dps = round(dps, 2)
+                dps = round(self._sum_dividends_last_365_days(dividends_history), 2)
                 payout_ratio_eps = (dps / trailing_eps * 100) if trailing_eps > 0 else 0
                 payout_ratio_eps = round(payout_ratio_eps, 2)
                 return {
@@ -2606,13 +2665,7 @@ class DataLoader:
                     "shares_outstanding": shares,
                     "warning": f"Keine Dividendenhistorie für {symbol}, Payout Ratio auf 0 gesetzt"
                 }
-            end_date = pd.Timestamp.now(tz="America/New_York")
-            start_date = end_date - pd.Timedelta(days=365)
-            dps = dividends_history[
-                (dividends_history.index >= start_date) &
-                (dividends_history.index <= end_date)
-                ].sum()
-            dps = round(dps, 2)
+            dps = round(self._sum_dividends_last_365_days(dividends_history), 2)
             payout_ratio_eps = (dps / eps * 100) if eps > 0 else 0
             payout_ratio_eps = round(payout_ratio_eps, 2)
             return {
