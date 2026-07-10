@@ -143,7 +143,14 @@ def _wrap_metric_result(raw, criterion: dict | None) -> dict:
     if criterion is not None:
         meets = _evaluate_criterion(criterion["operator"], criterion["threshold"], safe)
         if meets is not None:
-            result["meets_criterion"] = meets
+            # numpy-abgeleitete Werte (z. B. ein KGV aus einer Pandas-Series)
+            # machen `value > threshold` zu einem numpy.bool_/numpy.bool statt
+            # einem nativen Python bool - das JSONB-Encoding beim Schreiben
+            # des Job-Snapshots (update_history_status) scheitert daran mit
+            # "Object of type bool is not JSON serializable", da numpy.bool_
+            # keine Python-bool-Subklasse ist. make_json_safe normalisiert
+            # das über den generischen `.item()`-Fallback zu einem echten bool.
+            result["meets_criterion"] = make_json_safe(meets)
 
     return result
 

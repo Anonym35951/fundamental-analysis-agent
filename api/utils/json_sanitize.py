@@ -14,13 +14,15 @@ def make_json_safe(obj: Any):
     if obj is None or isinstance(obj, (str, int, bool)):
         return obj
 
-    # float handling
+    # float handling - numpy.float64 IS a float subclass (isinstance matches),
+    # but returning it as-is leaves a numpy scalar in place of a native float;
+    # float(obj) strips that (no-op for plain Python floats).
     if isinstance(obj, float):
         if math.isnan(obj):
             return None
         if math.isinf(obj):
             return "inf" if obj > 0 else "-inf"
-        return obj
+        return float(obj)
 
     # datetime handling
     if isinstance(obj, (datetime, date)):
