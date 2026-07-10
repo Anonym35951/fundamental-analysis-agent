@@ -1013,20 +1013,14 @@ class DataLoader:
             return {"error": f"Fehler beim Abrufen des Unternehmensprofils für {symbol}: {str(e)}"}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
-    def get_current_price_per_share(self, symbol):
-        """Gibt den aktuellen Preis einer Aktie in US-Dollar zurück.
-
-        Fängt Exceptions bewusst NICHT selbst ab (anders als die meisten
+    def _fetch_yahoo_price(self, symbol):
+        """Fängt Exceptions bewusst NICHT selbst ab (anders als die meisten
         DataLoader-Methoden) - der @retry-Decorator braucht eine tatsächlich
         propagierende Exception, um zu greifen. Mit einem internen try/except
         plus error-dict-Rückgabe feuert @retry nie (LAUNCH_AUDIT.md P2-12).
         Live-Kurse sind der Fall, in dem transiente Yahoo-Fehler (429s,
         Timeouts - insbesondere von Cloud-/Rechenzentrums-IPs aus) am
-        häufigsten auftreten, daher hier zuerst behoben. Alle Aufrufer
-        (direkt und transitiv über get_current_tbv_and_price) haben ein
-        eigenes umschließendes try/except und fangen die letzte Exception
-        nach den drei Versuchen weiterhin als Error-Dict/generische
-        API-Fehlermeldung ab - siehe LAUNCH.md."""
+        häufigsten auftreten, daher hier zuerst behoben."""
         stock = yf.Ticker(symbol)
         current_price = stock.info.get("regularMarketPrice")
         if current_price is None:
@@ -1035,6 +1029,59 @@ class DataLoader:
                 raise ValueError(f"Keine aktuellen Preisdaten für {symbol} gefunden.")
             current_price = hist["Close"].iloc[-1]
         return current_price
+
+    def _fetch_alpha_vantage_price(self, symbol) -> Optional[float]:
+        """Fallback-Preisquelle, falls Yahoo trotz Retries scheitert (P2-22:
+        Yahoo blockt/rate-limitet Cloud-IPs wiederkehrend, nicht nur
+        transient). Kein @retry hier - Alpha-Vantage-Rate-Limits erholen
+        sich nicht innerhalb von Sekunden, ein Retry würde nur die
+        Gesamtlatenz aller 9 Aufrufstellen unnötig erhöhen. `entitlement=
+        delayed` ist für den bezahlten "15-Minuten-verzögert"-Tarif nötig,
+        den der Account aktuell hat (kein Realtime-Tarif) - siehe
+        Account-Entitlements unter alphavantage.co, ohne den Parameter
+        liefert GLOBAL_QUOTE sonst die kostenlose EOD-Antwort."""
+        try:
+            response = requests.get(
+                self.base_url,
+                params={
+                    "function": "GLOBAL_QUOTE",
+                    "symbol": symbol,
+                    "entitlement": "delayed",
+                    "apikey": self.api_key,
+                },
+                headers={"User-Agent": self.user_agent},
+                timeout=15,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if "Note" in data or "Information" in data or "Error Message" in data:
+                self.logger.warning(f"Alpha-Vantage-Fallback für {symbol} liefert kein Quote: {data}")
+                return None
+            raw_price = (data.get("Global Quote") or {}).get("05. price")
+            return float(raw_price) if raw_price else None
+        except Exception as e:
+            self.logger.warning(f"Alpha-Vantage-Fallback für {symbol} fehlgeschlagen: {e}")
+            return None
+
+    def get_current_price_per_share(self, symbol):
+        """Gibt den aktuellen Preis einer Aktie in US-Dollar zurück. Yahoo
+        ist primäre Quelle (mit Retry, siehe _fetch_yahoo_price); scheitert
+        sie nach 3 Versuchen, greift Alpha Vantage als Fallback. Alle
+        Aufrufer (direkt und transitiv über get_current_tbv_and_price) haben
+        ein eigenes umschließendes try/except und fangen eine finale
+        Exception weiterhin als Error-Dict/generische API-Fehlermeldung ab -
+        siehe LAUNCH.md P2-22."""
+        try:
+            price = self._fetch_yahoo_price(symbol)
+            self.logger.info(f"Live-Preis {symbol}: {price} (Quelle: yahoo)")
+            return price
+        except Exception:
+            self.logger.warning(f"Yahoo-Live-Preis für {symbol} nach 3 Versuchen fehlgeschlagen, versuche Alpha Vantage.")
+            fallback_price = self._fetch_alpha_vantage_price(symbol)
+            if fallback_price is not None:
+                self.logger.info(f"Live-Preis {symbol}: {fallback_price} (Quelle: alpha_vantage, Yahoo-Fallback)")
+                return fallback_price
+            raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_balance_sheet(self, symbol, frequency="annual", use_cache=True):
