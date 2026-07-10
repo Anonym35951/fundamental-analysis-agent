@@ -1,7 +1,7 @@
-"""Tests für agent/cache_r2.py — die R2-Backing-Schicht für den lokalen
-Datei-Cache (LAUNCH.md P0-3b, Ersatz für den nicht verfügbaren Render
-Persistent Disk auf dem Free-Plan). Alle boto3-Aufrufe sind gemockt, kein
-Netzwerkzugriff."""
+"""Tests für agent/cache_object_storage.py — die Object-Storage-Backing-
+Schicht für den lokalen Datei-Cache (LAUNCH.md P0-3b, Ersatz für den nicht
+verfügbaren Render Persistent Disk auf dem Free-Plan; konfiguriert für
+Backblaze B2). Alle boto3-Aufrufe sind gemockt, kein Netzwerkzugriff."""
 
 import os
 from datetime import datetime, timezone
@@ -9,38 +9,43 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent.cache_r2 import R2CacheSync
+from agent.cache_object_storage import ObjectStorageCacheSync
 
-R2_ENV = {
-    "R2_ACCOUNT_ID": "acc123",
-    "R2_ACCESS_KEY_ID": "key",
-    "R2_SECRET_ACCESS_KEY": "secret",
-    "R2_BUCKET_NAME": "test-bucket",
+CACHE_S3_ENV = {
+    "CACHE_S3_ENDPOINT_URL": "s3.us-west-004.backblazeb2.com",
+    "CACHE_S3_ACCESS_KEY_ID": "key",
+    "CACHE_S3_SECRET_ACCESS_KEY": "secret",
+    "CACHE_S3_BUCKET_NAME": "test-bucket",
 }
 
 
-def _clear_r2_env(monkeypatch):
-    for var in ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME"):
+def _clear_env(monkeypatch):
+    for var in CACHE_S3_ENV:
         monkeypatch.delenv(var, raising=False)
 
 
+def _patch_env(monkeypatch):
+    for key, value in CACHE_S3_ENV.items():
+        monkeypatch.setenv(key, value)
+
+
 def test_disabled_without_env_vars(monkeypatch):
-    _clear_r2_env(monkeypatch)
-    sync = R2CacheSync()
+    _clear_env(monkeypatch)
+    sync = ObjectStorageCacheSync()
     assert sync.enabled is False
 
 
 def test_disabled_with_partial_env_vars(monkeypatch):
-    _clear_r2_env(monkeypatch)
-    monkeypatch.setenv("R2_ACCOUNT_ID", "acc123")
-    monkeypatch.setenv("R2_BUCKET_NAME", "test-bucket")
-    sync = R2CacheSync()
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("CACHE_S3_ENDPOINT_URL", "s3.us-west-004.backblazeb2.com")
+    monkeypatch.setenv("CACHE_S3_BUCKET_NAME", "test-bucket")
+    sync = ObjectStorageCacheSync()
     assert sync.enabled is False
 
 
 def test_warm_and_persist_are_noop_when_disabled(tmp_path, monkeypatch):
-    _clear_r2_env(monkeypatch)
-    sync = R2CacheSync()
+    _clear_env(monkeypatch)
+    sync = ObjectStorageCacheSync()
     local_path = tmp_path / "AAPL_stock_financials.json"
 
     sync.warm(str(local_path), "AAPL_stock_financials.json")
@@ -50,22 +55,33 @@ def test_warm_and_persist_are_noop_when_disabled(tmp_path, monkeypatch):
     sync.persist(str(local_path), "AAPL_stock_financials.json")  # darf nicht raisen
 
 
-def _patch_env(monkeypatch):
-    for key, value in R2_ENV.items():
-        monkeypatch.setenv(key, value)
-
-
-def test_enabled_builds_client_with_r2_endpoint(monkeypatch):
+def test_enabled_builds_client_with_normalized_endpoint_and_derived_region(monkeypatch):
     _patch_env(monkeypatch)
     with patch("boto3.client") as mock_boto3_client:
         mock_boto3_client.return_value = MagicMock()
-        sync = R2CacheSync()
+        sync = ObjectStorageCacheSync()
 
     assert sync.enabled is True
     _, kwargs = mock_boto3_client.call_args
-    assert kwargs["endpoint_url"] == "https://acc123.r2.cloudflarestorage.com"
+    assert kwargs["endpoint_url"] == "https://s3.us-west-004.backblazeb2.com"
     assert kwargs["aws_access_key_id"] == "key"
     assert kwargs["aws_secret_access_key"] == "secret"
+    assert kwargs["region_name"] == "us-west-004"
+
+
+def test_endpoint_with_scheme_already_present_is_left_unchanged(monkeypatch):
+    _clear_env(monkeypatch)
+    for key, value in CACHE_S3_ENV.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("CACHE_S3_ENDPOINT_URL", "https://s3.eu-central-003.backblazeb2.com")
+
+    with patch("boto3.client") as mock_boto3_client:
+        mock_boto3_client.return_value = MagicMock()
+        ObjectStorageCacheSync()
+
+    _, kwargs = mock_boto3_client.call_args
+    assert kwargs["endpoint_url"] == "https://s3.eu-central-003.backblazeb2.com"
+    assert kwargs["region_name"] == "eu-central-003"
 
 
 def test_warm_downloads_and_sets_mtime_when_local_missing(tmp_path, monkeypatch):
@@ -81,7 +97,7 @@ def test_warm_downloads_and_sets_mtime_when_local_missing(tmp_path, monkeypatch)
     mock_client.download_file.side_effect = _fake_download
 
     with patch("boto3.client", return_value=mock_client):
-        sync = R2CacheSync()
+        sync = ObjectStorageCacheSync()
 
     local_path = tmp_path / "AAPL_stock_financials.json"
     sync.warm(str(local_path), "AAPL_stock_financials.json")
@@ -99,7 +115,7 @@ def test_warm_skips_download_when_local_file_exists(tmp_path, monkeypatch):
     mock_client = MagicMock()
 
     with patch("boto3.client", return_value=mock_client):
-        sync = R2CacheSync()
+        sync = ObjectStorageCacheSync()
 
     local_path = tmp_path / "AAPL_stock_financials.json"
     local_path.write_text("{}")
@@ -110,7 +126,7 @@ def test_warm_skips_download_when_local_file_exists(tmp_path, monkeypatch):
     mock_client.download_file.assert_not_called()
 
 
-def test_warm_swallows_missing_object_in_r2(tmp_path, monkeypatch):
+def test_warm_swallows_missing_object(tmp_path, monkeypatch):
     _patch_env(monkeypatch)
     from botocore.exceptions import ClientError
 
@@ -120,7 +136,7 @@ def test_warm_swallows_missing_object_in_r2(tmp_path, monkeypatch):
     )
 
     with patch("boto3.client", return_value=mock_client):
-        sync = R2CacheSync()
+        sync = ObjectStorageCacheSync()
 
     local_path = tmp_path / "AAPL_stock_financials.json"
     sync.warm(str(local_path), "AAPL_stock_financials.json")  # darf nicht raisen
@@ -129,12 +145,12 @@ def test_warm_swallows_missing_object_in_r2(tmp_path, monkeypatch):
     mock_client.download_file.assert_not_called()
 
 
-def test_persist_uploads_to_r2_when_enabled(tmp_path, monkeypatch):
+def test_persist_uploads_when_enabled(tmp_path, monkeypatch):
     _patch_env(monkeypatch)
     mock_client = MagicMock()
 
     with patch("boto3.client", return_value=mock_client):
-        sync = R2CacheSync()
+        sync = ObjectStorageCacheSync()
 
     local_path = tmp_path / "AAPL_stock_financials.json"
     local_path.write_text("{}")
@@ -149,10 +165,10 @@ def test_persist_uploads_to_r2_when_enabled(tmp_path, monkeypatch):
 def test_persist_swallows_upload_errors(tmp_path, monkeypatch):
     _patch_env(monkeypatch)
     mock_client = MagicMock()
-    mock_client.upload_file.side_effect = ConnectionError("R2 unreachable")
+    mock_client.upload_file.side_effect = ConnectionError("storage unreachable")
 
     with patch("boto3.client", return_value=mock_client):
-        sync = R2CacheSync()
+        sync = ObjectStorageCacheSync()
 
     local_path = tmp_path / "AAPL_stock_financials.json"
     local_path.write_text("{}")
