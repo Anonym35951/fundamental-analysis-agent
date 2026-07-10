@@ -85,6 +85,10 @@ class ObjectStorageCacheSync:
         except Exception as e:
             logger.warning(f"Object-Storage-Cache-Sync konnte nicht initialisiert werden, bleibt deaktiviert: {e}")
             self._client, self._bucket, self._client_error_cls = None, None, None
+        if self._client is not None:
+            logger.info(f"Object-Storage-Cache-Sync aktiv (Bucket: {self._bucket})")
+        else:
+            logger.info("Object-Storage-Cache-Sync deaktiviert (keine CACHE_S3_*-Env-Vars gesetzt)")
 
     @property
     def enabled(self) -> bool:
@@ -100,6 +104,7 @@ class ObjectStorageCacheSync:
             self._client.download_file(self._bucket, key, local_path)
             timestamp = head["LastModified"].timestamp()
             os.utime(local_path, (timestamp, timestamp))
+            logger.info(f"Cache-Warmup aus Object Storage erfolgreich: {key}")
         except self._client_error_cls:
             pass
         except Exception as e:
@@ -111,5 +116,6 @@ class ObjectStorageCacheSync:
             return
         try:
             self._client.upload_file(local_path, self._bucket, key)
+            logger.info(f"Cache-Datei nach Object Storage gespiegelt: {key}")
         except Exception as e:
             logger.warning(f"Cache-Upload für {key} fehlgeschlagen: {e}")
