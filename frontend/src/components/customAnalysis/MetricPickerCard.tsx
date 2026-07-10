@@ -9,7 +9,7 @@ type Props = {
   selection?: MetricSelection;
   isSelected: boolean;
   onToggle: (entry: MetricCatalogEntry) => void;
-  onParamChange: (key: string, paramName: string, value: string) => void;
+  onParamChange: (key: string, paramName: string, value: string | number | undefined) => void;
   onCriterionChange: (key: string, operator: CriterionOperator | "", threshold: string) => void;
   /** Skips the threshold-criterion select/input block — used by the Compare
    * workspace, which is purely descriptive (no pass/fail evaluation). */
@@ -85,7 +85,23 @@ export default function MetricPickerCard({
                 <Input
                   type={param.type === "number" ? "number" : param.type === "date" ? "date" : "text"}
                   value={String(selection.params[param.name] ?? "")}
-                  onChange={(e) => onParamChange(entry.key, param.name, e.target.value)}
+                  onChange={(e) => {
+                    if (param.type !== "number") {
+                      onParamChange(entry.key, param.name, e.target.value);
+                      return;
+                    }
+                    // Ohne diese Umwandlung landet der rohe String im
+                    // params-Objekt (JSON.stringify sendet dann z. B.
+                    // "threshold": "75" statt 75) - Model.py-Methoden wie
+                    // analyze_payout_ratio vergleichen den Wert direkt
+                    // numerisch (`payout_ratio > threshold`) und crashen mit
+                    // "'>' not supported between instances of 'float' and
+                    // 'str'". Leeres Feld -> undefined statt 0, damit der
+                    // Backend-Default greift (mirrort updateCriterion's
+                    // Number(threshold) für denselben Zweck beim Kriterium).
+                    const raw = e.target.value;
+                    onParamChange(entry.key, param.name, raw === "" ? undefined : Number(raw));
+                  }}
                   style={{ flex: "1 1 120px", minWidth: 0 }}
                 />
               )}

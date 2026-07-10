@@ -114,7 +114,7 @@ export default function MetricCatalogPicker({
     });
   }
 
-  function updateParam(key: string, paramName: string, value: string) {
+  function updateParam(key: string, paramName: string, value: string | number | undefined) {
     setSelections((prev) => {
       const next = new Map(prev);
       const current = next.get(key);
