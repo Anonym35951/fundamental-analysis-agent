@@ -15,6 +15,10 @@ export type CompareLayer = {
   data?: Array<{ date: string; value: number }>;
   value: unknown;
   error?: string | null;
+  /** Only present when a criterion/threshold was attached to this metric
+   * selection (undefined, not false, when none was set) - callers must
+   * distinguish "no criterion" from "criterion not met". */
+  meetsCriterion?: boolean;
 };
 
 /** Convenience type for rendering one column per company without

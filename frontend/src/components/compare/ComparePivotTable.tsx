@@ -104,6 +104,20 @@ function pickPrimaryObjectValue(value: Record<string, unknown>, metricKey: strin
   return numericMatch ?? entries[0];
 }
 
+/** Wraps a value cell with the "Erfüllt"/"Kritisch" criterion badge - only
+ * when `meetsCriterion` is actually set (undefined means no threshold was
+ * configured for this metric, in which case no badge is shown at all, not
+ * even a neutral one). Mirrors the convention in MetricResultCard.tsx. */
+function withCriterionBadge(content: React.ReactNode, meetsCriterion: boolean | undefined) {
+  if (meetsCriterion === undefined) return content;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+      <Badge tone={meetsCriterion ? "success" : "danger"}>{meetsCriterion ? "Erfüllt" : "Kritisch"}</Badge>
+      {content}
+    </span>
+  );
+}
+
 function Cell({ layer }: { layer: CompareLayer | undefined }) {
   if (!layer) {
     return <span style={{ color: theme.colors.textMuted }}>—</span>;
@@ -131,16 +145,16 @@ function Cell({ layer }: { layer: CompareLayer | undefined }) {
     const formatKey = getMetricConfig(pickedKey) ? pickedKey : layer.metricKey;
     const compact = formatMetricValue(primaryValue, formatKey);
     const fullBreakdown = formatMetricValue(layer.value, layer.metricKey);
-    return <span title={fullBreakdown}>{compact}</span>;
+    return withCriterionBadge(<span title={fullBreakdown}>{compact}</span>, layer.meetsCriterion);
   }
 
   const formatted = formatMetricValue(layer.value, layer.metricKey);
 
   if (typeof layer.value === "string" && layer.value.length > 40) {
-    return <span title={layer.value}>{layer.value.slice(0, 40)}…</span>;
+    return withCriterionBadge(<span title={layer.value}>{layer.value.slice(0, 40)}…</span>, layer.meetsCriterion);
   }
 
-  return <span>{formatted}</span>;
+  return withCriterionBadge(<span>{formatted}</span>, layer.meetsCriterion);
 }
 
 const headerCellStyle: React.CSSProperties = {

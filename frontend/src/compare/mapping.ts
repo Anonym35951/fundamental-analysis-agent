@@ -43,6 +43,7 @@ export function mapCompanyMetricsToLayers(
       data: series.length > 0 ? series : undefined,
       value: metric.value,
       error: metric.error ?? null,
+      meetsCriterion: metric.meets_criterion,
     };
   });
 }
