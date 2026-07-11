@@ -381,7 +381,7 @@ export const METRICS_CONFIG: Record<string, MetricConfig> = {
     unit: "ratio",
     decimals: 2,
     description: "Setzt das KGV ins Verhältnis zum Gewinnwachstum, um Wachstum in die Bewertung einzupreisen.",
-    formula: "PEG = KGV / Gewinnwachstum (%), Gewinnwachstum = (Aktueller Nettogewinn − Vorjahres-Nettogewinn) / |Vorjahres-Nettogewinn| × 100",
+    formula: "PEG = KGV / Gewinnwachstum (% p.a.), Gewinnwachstum = annualisierte CAGR aus dem ältesten und dem neuesten verfügbaren Jahresgewinn",
   },
 
   calculate_kuv: {

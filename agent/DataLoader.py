@@ -14,6 +14,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_t
 from dotenv import load_dotenv
 from agent.cache_object_storage import ObjectStorageCacheSync
 from agent.data_sources.sec_source import SecSource
+from agent.growth_math import compute_net_income_cagr
 
 load_dotenv()
 
@@ -588,10 +589,17 @@ class DataLoader:
 
             PE = Aktienkurs / EPS
 
-            Gewinnwachstum =
-                (Aktuelles Net Income - Vorjahres Net Income)
-                / |Vorjahres Net Income|
-                * 100
+            Gewinnwachstum = CAGR aus dem ältesten und dem neuesten
+            verfügbaren positiven Nettogewinn-Datenpunkt (siehe
+            agent/growth_math.compute_net_income_cagr) - annualisiert über
+            das echte Zeit-Delta zwischen den beiden Punkten.
+
+        Methodik-Entscheidung (2026-07-11): vorher eine eigenständige
+        Zweipunkt-YoY-Formel ((aktuell - vorjahr) / |vorjahr|), unabhängig
+        von Model.calculate_avg_annual_profit_growth (AAGR). Jetzt dieselbe
+        CAGR-Formel wie AAGR - eine Wachstumsdefinition für PEG statt zwei
+        je nachdem, ob dieser Pfad oder der AAGR-Fallback in
+        Model.calculate_peg_ratio greift.
 
         Returns:
             {
@@ -611,7 +619,10 @@ class DataLoader:
             }
         """
 
-        cache_key = "peg_ratio"
+        # Cache-Key gebumpt (war "peg_ratio"): die alte Zweipunkt-YoY-Formel
+        # ist durch CAGR ersetzt (siehe Docstring) - ohne Bump würden
+        # bestehende Cache-Einträge weiterhin die alte Formel ausliefern.
+        cache_key = "peg_ratio_cagr"
         if use_cache:
             cached_data = self._load_cached_data(symbol, cache_key)
             if (
@@ -707,6 +718,7 @@ class DataLoader:
             net_income_series = financials.loc[
                 net_income_label
             ].dropna()
+            net_income_series.index = pd.to_datetime(net_income_series.index)
 
             if len(net_income_series) < 2:
                 return {
@@ -718,11 +730,7 @@ class DataLoader:
                 }
 
             latest_net_income = float(
-                net_income_series.iloc[0]
-            )
-
-            previous_net_income = float(
-                net_income_series.iloc[1]
+                net_income_series.sort_index(ascending=False).iloc[0]
             )
 
             eps = (
@@ -753,22 +761,15 @@ class DataLoader:
                     "symbol": symbol
                 }
 
-            if previous_net_income == 0:
+            cagr_result = compute_net_income_cagr(net_income_series)
+            if "error" in cagr_result:
                 return {
-                    "error": (
-                        f"Vorjahresgewinn für {symbol} ist 0. "
-                        f"PEG kann nicht berechnet werden."
-                    ),
+                    "error": f"PEG-Wachstumsrate für {symbol} nicht berechenbar: {cagr_result['error']}",
                     "symbol": symbol
                 }
 
-            earnings_growth = (
-                                      (
-                                              latest_net_income
-                                              - previous_net_income
-                                      )
-                                      / abs(previous_net_income)
-                              ) * 100
+            earnings_growth = cagr_result["cagr"]
+            previous_net_income = cagr_result["start_value"]
 
             #
             # ==========================================================
@@ -801,7 +802,7 @@ class DataLoader:
                     "earnings_growth": round(float(earnings_growth), 2),
                     "eps": round(float(eps), 4),
                     "latest_net_income": float(latest_net_income),
-                    "previous_net_income": float(previous_net_income),
+                    "oldest_net_income": float(previous_net_income),
                     "reason": "negative_growth"
                 }
 
@@ -839,7 +840,7 @@ class DataLoader:
                 "earnings_growth": round(float(earnings_growth), 2),
                 "eps": round(float(eps), 4),
                 "latest_net_income": float(latest_net_income),
-                "previous_net_income": float(previous_net_income)
+                "oldest_net_income": float(previous_net_income)
             }
 
             if use_cache:
