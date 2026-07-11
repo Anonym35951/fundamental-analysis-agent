@@ -2097,7 +2097,7 @@ class Model:
         Returns:
             Optional[pd.DataFrame]: DataFrame mit Umsatzerlösen (Spalte 'Sales'), indiziert nach Datum, oder None bei Fehler.
         """
-        cache_key = f"historical_sales_{symbol}"
+        cache_key = f"historical_sales_ttm_{symbol}"
 
         # 1. Cache prüfen
         if use_cache:
@@ -2138,8 +2138,20 @@ class Model:
                 self.logger.error(f"Fehlende Spalten für {symbol} in income_statement: {missing_columns}")
                 return None
 
-            # Zeitraum einschränken
+            # 2b. TTM-Umstellung (2026-07-11, LAUNCH.md Block 5): vorher
+            # reiner Einzelquartalswert - ~4x niedriger als die TTM-basierte
+            # Marktkonvention. Rolling-Fenster braucht chronologisch
+            # AUFSTEIGENDE Reihenfolge (schaut sonst rückwärts in der Zeit
+            # statt auf die letzten 4 Quartale); Alpha-Vantage-Reports kommen
+            # standardmäßig absteigend (neueste zuerst) - daher explizit
+            # sortieren und danach die ursprüngliche Konvention wiederherstellen.
             df = income_statement[["totalRevenue"]].copy()
+            df = df.sort_index(ascending=True)
+            df["totalRevenue"] = df["totalRevenue"].rolling(window=4, min_periods=4).sum()
+            df = df.dropna(subset=["totalRevenue"])
+            df = df.sort_index(ascending=False)
+
+            # Zeitraum einschränken
             if start_date:
                 df = df[df.index >= pd.to_datetime(start_date)]
             if end_date:
@@ -2181,7 +2193,7 @@ class Model:
         Returns:
             Optional[pd.DataFrame]: DataFrame mit EV/Sales-Multiples, indiziert nach Datum, oder None bei Fehler.
         """
-        cache_key = f"historical_ev_sales_{symbol}"
+        cache_key = f"historical_ev_sales_ttm_{symbol}"
 
         # 1. Cache prüfen
         if use_cache:
@@ -2260,7 +2272,7 @@ class Model:
         Returns:
             Optional[pd.DataFrame]: DataFrame mit EBIT-Werten, indiziert nach Datum, oder None bei Fehler.
         """
-        cache_key = f"historical_ebit_{symbol}"
+        cache_key = f"historical_ebit_ttm_{symbol}"
 
         # 1. Cache prüfen
         if use_cache:
@@ -2300,8 +2312,15 @@ class Model:
                 self.logger.error(f"Fehlende Spalten für {symbol} in income_statement: {missing_columns}")
                 return None
 
-            # Zeitraum einschränken
+            # 2b. TTM-Umstellung (2026-07-11, LAUNCH.md Block 5) - siehe
+            # calculate_historical_sales für die Begründung/den Sortier-Hinweis.
             df = income_statement[["operatingIncome"]].copy()
+            df = df.sort_index(ascending=True)
+            df["operatingIncome"] = df["operatingIncome"].rolling(window=4, min_periods=4).sum()
+            df = df.dropna(subset=["operatingIncome"])
+            df = df.sort_index(ascending=False)
+
+            # Zeitraum einschränken
             if start_date:
                 df = df[df.index >= pd.to_datetime(start_date)]
             if end_date:
@@ -2343,7 +2362,7 @@ class Model:
         Returns:
             Optional[pd.DataFrame]: DataFrame mit EV/EBIT-Multiples, indiziert nach Datum, oder None bei Fehler.
         """
-        cache_key = f"historical_ev_to_ebit_{symbol}"
+        cache_key = f"historical_ev_to_ebit_ttm_{symbol}"
 
         # 1. Cache prüfen
         if use_cache:
@@ -2425,7 +2444,7 @@ class Model:
         Returns:
             Optional[pd.DataFrame]: DataFrame mit Spalten 'EBIT', 'depreciationAndAmortization' und 'EBITDA', indiziert nach Datum, oder None bei Fehler.
         """
-        cache_key = f"historical_ebitda_{symbol}"
+        cache_key = f"historical_ebitda_ttm_{symbol}"
 
         # 1. Cache prüfen
         if use_cache:
@@ -2460,8 +2479,19 @@ class Model:
                 self.logger.error(f"Fehlende Spalten für {symbol} in income_statement: {missing_columns}")
                 return None
 
-            # 3. EBITDA berechnen
+            # 3. TTM-Umstellung (2026-07-11, LAUNCH.md Block 5) - Rolling VOR
+            # der EBITDA-Summenbildung, damit EBITDA == EBIT + D&A elementweise
+            # exakt erhalten bleibt (rolling().sum() ist linear, daher
+            # mathematisch ohnehin äquivalent zu "erst addieren, dann rollen" -
+            # siehe calculate_historical_sales für den Sortier-Hinweis).
             df = income_statement[["operatingIncome", "depreciationAndAmortization"]].copy()
+            df = df.sort_index(ascending=True)
+            df[["operatingIncome", "depreciationAndAmortization"]] = df[
+                ["operatingIncome", "depreciationAndAmortization"]
+            ].rolling(window=4, min_periods=4).sum()
+            df = df.dropna()
+            df = df.sort_index(ascending=False)
+
             df["EBITDA"] = df["operatingIncome"] + df["depreciationAndAmortization"]
             df = df.rename(columns={"operatingIncome": "EBIT"})[
                 ["EBIT", "depreciationAndAmortization", "EBITDA"]].dropna()
@@ -2508,7 +2538,7 @@ class Model:
         Returns:
             Optional[pd.DataFrame]: DataFrame mit EV/EBITDA-Multiples, indiziert nach Datum, oder None bei Fehler.
         """
-        cache_key = f"historical_ev_to_ebitda_{symbol}"
+        cache_key = f"historical_ev_to_ebitda_ttm_{symbol}"
 
         # 1. Cache prüfen
         if use_cache:
@@ -2711,7 +2741,7 @@ class Model:
             Optional[pd.DataFrame]: DataFrame mit Price/Sales-Multiple, Price, Sales und commonStockSharesOutstanding,
                                     indiziert nach fiscalDateEnding, oder None bei Fehler.
         """
-        cache_key = f"historical_price_to_sales_{symbol}"
+        cache_key = f"historical_price_to_sales_ttm_{symbol}"
 
         # 1. Cache prüfen
         if use_cache:
@@ -2848,7 +2878,7 @@ class Model:
             Optional[pd.DataFrame]: DataFrame mit Price/EBIT-Multiple, Price, EBIT und commonStockSharesOutstanding,
                                     indiziert nach fiscalDateEnding, oder None bei Fehler.
         """
-        cache_key = f"historical_price_to_ebit_{symbol}"
+        cache_key = f"historical_price_to_ebit_ttm_{symbol}"
 
         # 1. Cache prüfen
         if use_cache:
@@ -4182,18 +4212,24 @@ class Model:
 
         metric_per_share = 0.0
         if price_multiple_column == "Price_Sales":
-            revenue_data = self.dataloader.get_revenue(symbol, frequency="quarterly")
-            if isinstance(revenue_data, dict) and "error" in revenue_data:
-                self.logger.error(f"Fehler beim Abruf von revenue: {revenue_data['error']}")
-                return {'error': f"Fehler beim Abruf von revenue: {revenue_data['error']}"}
-            revenue = revenue_data["revenue"]
-            metric_per_share = revenue / shares_outstanding if revenue else 0.0
+            # TTM-Konsistenz (2026-07-11, LAUNCH.md Block 5): historisches
+            # Price_Sales-Multiple ist jetzt TTM-basiert (calculate_historical_
+            # sales) - die "aktuelle" Basisgröße für das Kursziel MUSS aus
+            # derselben Quelle kommen, sonst entsteht genau der K-1/K-2-artige
+            # Inkonsistenz-Bug (Zähler TTM, Nenner Einzelquartal).
+            sales_df = self.calculate_historical_sales(symbol, use_cache=True)
+            if sales_df is None or sales_df.empty:
+                self.logger.error(f"Keine TTM-Umsatzdaten für {symbol} verfügbar.")
+                return {'error': f"Keine TTM-Umsatzdaten für {symbol} verfügbar"}
+            ttm_sales = float(sales_df.sort_index().iloc[-1]["Sales"])
+            metric_per_share = ttm_sales / shares_outstanding if ttm_sales else 0.0
         elif price_multiple_column == "Price_EBIT":
-            ebit_data = self.dataloader.get_ebit_data(symbol, frequency="quarterly")
-            if isinstance(ebit_data, dict) and "error" in ebit_data:
-                self.logger.error(f"Fehler beim Abruf von EBIT: {ebit_data['error']}")
-                return {'error': f"Fehler beim Abruf von EBIT: {ebit_data['error']}"}
-            metric_per_share = ebit_data["ebit"] / shares_outstanding
+            # Siehe Kommentar bei Price_Sales oben - gleiche TTM-Konsistenz.
+            ebit_df = self.calculate_historical_ebit(symbol, use_cache=True)
+            if ebit_df is None or ebit_df.empty:
+                self.logger.error(f"Keine TTM-EBIT-Daten für {symbol} verfügbar.")
+                return {'error': f"Keine TTM-EBIT-Daten für {symbol} verfügbar"}
+            metric_per_share = float(ebit_df.sort_index().iloc[-1]["EBIT"]) / shares_outstanding
         elif price_multiple_column == "Price_NetCurrentAssets":
             balance_sheet = self.dataloader.get_balance_sheet(symbol, frequency="quarterly")
             if isinstance(balance_sheet, dict) and "error" in balance_sheet:
@@ -4286,7 +4322,9 @@ class Model:
         """
         Kursziele aus EV-Multiples (genau eine Spalte in historical_data, z.B. EV_Sales ODER EV_EBIT ODER EV_EBITDA).
         - Szenariofaktoren (WC/BUY/FV/SELL) werden aus der vollen Quartalshistorie dieses Multiples abgeleitet.
-        - Bewertet wird mit aktuellen Quartalswerten (Revenue/EBIT/EBITDA, Net Debt, Shares).
+        - Bewertet wird mit aktuellen TTM-Werten für Revenue/EBIT/EBITDA (konsistent mit der
+          jetzt TTM-basierten historischen Multiple-Reihe) sowie aktuellen Quartalswerten für
+          Net Debt/Shares (reine Bilanz-Bestandsgrößen, TTM nicht anwendbar).
         """
         # --- Eingaben prüfen ---
         if not isinstance(historical_data, pd.DataFrame) or historical_data.empty:
@@ -4318,25 +4356,29 @@ class Model:
 
         scenario = {"WC": float(wc_value), "BUY": float(buy_value), "FV": float(fv_value), "SELL": float(sell_value)}
 
-        # --- Schritt 2: aktuelle Quartalsgrößen holen (Basis passend zum Multiple) ---
+        # --- Schritt 2: aktuelle TTM-Basisgröße holen (passend zum Multiple) ---
+        # TTM-Konsistenz (2026-07-11, LAUNCH.md Block 5): die historischen
+        # EV-Multiples sind jetzt TTM-basiert - die "aktuelle" Basisgröße MUSS
+        # aus derselben Quelle kommen, sonst entsteht genau der K-1/K-2-artige
+        # Inkonsistenz-Bug (Zähler TTM, Nenner Einzelquartal).
         if multiple_col == "EV_Sales":
-            rev = self.dataloader.get_revenue(symbol, frequency="quarterly")
-            if isinstance(rev, dict) and "error" in rev:
-                return rev
-            base = float(rev["revenue"])
-            base_name = "Umsatz (Revenue)"
+            sales_df = self.calculate_historical_sales(symbol, use_cache=True)
+            if sales_df is None or sales_df.empty:
+                return {"error": f"Keine TTM-Umsatzdaten für {symbol} verfügbar"}
+            base = float(sales_df.sort_index().iloc[-1]["Sales"])
+            base_name = "Umsatz (Revenue, TTM)"
         elif multiple_col == "EV_EBIT":
-            ebit = self.dataloader.get_ebit_data(symbol, frequency="quarterly")
-            if isinstance(ebit, dict) and "error" in ebit:
-                return ebit
-            base = float(ebit["ebit"])
-            base_name = "EBIT"
+            ebit_df = self.calculate_historical_ebit(symbol, use_cache=True)
+            if ebit_df is None or ebit_df.empty:
+                return {"error": f"Keine TTM-EBIT-Daten für {symbol} verfügbar"}
+            base = float(ebit_df.sort_index().iloc[-1]["EBIT"])
+            base_name = "EBIT (TTM)"
         else:  # "EV_EBITDA"
-            ebitda = self.dataloader.get_ebitda_data(symbol, frequency="quarterly")
-            if isinstance(ebitda, dict) and "error" in ebitda:
-                return ebitda
-            base = float(ebitda["ebitda"])
-            base_name = "EBITDA"
+            ebitda_df = self.calculate_historical_ebitda(symbol, use_cache=True)
+            if ebitda_df is None or ebitda_df.empty:
+                return {"error": f"Keine TTM-EBITDA-Daten für {symbol} verfügbar"}
+            base = float(ebitda_df.sort_index().iloc[-1]["EBITDA"])
+            base_name = "EBITDA (TTM)"
 
         # Validität + Negativ-Check (inkl. NaN/Inf)
         if base is None or not np.isfinite(base):
@@ -4846,7 +4888,7 @@ class Model:
         Returns:
             dict mit Kennzahlen, Zonen, Zielpreisen und aktuellem Status oder einem "error"-Feld.
         """
-        cache_key = f"ebit_bandwidth_eval_{symbol}"
+        cache_key = f"ebit_bandwidth_eval_ttm_{symbol}"
         if use_cache:
             cached = self.dataloader._load_cached_data(symbol, cache_key)
             if isinstance(cached, dict) and "symbol" in cached and "targets" in cached and "current" in cached:
@@ -4889,11 +4931,15 @@ class Model:
         touch_count = int(touch_mask.sum())  # wie oft ~8× EBIT
 
         # 3) Aktuelle EBIT/Share, Kurs & P/EBIT
-        ebit_data = self.dataloader.get_ebit_data(symbol, use_cache=use_cache, frequency="quarterly")
-        if isinstance(ebit_data, dict) and "error" in ebit_data:
-            return {"error": ebit_data["error"]}
+        # TTM-Konsistenz (2026-07-11, LAUNCH.md Block 5): ebit_df (die
+        # historische P/EBIT-Reihe oben) ist jetzt TTM-basiert - die
+        # "aktuelle" Basisgröße muss aus derselben Quelle kommen, sonst
+        # entsteht genau der K-1/K-2-artige Inkonsistenz-Bug.
+        ebit_df_ttm = self.calculate_historical_ebit(symbol, use_cache=use_cache)
+        if ebit_df_ttm is None or ebit_df_ttm.empty:
+            return {"error": f"Keine TTM-EBIT-Daten für {symbol} verfügbar"}
 
-        ebit_total = ebit_data["ebit"]
+        ebit_total = float(ebit_df_ttm.sort_index().iloc[-1]["EBIT"])
         shares = self._resolve_shares_outstanding(symbol)
         if isinstance(shares, dict) and "error" in shares:
             return {"error": shares["error"]}

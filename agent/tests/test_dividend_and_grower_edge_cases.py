@@ -153,8 +153,14 @@ def test_analyze_average_grower_negative_fcf_marks_criterion_not_met_not_abort()
 
     action = AgentAction()
 
-    ebit_bandwidth = {"ebit": {"Price_EBIT": pd.Series([15.0, 20.0, 25.0])}}
-    current_ebit = {"price_to_ebit": 10.0}  # unter historischem Mittel (20) -> erfüllt
+    ebit_bandwidth = {
+        "ebit": {"Price_EBIT": pd.Series([15.0, 20.0, 25.0])},
+        # ebit_ratio: unter historischem Mittel (20) -> erfüllt. Seit der
+        # TTM-Konsistenz-Umstellung (2026-07-11, LAUNCH.md Block 5) liest
+        # analyze_average_grower das hier statt einen eigenen
+        # calculate_price_to_ebit-Aufruf zu machen (siehe agent/AgentAction.py).
+        "current": {"ebit_ratio": 10.0},
+    }
     tbv_bandwidth = {
         "pb": {"Price_TangibleBookValue": pd.Series([1.5, 2.0, 2.5])},
         "current": {"pb_ratio": 1.0},  # unter Median (2.0) und in [0, 1.5] -> erfüllt
@@ -163,8 +169,6 @@ def test_analyze_average_grower_negative_fcf_marks_criterion_not_met_not_abort()
 
     with patch.object(
         action.model, "evaluate_ebit_bandwidth", return_value=ebit_bandwidth,
-    ), patch.object(
-        action.model, "calculate_price_to_ebit", return_value=current_ebit,
     ), patch.object(
         action.model, "evaluate_tbv_bandwidth", return_value=tbv_bandwidth,
     ), patch.object(

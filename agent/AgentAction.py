@@ -328,14 +328,19 @@ class AgentAction:
 
             historical_ebit_mean = ebit_bandwidth["ebit"]["Price_EBIT"].mean()
 
-            current_ebit_data = self.model.calculate_price_to_ebit(symbol, use_cache=use_cache, frequency="quarterly")
-            if "error" in current_ebit_data:
-                return fail(current_ebit_data["error"])
-            if "price_to_ebit" not in current_ebit_data:
-                return fail(f"Ungültige aktuelle P/EBIT-Daten für {symbol}")
-
-            current_ebit = current_ebit_data["price_to_ebit"]
-            if pd.isna(current_ebit) or (isinstance(current_ebit, str) and current_ebit == "inf"):
+            # Wiederverwendung statt eigenem zweiten Aufruf (2026-07-11,
+            # LAUNCH.md Block 5, TTM-Konsistenz): evaluate_ebit_bandwidth hat
+            # den aktuellen P/EBIT-Wert oben bereits TTM-basiert berechnet
+            # (self.model.calculate_price_to_ebit(..., frequency="quarterly")
+            # wäre nach der TTM-Umstellung der historischen Reihe wieder
+            # Einzelquartal - derselbe K-1/K-2-artige Inkonsistenz-Bug, den
+            # die TTM-Umstellung an anderer Stelle gerade behoben hat).
+            # ebit_ratio ist hier ein natives float("inf") statt des Strings
+            # "inf", den calculate_price_to_ebit zurückgab - daher zusätzlich
+            # math.isinf() prüfen.
+            current_ebit = ebit_bandwidth["current"]["ebit_ratio"]
+            if pd.isna(current_ebit) or (isinstance(current_ebit, str) and current_ebit == "inf") or (
+                    isinstance(current_ebit, float) and math.isinf(current_ebit)):
                 return fail(f"Ungültiger aktueller P/EBIT-Wert für {symbol}: {current_ebit}")
 
             price_ebit_met = bool(current_ebit < historical_ebit_mean)
