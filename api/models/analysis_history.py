@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, Integer, ForeignKey
+from sqlalchemy import JSON, String, DateTime, Integer, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,4 +46,8 @@ class AnalysisHistory(Base):
     # dict, or {"metrics": ..., "selection": ...} for custom-analysis jobs),
     # so history entries remain viewable/re-runnable after the in-memory
     # JobManager state is gone.
-    result_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # with_variant: auf Postgres identisch JSONB, ermöglicht aber create_all
+    # in SQLite-basierten API-Tests (JSONB kompiliert dort nicht).
+    result_snapshot: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )

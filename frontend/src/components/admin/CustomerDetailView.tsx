@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft } from "lucide-react";
+import { useIsMobile } from "../../hooks/useMediaQuery";
 import {
   addCustomerNote,
+  deleteCustomer,
   getCustomer,
   getCustomerActivity,
   listCustomerNotes,
@@ -14,6 +16,7 @@ import {
 import { theme } from "../ui/theme";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
+import { useToast } from "../ui/Toast";
 import { panel, panelTitle, emptyState } from "./adminTableStyles";
 
 type CustomerDetailViewProps = {
@@ -40,6 +43,17 @@ function CustomerDetailView({ customerId, onBack }: CustomerDetailViewProps) {
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isSavingPlan, setIsSavingPlan] = useState(false);
   const [isResettingUsage, setIsResettingUsage] = useState(false);
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const { showToast } = useToast();
+  const isMobile = useIsMobile();
+  // Auf Mobile stapeln sich Bestätigungs-Buttons statt nebeneinander zu
+  // sitzen (volle Touch-Breite, primäre Aktion unten näher am Daumen) —
+  // siehe RESPONSIVE.md R-P0-2.
+  const buttonRowStyle = isMobile ? confirmButtonRowMobile : confirmButtonRow;
+  const fullWidthOnMobile = isMobile ? { width: "100%" } : undefined;
 
   useEffect(() => {
     let isCancelled = false;
@@ -120,6 +134,25 @@ function CustomerDetailView({ customerId, onBack }: CustomerDetailViewProps) {
       setErrorMessage(error instanceof Error ? error.message : "Kontingent konnte nicht zurückgesetzt werden.");
     } finally {
       setIsResettingUsage(false);
+    }
+  }
+
+  async function handleDeleteCustomer() {
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await deleteCustomer(customerId);
+      // Erfolg als Toast statt lokalem State: onBack() unmountet diese
+      // Ansicht sofort, ein lokales errorMessage-Div wäre nie sichtbar.
+      showToast(`Konto ${customer?.email ?? ""} wurde endgültig gelöscht.`, "success");
+      onBack();
+    } catch (error) {
+      setIsDeleteModalOpen(false);
+      setErrorMessage(
+        error instanceof Error ? error.message : "Konto konnte nicht gelöscht werden."
+      );
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -226,6 +259,26 @@ function CustomerDetailView({ customerId, onBack }: CustomerDetailViewProps) {
                   Kontingent zurücksetzen
                 </Button>
               </div>
+              <div style={dangerZone}>
+                <div style={{ ...adminActionLabel, color: theme.colors.dangerText }}>
+                  Konto löschen
+                </div>
+                <p style={adminActionHint}>
+                  Löscht dieses Konto endgültig und unwiderruflich — inklusive aller
+                  Analysen, Favoriten, eigenen Analyse-Vorlagen und Notizen. Ein
+                  laufendes Stripe-Abo wird sofort gekündigt.
+                </p>
+                <button
+                  type="button"
+                  style={dangerButton}
+                  onClick={() => {
+                    setDeleteConfirmText("");
+                    setIsDeleteModalOpen(true);
+                  }}
+                >
+                  Konto löschen
+                </button>
+              </div>
             </div>
           </section>
 
@@ -239,11 +292,21 @@ function CustomerDetailView({ customerId, onBack }: CustomerDetailViewProps) {
               Plan von <strong>{customer.plan}</strong> zu <strong>{selectedPlan}</strong> ändern für{" "}
               {customer.email}? Diese Änderung wird automatisch als Notiz protokolliert.
             </p>
-            <div style={confirmButtonRow}>
-              <Button variant="ghost" onClick={() => setIsPlanModalOpen(false)} disabled={isSavingPlan}>
+            <div style={buttonRowStyle}>
+              <Button
+                variant="ghost"
+                onClick={() => setIsPlanModalOpen(false)}
+                disabled={isSavingPlan}
+                style={fullWidthOnMobile}
+              >
                 Abbrechen
               </Button>
-              <Button variant="primary" onClick={handlePlanChange} disabled={isSavingPlan}>
+              <Button
+                variant="primary"
+                onClick={handlePlanChange}
+                disabled={isSavingPlan}
+                style={fullWidthOnMobile}
+              >
                 {isSavingPlan ? "Wird geändert..." : "Plan ändern"}
               </Button>
             </div>
@@ -259,13 +322,76 @@ function CustomerDetailView({ customerId, onBack }: CustomerDetailViewProps) {
               Der monatliche Nutzungszähler von {customer.email} wird auf 0 gesetzt. Diese
               Änderung wird automatisch als Notiz protokolliert.
             </p>
-            <div style={confirmButtonRow}>
-              <Button variant="ghost" onClick={() => setIsResetModalOpen(false)} disabled={isResettingUsage}>
+            <div style={buttonRowStyle}>
+              <Button
+                variant="ghost"
+                onClick={() => setIsResetModalOpen(false)}
+                disabled={isResettingUsage}
+                style={fullWidthOnMobile}
+              >
                 Abbrechen
               </Button>
-              <Button variant="primary" onClick={handleResetUsage} disabled={isResettingUsage}>
+              <Button
+                variant="primary"
+                onClick={handleResetUsage}
+                disabled={isResettingUsage}
+                style={fullWidthOnMobile}
+              >
                 {isResettingUsage ? "Wird zurückgesetzt..." : "Zurücksetzen"}
               </Button>
+            </div>
+          </Modal>
+
+          <Modal
+            isOpen={isDeleteModalOpen}
+            onClose={() => setIsDeleteModalOpen(false)}
+            title="Konto endgültig löschen?"
+            maxWidth="480px"
+          >
+            <p style={confirmMessageStyle}>
+              Das Konto <strong>{customer.email}</strong> wird endgültig gelöscht.
+              Diese Aktion kann nicht rückgängig gemacht werden. Ein aktives Abo
+              wird sofort gekündigt.
+            </p>
+            <label style={deleteConfirmLabel}>
+              Gib zur Bestätigung die E-Mail-Adresse des Kunden ein:
+            </label>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(event) => setDeleteConfirmText(event.target.value)}
+              placeholder={customer.email}
+              autoComplete="off"
+              style={deleteConfirmInput}
+            />
+            <div style={buttonRowStyle}>
+              <Button
+                variant="ghost"
+                onClick={() => setIsDeleteModalOpen(false)}
+                disabled={isDeleting}
+                style={fullWidthOnMobile}
+              >
+                Abbrechen
+              </Button>
+              <button
+                type="button"
+                onClick={handleDeleteCustomer}
+                disabled={
+                  isDeleting ||
+                  deleteConfirmText.trim().toLowerCase() !== customer.email.toLowerCase()
+                }
+                style={{
+                  ...deleteConfirmButton,
+                  ...fullWidthOnMobile,
+                  opacity:
+                    isDeleting ||
+                    deleteConfirmText.trim().toLowerCase() !== customer.email.toLowerCase()
+                      ? 0.45
+                      : 1,
+                }}
+              >
+                {isDeleting ? "Wird gelöscht..." : "Konto endgültig löschen"}
+              </button>
             </div>
           </Modal>
 
@@ -286,7 +412,8 @@ function CustomerDetailView({ customerId, onBack }: CustomerDetailViewProps) {
                   background: theme.glass.subtle.background,
                   color: theme.colors.textPrimary,
                   fontFamily: "inherit",
-                  fontSize: "0.95rem",
+                  // >= 16px, sonst zoomt iOS Safari beim Fokussieren die Seite.
+                  fontSize: "max(16px, 0.95rem)",
                   resize: "vertical",
                 }}
               />
@@ -413,6 +540,67 @@ const confirmButtonRow: React.CSSProperties = {
   display: "flex",
   justifyContent: "flex-end",
   gap: "10px",
+};
+
+// Auf Mobile gestapelt statt nebeneinander: volle Touch-Breite, die primäre
+// Aktion (letztes DOM-Kind) landet dadurch unten, näher am Daumen.
+const confirmButtonRowMobile: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+};
+
+const dangerZone: React.CSSProperties = {
+  paddingTop: "20px",
+  borderTop: `1px solid ${theme.colors.dangerBorder}`,
+};
+
+const dangerButton: React.CSSProperties = {
+  padding: "10px 18px",
+  borderRadius: theme.radius.md,
+  border: `1px solid ${theme.colors.dangerBorder}`,
+  background: theme.colors.dangerSoft,
+  color: theme.colors.dangerText,
+  fontFamily: "inherit",
+  fontSize: "0.92rem",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const deleteConfirmLabel: React.CSSProperties = {
+  display: "block",
+  color: theme.colors.textSecondary,
+  fontSize: "0.85rem",
+  fontWeight: 600,
+  marginBottom: "8px",
+};
+
+const deleteConfirmInput: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "11px 14px",
+  borderRadius: theme.radius.md,
+  border: `1px solid ${theme.colors.dangerBorder}`,
+  background: theme.glass.subtle.background,
+  color: theme.colors.textPrimary,
+  fontFamily: "inherit",
+  // >= 16px, sonst zoomt iOS Safari beim Fokussieren die Seite.
+  fontSize: "max(16px, 0.95rem)",
+  marginBottom: "20px",
+};
+
+// Gleiche Rot-Gradient-Konvention wie der "Endgültig löschen"-Button der
+// Self-Service-Löschung (AccountPage) — bewusst kraeftiger als dangerSoft.
+const deleteConfirmButton: React.CSSProperties = {
+  padding: "10px 18px",
+  borderRadius: theme.radius.md,
+  border: "none",
+  background: "linear-gradient(135deg, #b91c1c, #dc2626)",
+  color: "#ffffff",
+  fontFamily: "inherit",
+  fontSize: "0.92rem",
+  fontWeight: 700,
+  cursor: "pointer",
 };
 
 export default CustomerDetailView;

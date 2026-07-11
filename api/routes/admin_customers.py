@@ -18,7 +18,12 @@ from api.schemas.customer import (
     CustomerNoteResponse,
     UpdateCustomerPlanRequest,
 )
-from api.services.user_service import reset_monthly_request_count, update_user_plan
+from api.services.user_service import (
+    StripeCancellationError,
+    delete_user_account,
+    reset_monthly_request_count,
+    update_user_plan,
+)
 
 router = APIRouter(prefix="/admin/customers", tags=["admin-customers"])
 
@@ -160,3 +165,43 @@ def reset_customer_usage(
         note_text=f"Verbrauchszähler manuell zurückgesetzt durch Admin ({current_admin.email}).",
     )
     return updated_user
+
+
+@router.delete("/{user_id}", status_code=204)
+def delete_customer(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    """Admin-Löschung eines Kunden-Kontos (Hard Delete, gleiche Logik wie der
+    Self-Service-DSGVO-Flow). Bewusst KEINE create_note: die Notizen des
+    Kunden werden im selben Flow mitgelöscht — der Audit-Trail ist das
+    'account_deleted'-Event (überlebt via ON DELETE SET NULL) mit
+    Admin-Kennung im Metadata."""
+    customer = db.query(User).filter(User.id == user_id).first()
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    if customer.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
+    if customer.plan == "admin":
+        # Defense-in-Depth analog zu ADMIN_ASSIGNABLE_PLANS: Admin-Konten
+        # werden ausschliesslich out-of-band (scripts/set_admin.py) verwaltet.
+        raise HTTPException(status_code=400, detail="Admin accounts cannot be deleted via the CRM")
+
+    try:
+        delete_user_account(
+            db,
+            customer,
+            event_metadata={
+                "deleted_by": "admin",
+                "admin_id": current_admin.id,
+                "admin_email": current_admin.email,
+            },
+        )
+    except StripeCancellationError:
+        raise HTTPException(
+            status_code=502,
+            detail="Stripe cancellation failed; account was not deleted",
+        )

@@ -1,8 +1,76 @@
+import logging
 from datetime import date, datetime
+
+import stripe
 from sqlalchemy import and_, case, or_, update
 from sqlalchemy.orm import Session
 
+from api.models.analysis_history import AnalysisHistory
+from api.models.custom_analysis_definition import CustomAnalysisDefinition
+from api.models.customer_note import CustomerNote
+from api.models.favorite import Favorite
 from api.models.user import User
+from api.services.event_service import log_event
+from api.services.stripe_service import cancel_subscription_immediately
+
+logger = logging.getLogger(__name__)
+
+
+class StripeCancellationError(Exception):
+    """Stripe-Kündigung schlug fehl (kein InvalidRequestError) — das Konto
+    darf nicht gelöscht werden, sonst liefe ein Abo auf ein gelöschtes
+    Konto weiter."""
+
+
+def delete_user_account(
+    db: Session,
+    user: User,
+    *,
+    event_metadata: dict | None = None,
+) -> None:
+    """Hard Delete eines Nutzerkontos: kündigt ein laufendes Stripe-Abo
+    sofort und löscht danach alle Nutzerdaten endgültig. Gemeinsame Logik
+    für den Self-Service-DSGVO-Flow (auth.py) und die Admin-CRM-Löschung
+    (admin_customers.py) — Zugriffsprüfungen (Passwort bzw. require_admin)
+    bleiben Sache der Routen.
+
+    Raises:
+        StripeCancellationError: Stripe-Kündigung fehlgeschlagen; es wurde
+        nichts gelöscht.
+    """
+    if user.stripe_subscription_id:
+        try:
+            cancel_subscription_immediately(user.stripe_subscription_id)
+        except stripe.error.InvalidRequestError:
+            # Abo existiert bei Stripe nicht (mehr) — Löschung fortsetzen.
+            logger.warning(
+                "Stripe subscription not found during account deletion: user_id=%s",
+                user.id,
+            )
+        except Exception as exc:
+            logger.exception(
+                "Stripe cancellation failed during account deletion: user_id=%s",
+                user.id,
+            )
+            raise StripeCancellationError() from exc
+
+    user_id = user.id
+
+    # Vor dem Löschen protokollieren: product_events.user_id ist ON DELETE
+    # SET NULL, das Event selbst bleibt also für die Statistik erhalten.
+    log_event(db, "account_deleted", user_id=user_id, metadata=event_metadata)
+
+    # Reihenfolge wichtig: analysis_history.user_id hat kein ON DELETE CASCADE.
+    db.query(AnalysisHistory).filter(AnalysisHistory.user_id == user_id).delete()
+    db.query(Favorite).filter(Favorite.user_id == user_id).delete()
+    db.query(CustomAnalysisDefinition).filter(
+        CustomAnalysisDefinition.user_id == user_id
+    ).delete()
+    db.query(CustomerNote).filter(CustomerNote.user_id == user_id).delete()
+    db.query(User).filter(User.id == user_id).delete()
+    db.commit()
+
+    logger.info("Account deleted: user_id=%s", user_id)
 
 
 def _current_period_start() -> date:

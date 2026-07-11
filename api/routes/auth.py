@@ -3,8 +3,6 @@ import logging
 import secrets
 from datetime import datetime, timedelta
 
-import stripe
-
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -35,13 +33,9 @@ from api.core.security import (
     create_access_token,
     hash_password,
 )
-from api.models.analysis_history import AnalysisHistory
-from api.models.custom_analysis_definition import CustomAnalysisDefinition
-from api.models.customer_note import CustomerNote
-from api.models.favorite import Favorite
 from api.models.user import User
 from api.services.event_service import log_event
-from api.services.stripe_service import cancel_subscription_immediately
+from api.services.user_service import StripeCancellationError, delete_user_account
 from api.services.email_service import (
     send_email_safely,
     send_email_verification_email,
@@ -384,46 +378,15 @@ def delete_account(
             detail="Current password is incorrect",
         )
 
-    if current_user.stripe_subscription_id:
-        try:
-            cancel_subscription_immediately(current_user.stripe_subscription_id)
-        except stripe.error.InvalidRequestError:
-            # Abo existiert bei Stripe nicht (mehr) — Löschung fortsetzen.
-            logger.warning(
-                "Stripe subscription not found during account deletion: user_id=%s",
-                current_user.id,
-            )
-        except Exception:
-            # Sonst NICHT löschen: sonst liefe ein Abo auf ein gelöschtes
-            # Konto weiter.
-            logger.exception(
-                "Stripe cancellation failed during account deletion: user_id=%s",
-                current_user.id,
-            )
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    "Dein Abo konnte gerade nicht gekündigt werden. Bitte "
-                    "versuche es später erneut oder kontaktiere den Support."
-                ),
-            )
-
-    user_id = current_user.id
-
-    # Vor dem Löschen protokollieren: product_events.user_id ist ON DELETE
-    # SET NULL, das Event selbst bleibt also für die Statistik erhalten.
-    log_event(db, "account_deleted", user_id=user_id)
-
-    # Reihenfolge wichtig: analysis_history.user_id hat kein ON DELETE CASCADE.
-    db.query(AnalysisHistory).filter(AnalysisHistory.user_id == user_id).delete()
-    db.query(Favorite).filter(Favorite.user_id == user_id).delete()
-    db.query(CustomAnalysisDefinition).filter(
-        CustomAnalysisDefinition.user_id == user_id
-    ).delete()
-    db.query(CustomerNote).filter(CustomerNote.user_id == user_id).delete()
-    db.query(User).filter(User.id == user_id).delete()
-    db.commit()
-
-    logger.info("Account deleted: user_id=%s", user_id)
+    try:
+        delete_user_account(db, current_user, event_metadata={"deleted_by": "self"})
+    except StripeCancellationError:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Dein Abo konnte gerade nicht gekündigt werden. Bitte "
+                "versuche es später erneut oder kontaktiere den Support."
+            ),
+        )
 
     return {"message": "Account deleted"}

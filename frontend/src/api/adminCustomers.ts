@@ -79,3 +79,7 @@ export async function updateCustomerPlan(
 export async function resetCustomerUsage(id: number): Promise<CustomerDetail> {
   return apiRequest<CustomerDetail>(`/admin/customers/${id}/reset-usage`, { method: "POST" });
 }
+
+export async function deleteCustomer(id: number): Promise<void> {
+  await apiRequest<void>(`/admin/customers/${id}`, { method: "DELETE" });
+}
