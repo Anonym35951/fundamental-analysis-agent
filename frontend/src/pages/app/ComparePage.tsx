@@ -48,6 +48,8 @@ function ComparePage() {
 
   const [catalog, setCatalog] = useState<MetricCatalogEntry[]>([]);
   const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  const [catalogError, setCatalogError] = useState(false);
+  const [catalogRetryKey, setCatalogRetryKey] = useState(0);
   const [livePrices, setLivePrices] = useState<Record<string, LivePriceResult>>({});
 
   const handlePriceUpdate = useCallback((symbol: string, result: LivePriceResult) => {
@@ -89,12 +91,21 @@ function ComparePage() {
 
   useEffect(() => {
     let isMounted = true;
+    setIsLoadingCatalog(true);
+    setCatalogError(false);
     getCustomMetricsCatalog()
       .then((data) => {
         if (isMounted) setCatalog(data);
       })
       .catch(() => {
-        if (isMounted) setCatalog([]);
+        // Vorher: leerer Katalog ohne Erklärung - sah aus wie "keine
+        // Kennzahlen verfügbar" statt "Abruf fehlgeschlagen". Jetzt eigener
+        // Fehlerzustand mit Retry (siehe Render unten), catalogRetryKey
+        // stößt diesen Effect erneut an.
+        if (isMounted) {
+          setCatalog([]);
+          setCatalogError(true);
+        }
       })
       .finally(() => {
         if (isMounted) setIsLoadingCatalog(false);
@@ -102,7 +113,7 @@ function ComparePage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [catalogRetryKey]);
 
   function commitDraft(draftId: number, value: string) {
     const cleanSymbol = value.trim();
@@ -254,14 +265,36 @@ function ComparePage() {
             </Button>
           ) : null}
         </div>
-        <MetricCatalogPicker
-          key={pickerResetKey}
-          catalog={catalog}
-          isLoadingCatalog={isLoadingCatalog}
-          initialMetrics={metrics}
-          onChange={setMetrics}
-          hideCriterion
-        />
+        {catalogError ? (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-start",
+              gap: "10px",
+              padding: "16px",
+              borderRadius: theme.radius.md,
+              border: `1px solid ${theme.colors.borderSubtle}`,
+              background: theme.colors.panelAlt,
+            }}
+          >
+            <span style={{ color: theme.colors.dangerText }}>
+              Kennzahlen-Katalog konnte nicht geladen werden.
+            </span>
+            <Button variant="ghost" onClick={() => setCatalogRetryKey((key) => key + 1)}>
+              Erneut versuchen
+            </Button>
+          </div>
+        ) : (
+          <MetricCatalogPicker
+            key={pickerResetKey}
+            catalog={catalog}
+            isLoadingCatalog={isLoadingCatalog}
+            initialMetrics={metrics}
+            onChange={setMetrics}
+            hideCriterion
+          />
+        )}
       </section>
 
       <section style={resultsSection}>

@@ -3,9 +3,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { createGlossyBlackMatcap } from "./glossyMatcap";
 import { useThemeMode } from "../ui/ThemeModeContext";
-
-export const FLY_IN_DURATION = 2.8;
-export const FLY_OUT_DURATION = 2.8;
+import { FLY_IN_DURATION, FLY_OUT_DURATION } from "./introTiming";
 
 // Ring band geometry: a real finger-ring band has a FLAT, wide surface with
 // a thin edge — not a round wire/tube cross-section like a torus. We build it

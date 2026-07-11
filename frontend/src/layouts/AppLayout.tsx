@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Menu, X } from "lucide-react";
@@ -8,9 +8,16 @@ import EmailVerificationBanner from "../components/layout/EmailVerificationBanne
 import SessionTimeoutWatcher from "../components/layout/SessionTimeoutWatcher";
 import ErrorBoundary from "../components/common/ErrorBoundary";
 import AmbientBackground from "../components/ui/AmbientBackground";
-import IntroOverlay, { type OverlayPhase } from "../components/intro/IntroOverlay";
-import { FLY_OUT_DURATION } from "../components/intro/RingsScene";
+import type { OverlayPhase } from "../components/intro/IntroOverlay";
+import { FLY_OUT_DURATION } from "../components/intro/introTiming";
 import AppTour from "../components/onboarding/AppTour";
+
+// Lazy statt statisch importiert (P2-15, LAUNCH.md): IntroOverlay zieht
+// RingsScene (three.js/@react-three/fiber) nach - ohne Lazy-Loading wäre
+// dieser Chunk Teil des Haupt-Bundles, obwohl showIntro auf den allermeisten
+// Seitenaufrufen (jede Navigation außer dem ersten Post-Login-Mount) false
+// ist und die Komponente nie gerendert wird.
+const IntroOverlay = lazy(() => import("../components/intro/IntroOverlay"));
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { useScrollProgress } from "../hooks/useScrollProgress";
 import { TourStatusProvider } from "../hooks/TourStatusProvider";
@@ -30,16 +37,31 @@ function AppLayout() {
   // login. Deliberately a *pure* read with no side effect: StrictMode calls
   // lazy useState initializers twice in dev, so clearing the flag here would
   // wipe it before the real (second) call ever sees it. The actual removal
-  // happens in the effect below, which is safe to double-invoke.
-  const [showIntro] = useState(() => sessionStorage.getItem("show_intro") === "1");
+  // happens in the effect below, which is safe to double-invoke. Kept in a
+  // ref (not state) since it only gates the one-time cleanup effect, not a
+  // render decision.
+  const hadIntroFlag = useRef(sessionStorage.getItem("show_intro") === "1");
+  // P2-15 (LAUNCH.md): the 3D ring intro is skipped - not just reduced to a
+  // static frame - under prefers-reduced-motion (same convention as
+  // ParticleBeamBackground.tsx/StackedCards.tsx etc.) and on mobile, where
+  // the extra three.js chunk download plus WebGL cost buys little on a
+  // screen too small to appreciate the animation. isMobile above is already
+  // resolved synchronously (useIsMobile reads matchMedia in its own useState
+  // initializer), so it's safe to read here in the same render.
+  const [showIntro] = useState(() => {
+    if (!hadIntroFlag.current) return false;
+    const prefersReducedMotion =
+      window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+    return !prefersReducedMotion && !isMobile;
+  });
   // No intro this load → content starts "done"/fully visible immediately,
   // no fade-in delay for ordinary navigation. Only the very first post-login
   // mount starts at "black" and progresses through the real sequence.
   const [introPhase, setIntroPhase] = useState<OverlayPhase>(showIntro ? "black" : "done");
 
   useEffect(() => {
-    if (showIntro) sessionStorage.removeItem("show_intro");
-  }, [showIntro]);
+    if (hadIntroFlag.current) sessionStorage.removeItem("show_intro");
+  }, []);
 
   useEffect(() => {
     // Auf Mobile bleibt die Sidebar als Off-Canvas-Drawer immer initial
@@ -78,7 +100,11 @@ function AppLayout() {
         color: theme.colors.textSecondary,
       }}
     >
-      {showIntro ? <IntroOverlay onPhaseChange={setIntroPhase} /> : null}
+      {showIntro ? (
+        <Suspense fallback={null}>
+          <IntroOverlay onPhaseChange={setIntroPhase} />
+        </Suspense>
+      ) : null}
 
       <AppTour introDone={introPhase === "done"} />
 

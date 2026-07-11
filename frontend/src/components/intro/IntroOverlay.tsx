@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import RingsScene, { FLY_IN_DURATION, FLY_OUT_DURATION, type IntroPhase } from "./RingsScene";
+import RingsScene, { type IntroPhase } from "./RingsScene";
+import { FLY_IN_DURATION, FLY_OUT_DURATION } from "./introTiming";
 import IntroSlogan from "./IntroSlogan";
 import { theme } from "../ui/theme";
 

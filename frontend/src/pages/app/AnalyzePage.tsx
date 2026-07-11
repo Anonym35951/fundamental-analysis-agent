@@ -19,7 +19,7 @@ import type { CustomAnalysisDefinition, MetricSelection } from "../../types/cust
 import type { FullResult, Progress } from "../../types/analysis";
 import AnalyzeResultsDashboard from "../../components/analysis/AnalyzeResultsDashboard";
 import { theme } from "../../components/ui/theme";
-import { Button, Modal } from "../../components/ui";
+import { Button, Modal, useToast } from "../../components/ui";
 import QuotaExceededModal from "../../components/analysis/QuotaExceededModal";
 import DefinitionBuilder from "../../components/customAnalysis/DefinitionBuilder";
 import AdHocAnalysisPanel from "../../components/customAnalysis/AdHocAnalysisPanel";
@@ -93,6 +93,7 @@ const modeOptions: Array<{
 ];
 
 function AnalyzePage() {
+  const { showToast } = useToast();
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -418,6 +419,7 @@ useEffect(() => {
         await removeFavorite(normalizedSymbol);
       } catch {
         setFavoriteSymbols(previous);
+        showToast("Konnte nicht gespeichert werden.", "error");
       }
     } else {
       next.add(normalizedSymbol);
@@ -426,6 +428,7 @@ useEffect(() => {
         await addFavorite(normalizedSymbol);
       } catch {
         setFavoriteSymbols(previous);
+        showToast("Konnte nicht gespeichert werden.", "error");
       }
     }
   }

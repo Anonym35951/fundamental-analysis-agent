@@ -34,8 +34,8 @@ const navItems = [
   { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/app/analyze", label: "Analyse", icon: LineChart },
   { to: "/app/compare", label: "Vergleich", icon: GitCompare },
-  { to: "/app/billing", label: "Billing", icon: CreditCard },
-  { to: "/app/account", label: "Account", icon: UserCircle },
+  { to: "/app/billing", label: "Abrechnung", icon: CreditCard },
+  { to: "/app/account", label: "Konto", icon: UserCircle },
   { to: "/app/support", label: "Support", icon: LifeBuoy },
 ];
 

@@ -1,23 +1,11 @@
-import { Link, NavLink } from "react-router-dom";
-import { LogOut } from "lucide-react";
-import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import { theme } from "../ui/theme";
 
 type HeaderProps = {
-  variant?: "public" | "auth" | "app";
-  onLogout?: () => void;
+  variant?: "public" | "auth";
 };
 
-const appLinks = [
-  { to: "/app/dashboard", label: "Dashboard" },
-  { to: "/app/analyze", label: "Analyse" },
-  { to: "/app/custom-analysis", label: "Eigene Analyse" },
-  { to: "/app/billing", label: "Billing" },
-  { to: "/app/account", label: "Account" },
-];
-
-function Header({ variant = "public", onLogout }: HeaderProps) {
-  const isApp = variant === "app";
+function Header({ variant = "public" }: HeaderProps) {
   const hasToken = Boolean(localStorage.getItem("access_token"));
 
   return (
@@ -47,7 +35,7 @@ function Header({ variant = "public", onLogout }: HeaderProps) {
         }}
       >
         <Link
-          to={isApp || hasToken ? "/app/dashboard" : "/landing"}
+          to={hasToken ? "/app/dashboard" : "/landing"}
           style={{
             textDecoration: "none",
             color: theme.colors.textPrimary,
@@ -69,7 +57,7 @@ function Header({ variant = "public", onLogout }: HeaderProps) {
             alignItems: "center",
             padding: "4px",
             borderRadius: theme.radius.pill,
-            background: isApp ? theme.colors.panelAlt : "transparent",
+            background: "transparent",
           }}
         >
           {/* PUBLIC (logged in) */}
@@ -97,51 +85,6 @@ function Header({ variant = "public", onLogout }: HeaderProps) {
               </Link>
             </>
           )}
-
-          {/* APP */}
-          {isApp &&
-            appLinks.map((link) => (
-              <NavLink key={link.to} to={link.to} style={navLinkStyle}>
-                {({ isActive }) =>
-                  isActive ? (
-                    <motion.span
-                      layoutId="header-active-pill"
-                      style={pillActiveBg}
-                      transition={theme.motion.spring}
-                    >
-                      <span style={{ position: "relative", zIndex: 1 }}>{link.label}</span>
-                    </motion.span>
-                  ) : (
-                    <span>{link.label}</span>
-                  )
-                }
-              </NavLink>
-            ))}
-
-          {isApp && (
-            <motion.button
-              onClick={onLogout}
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.97 }}
-              style={{
-                marginLeft: "6px",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                background: theme.colors.dangerSoft,
-                color: theme.colors.dangerText,
-                border: `1px solid ${theme.colors.dangerBorder}`,
-                borderRadius: theme.radius.pill,
-                padding: "8px 14px",
-                fontWeight: 700,
-                fontSize: "0.9rem",
-                cursor: "pointer",
-              }}
-            >
-              <LogOut size={15} />
-              Logout
-            </motion.button>
-          )}
         </nav>
       </div>
     </header>
@@ -166,28 +109,6 @@ const pillCta: React.CSSProperties = {
   padding: "10px 18px",
   borderRadius: theme.radius.pill,
   boxShadow: "0 10px 24px rgba(0, 0, 0, 0.35)",
-};
-
-const navLinkStyle = ({ isActive }: { isActive: boolean }): React.CSSProperties => ({
-  position: "relative",
-  textDecoration: "none",
-  color: isActive ? "#ffffff" : theme.colors.textSecondary,
-  fontWeight: 600,
-  fontSize: "0.92rem",
-  padding: "9px 16px",
-  borderRadius: theme.radius.pill,
-  display: "inline-flex",
-  alignItems: "center",
-});
-
-const pillActiveBg: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  borderRadius: theme.radius.pill,
-  background: theme.gradients.ctaPrimary,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
 };
 
 export default Header;

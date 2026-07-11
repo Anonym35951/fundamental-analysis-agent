@@ -270,7 +270,7 @@ function RegisterPage() {
             checked={termsAccepted}
             onChange={(event) => setTermsAccepted(event.target.checked)}
             disabled={isSubmitting}
-            style={{ marginTop: "3px", flexShrink: 0 }}
+            style={consentCheckboxInputStyle}
           />
           <span>
             Ich akzeptiere die{" "}
@@ -291,7 +291,7 @@ function RegisterPage() {
             checked={privacyAccepted}
             onChange={(event) => setPrivacyAccepted(event.target.checked)}
             disabled={isSubmitting}
-            style={{ marginTop: "3px", flexShrink: 0 }}
+            style={consentCheckboxInputStyle}
           />
           <span>
             Ich habe die{" "}
@@ -381,6 +381,8 @@ const consentCheckboxStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "flex-start",
   gap: "10px",
+  minHeight: "44px",
+  boxSizing: "border-box",
   padding: "12px 14px",
   borderRadius: theme.radius.md,
   border: `1px solid ${theme.glass.subtle.border}`,
@@ -388,6 +390,18 @@ const consentCheckboxStyle: React.CSSProperties = {
   color: theme.colors.textSecondary,
   fontSize: "0.92rem",
   lineHeight: 1.6,
+  cursor: "pointer",
+};
+
+// 13x13px (Browser-Default) war laut LAUNCH.md P2-20 auf 375px-Viewports
+// deutlich unter der 44px-Touch-Empfehlung - das Label selbst hat schon
+// Padding (siehe consentCheckboxStyle), aber die Checkbox als visuelles
+// Ziel innerhalb des Labels war winzig.
+const consentCheckboxInputStyle: React.CSSProperties = {
+  marginTop: "2px",
+  flexShrink: 0,
+  width: "20px",
+  height: "20px",
   cursor: "pointer",
 };
 
