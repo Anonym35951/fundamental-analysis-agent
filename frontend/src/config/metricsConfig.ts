@@ -372,8 +372,8 @@ export const METRICS_CONFIG: Record<string, MetricConfig> = {
     label: "KGV (P/E)",
     unit: "ratio",
     decimals: 2,
-    description: "Kurs-Gewinn-Verhältnis — wie viele Jahresgewinne der aktuelle Kurs kostet. Negative Werte werden bewusst zugelassen (relevant für Zykliker-Analysen).",
-    formula: "KGV = Aktueller Kurs / Gewinn je Aktie (EPS)",
+    description: "Kurs-Gewinn-Verhältnis — wie viele Jahresgewinne der aktuelle Kurs kostet. Negative Werte werden bewusst zugelassen (relevant für Zykliker-Analysen). Hinweis: nutzt immer den letzten Jahresbericht — der Quartal/Jahr-Umschalter hat für das KGV keine Wirkung.",
+    formula: "KGV = Aktueller Kurs / Gewinn je Aktie (EPS, aus dem letzten Jahresbericht)",
   },
 
   calculate_peg_ratio: {

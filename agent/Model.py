@@ -5151,7 +5151,7 @@ class Model:
         Args:
             symbol (str): Aktiensymbol (z. B. 'AAPL').
             use_cache (bool): Ob Cache-Daten verwendet werden sollen (Standard: True).
-            frequency (str): Zeitraum, entweder 'annual' oder 'quarterly' (Standard: 'quarterly').
+            frequency (str): Zeitraum, entweder 'annual' oder 'quarterly' (Standard: 'annual').
         Returns:
             dict: Enthält das Price/EBIT-Verhältnis, Symbol, Frequenz, Datum und ggf. eine Nachricht.
                   Beispiel:
