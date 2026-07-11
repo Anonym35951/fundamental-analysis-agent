@@ -8,6 +8,7 @@ from typing import Optional
 from dateutil.relativedelta import relativedelta
 from agent.DataLoader import DataLoader
 from agent.DataPreprocessor import DataPreprocessor
+from agent.growth_math import compute_net_income_cagr
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 class Model:
@@ -1358,9 +1359,16 @@ class Model:
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def calculate_avg_quarterly_profit_growth(self, symbol, start_date=None, end_date=None, use_cache=True):
         """
-        Berechnet die durchschnittliche quartalsweise Gewinnwachstumsrate (AQGR) basierend auf allen verfügbaren
-        quartalsweisen Nettogewinndaten, sofern keine negativen Werte vorliegen. Bei negativen Werten werden die Daten
-        aufgelistet und eine Warnung ausgegeben.
+        Berechnet die annualisierte Gewinnwachstumsrate (AQGR, CAGR-basiert) aus dem ältesten und dem neuesten
+        verfügbaren positiven quartalsweisen Nettogewinn, sofern keine strukturell negativen Werte vorliegen.
+        Bei negativen Werten werden die Daten aufgelistet und eine Warnung ausgegeben.
+
+        Methodik-Entscheidung (2026-07-11): vorher arithmetisches Mittel der Quartal-zu-Vorquartal-Wachstumsraten
+        (QoQ, ohne Saisonbereinigung) — verzerrte systematisch nach oben bei volatilen Gewinnen und war anfällig
+        für Saisonalität. Jetzt: eine CAGR aus ältestem/neuestem Datenpunkt mit echtem Zeit-Delta als Exponent
+        (siehe agent/growth_math.compute_net_income_cagr) — kein Mittelwert-Bias mehr, und der Vergleich über den
+        vollen Kalenderzeitraum ist unabhängig von der Quartalsposition (löst das Saisonalitätsproblem strukturell,
+        nicht nur durch einen anderen Vergleichs-Offset).
 
         Die Methode ignoriert die Parameter start_date und end_date, da sie immer alle verfügbaren Daten verwendet.
         Die Daten werden absteigend sortiert (neueste zuerst).
@@ -1377,11 +1385,12 @@ class Model:
                   Beispiel bei Erfolg mit AQGR:
                   {
                       "avg_growth": 2.5,
+                      "years": 1.02,
                       "symbol": "AAPL",
                       "actual_start_date": "2024-03-31",
                       "actual_end_date": "2025-03-31",
                       "frequency": "quarterly",
-                      "message": "Durchschnittliche quartalsweise Gewinnwachstumsrate (AQGR) für AAPL: 2.5% von 2024-03-31 bis 2025-03-31 basierend auf 5 Berichten."
+                      "message": "Durchschnittliche quartalsweise Gewinnwachstumsrate (AQGR, CAGR-basiert) für AAPL: 2.5% p.a. von 2024-03-31 bis 2025-03-31 (1.02 Jahre, 5 verfügbare Berichte)."
                   }
                   Beispiel bei negativen Werten:
                   {
@@ -1441,42 +1450,31 @@ class Model:
                     "message": message
                 }
             else:
-                # Schritt 6b: Wachstumsraten zwischen aufeinanderfolgenden Quartalen
-                # berechnen — einzelne Verlust-Quartale werden übersprungen statt
-                # die gesamte Berechnung abzubrechen, da sie sonst die Aussage
-                # über die Mehrheit der (positiven) Perioden verfälschen würden.
-                growth_rates = []
-                for i in range(len(net_incomes) - 1):
-                    current_value = net_incomes.iloc[i]  # Aktueller Nettogewinn (neuere Daten)
-                    next_value = net_incomes.iloc[i + 1]  # Nächster Nettogewinn (ältere Daten)
-                    if current_value <= 0 or next_value <= 0:
-                        continue
-                    growth_rate = ((current_value / next_value) - 1) * 100  # Wachstumsrate in Prozent
-                    growth_rates.append(growth_rate)
+                # Schritt 6b: CAGR aus ältestem und neuestem positivem
+                # Datenpunkt (siehe Docstring/Methodik-Hinweis oben).
+                cagr_result = compute_net_income_cagr(net_incomes)
+                if "error" in cagr_result:
+                    return {"error": f"{cagr_result['error']} ({symbol})"}
 
-                if not growth_rates:
-                    return {
-                        "error": f"Keine gültigen Datenpaare für Wachstumsrate-Berechnung für {symbol} (zu viele Werte ≤ 0)."
-                    }
+                avg_growth = round(cagr_result["cagr"], 2)
+                years = cagr_result["years"]
+                actual_start_date = cagr_result["start_date"].strftime('%Y-%m-%d')
+                actual_end_date = cagr_result["end_date"].strftime('%Y-%m-%d')
+                message = (f"Durchschnittliche quartalsweise Gewinnwachstumsrate (AQGR, CAGR-basiert) für {symbol}: "
+                           f"{avg_growth}% p.a. von {actual_start_date} bis {actual_end_date} "
+                           f"({years:.2f} Jahre, {len(net_incomes)} verfügbare Berichte).")
 
-                # Schritt 7: Durchschnittliche Wachstumsrate berechnen
-                avg_growth = sum(growth_rates) / len(growth_rates)
-                avg_growth = round(avg_growth, 2)
-                message = (f"Durchschnittliche quartalsweise Gewinnwachstumsrate (AQGR) für {symbol}: {avg_growth}% "
-                           f"von {net_incomes.index[-1].strftime('%Y-%m-%d')} bis {net_incomes.index[0].strftime('%Y-%m-%d')} "
-                           f"basierend auf {len(net_incomes)} Berichten.")
-
-                # Schritt 8: Ergebnis zurückgeben
+                # Schritt 7: Ergebnis zurückgeben
                 return {
                     "avg_growth": avg_growth,
-                    # Anzahl der für avg_growth gemittelten Wachstumsraten -
-                    # Basis, um avg_growth in compare_avg_quarterly_growth_to_
-                    # inflation korrekt zu einer kumulierten Gesamtwachstumsrate
-                    # hochzurechnen (siehe LAUNCH_AUDIT.md, K-4).
-                    "periods": len(growth_rates),
+                    # Zeitspanne in Jahren zwischen ältestem und neuestem
+                    # Datenpunkt - dient als CAGR-Kompoundierungs-Exponent in
+                    # compare_avg_quarterly_growth_to_inflation (ersetzt das
+                    # frühere "periods", siehe LAUNCH_AUDIT.md K-4).
+                    "years": years,
                     "symbol": symbol,
-                    "actual_start_date": net_incomes.index[-1].strftime('%Y-%m-%d'),
-                    "actual_end_date": net_incomes.index[0].strftime('%Y-%m-%d'),
+                    "actual_start_date": actual_start_date,
+                    "actual_end_date": actual_end_date,
                     "frequency": "quarterly",
                     "message": message
                 }
@@ -1487,9 +1485,14 @@ class Model:
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def calculate_avg_annual_profit_growth(self, symbol, start_date=None, end_date=None, use_cache=True):
         """
-        Berechnet die durchschnittliche jährliche Gewinnwachstumsrate (AAGR) basierend auf allen verfügbaren
-        jährlichen Nettogewinndaten, aber nur, wenn alle Werte positiv sind. Bei Vorhandensein eines negativen
-        Werts werden die Daten aufgelistet und eine Warnung ausgegeben.
+        Berechnet die annualisierte Gewinnwachstumsrate (AAGR, CAGR-basiert) aus dem ältesten und dem neuesten
+        verfügbaren positiven jährlichen Nettogewinn, sofern keine strukturell negativen Werte vorliegen.
+        Bei negativen Werten werden die Daten aufgelistet und eine Warnung ausgegeben.
+
+        Methodik-Entscheidung (2026-07-11): vorher arithmetisches Mittel der Jahr-zu-Vorjahr-Wachstumsraten —
+        verzerrte systematisch nach oben bei volatilen Gewinnen. Jetzt: eine CAGR aus ältestem/neuestem
+        Datenpunkt mit echtem Zeit-Delta als Exponent (siehe agent/growth_math.compute_net_income_cagr),
+        der Lehrbuch-Standard für eine annualisierte Wachstumsrate über einen Mehrjahreszeitraum.
 
         Die Methode ignoriert die Parameter start_date und end_date, da sie immer alle verfügbaren Daten verwendet.
         Die Daten werden absteigend sortiert (neueste zuerst).
@@ -1506,11 +1509,12 @@ class Model:
                   Beispiel bei Erfolg mit AAGR:
                   {
                       "avg_growth": 10.0,
+                      "years": 3.0,
                       "symbol": "AAPL",
                       "actual_start_date": "2021-12-31",
                       "actual_end_date": "2024-12-31",
                       "frequency": "annual",
-                      "message": "Durchschnittliche jährliche Gewinnwachstumsrate (AAGR) für AAPL: 10.0% von 2021-12-31 bis 2024-12-31 basierend auf 4 Berichten."
+                      "message": "Durchschnittliche jährliche Gewinnwachstumsrate (AAGR, CAGR-basiert) für AAPL: 10.0% p.a. von 2021-12-31 bis 2024-12-31 (3.00 Jahre, 4 verfügbare Berichte)."
                   }
                   Beispiel bei negativen Werten:
                   {
@@ -1571,46 +1575,32 @@ class Model:
                     "message": message
                 }
             else:
-                # Schritt 6b: Wachstumsraten zwischen aufeinanderfolgenden Jahren
-                # berechnen — einzelne Verlustjahre werden übersprungen statt die
-                # gesamte Berechnung abzubrechen, da sie sonst die Aussage über
-                # die Mehrheit der (positiven) Perioden verfälschen würden.
-                growth_rates = []
-                for i in range(len(net_incomes) - 1):
-                    current_value = net_incomes.iloc[i]  # Aktueller Nettogewinn (neuere Daten)
-                    next_value = net_incomes.iloc[i + 1]  # Nächster Nettogewinn (ältere Daten)
-                    if current_value <= 0 or next_value <= 0:
-                        continue
-                    growth_rate = ((current_value / next_value) - 1) * 100  # Wachstumsrate in Prozent
-                    growth_rates.append(growth_rate)
+                # Schritt 6b: CAGR aus ältestem und neuestem positivem
+                # Datenpunkt (siehe Docstring/Methodik-Hinweis oben).
+                cagr_result = compute_net_income_cagr(net_incomes)
+                if "error" in cagr_result:
+                    return {"error": f"{cagr_result['error']} ({symbol})"}
 
-                if not growth_rates:
-                    return {
-                        "error": f"Keine gültigen Datenpaare für Wachstumsrate-Berechnung für {symbol} (zu viele Werte ≤ 0)."
-                    }
+                avg_growth = round(cagr_result["cagr"], 2)
+                years = cagr_result["years"]
+                actual_start_date = cagr_result["start_date"].strftime('%Y-%m-%d')
+                actual_end_date = cagr_result["end_date"].strftime('%Y-%m-%d')
 
-                # Schritt 7: Durchschnittliche Wachstumsrate berechnen
-                avg_growth = sum(growth_rates) / len(growth_rates)
-                avg_growth = round(avg_growth, 2)
-
-                # Schritt 8: Tatsächlichen Zeitraum bestimmen
-                actual_start_date = net_incomes.index[-1].strftime('%Y-%m-%d')  # Älteste Datum
-                actual_end_date = net_incomes.index[0].strftime('%Y-%m-%d')  # Neueste Datum
-
-                # Schritt 9: Ergebnis zurückgeben
+                # Schritt 7: Ergebnis zurückgeben
                 return {
                     "avg_growth": avg_growth,
-                    # Anzahl der für avg_growth gemittelten Wachstumsraten -
-                    # Basis, um avg_growth in compare_avg_annual_growth_to_
-                    # inflation korrekt zu einer kumulierten Gesamtwachstumsrate
-                    # hochzurechnen (siehe LAUNCH_AUDIT.md, K-4).
-                    "periods": len(growth_rates),
+                    # Zeitspanne in Jahren zwischen ältestem und neuestem
+                    # Datenpunkt - dient als CAGR-Kompoundierungs-Exponent in
+                    # compare_avg_annual_growth_to_inflation (ersetzt das
+                    # frühere "periods", siehe LAUNCH_AUDIT.md K-4).
+                    "years": years,
                     "symbol": symbol,
                     "actual_start_date": actual_start_date,
                     "actual_end_date": actual_end_date,
                     "frequency": "annual",
-                    "message": (f"Durchschnittliche jährliche Gewinnwachstumsrate (AAGR) für {symbol}: {avg_growth}% "
-                                f"von {actual_start_date} bis {actual_end_date} basierend auf {len(net_incomes)} Berichten.")
+                    "message": (f"Durchschnittliche jährliche Gewinnwachstumsrate (AAGR, CAGR-basiert) für {symbol}: "
+                                f"{avg_growth}% p.a. von {actual_start_date} bis {actual_end_date} "
+                                f"({years:.2f} Jahre, {len(net_incomes)} verfügbare Berichte).")
                 }
 
         except Exception as e:
@@ -1670,18 +1660,20 @@ class Model:
 
                 aqgr = growth_result["avg_growth"]
                 total_inflation = inflation_result["total_inflation"]
-                periods = growth_result.get("periods")
+                years = growth_result.get("years")
 
-                # AQGR ist eine DURCHSCHNITTLICHE Wachstumsrate PRO QUARTAL,
-                # total_inflation ist die KUMULATIVE Inflation über den
-                # gesamten Zeitraum - ein direkter Vergleich war Äpfel gegen
-                # Birnen (siehe LAUNCH_AUDIT.md, K-4). Daher AQGR erst über
-                # die Anzahl der Perioden zu einem kumulierten Gesamt-
-                # Gewinnwachstum aufzinsen: (1 + aqgr)^periods - 1.
-                if periods:
-                    cumulative_growth = round(((1 + aqgr / 100) ** periods - 1) * 100, 2)
+                # AQGR ist seit der CAGR-Umstellung (2026-07-11) bereits eine
+                # ANNUALISIERTE Wachstumsrate (% p.a.), total_inflation ist
+                # die KUMULATIVE Inflation über den gesamten Zeitraum - ein
+                # direkter Vergleich wäre weiterhin Äpfel gegen Birnen (siehe
+                # LAUNCH_AUDIT.md, K-4). Daher AQGR über die echte Zeitspanne
+                # in Jahren zu einem kumulierten Gesamt-Gewinnwachstum
+                # aufzinsen: (1 + aqgr)^years - 1. Das entspricht exakt
+                # end_value/start_value - 1 aus der CAGR-Berechnung.
+                if years:
+                    cumulative_growth = round(((1 + aqgr / 100) ** years - 1) * 100, 2)
                 else:
-                    # Sollte praktisch nie eintreten (periods fehlt nur bei
+                    # Sollte praktisch nie eintreten (years fehlt nur bei
                     # aelteren/fremden growth_result-Objekten) - konservativer
                     # Fallback auf die unkumulierte Rate statt eines Fehlers.
                     cumulative_growth = aqgr
@@ -1696,7 +1688,7 @@ class Model:
                     "total_inflation": total_inflation,
                     "outperforms_inflation": outperforms_inflation,
                     "message": (f"Das kumulierte Gewinnwachstum von {cumulative_growth}% "
-                                f"(Ø {aqgr}% pro Quartal) von {actual_start_date} bis {actual_end_date} "
+                                f"(AQGR {aqgr}% p.a.) von {actual_start_date} bis {actual_end_date} "
                                 f"{'übersteigt' if outperforms_inflation else 'unterliegt'} "
                                 f"der kumulativen Inflation von {total_inflation}% im selben Zeitraum.")
                 }
@@ -1765,18 +1757,18 @@ class Model:
 
                 aagr = growth_result["avg_growth"]
                 total_inflation = inflation_result["total_inflation"]
-                periods = growth_result.get("periods")
+                years = growth_result.get("years")
 
-                # AAGR ist eine DURCHSCHNITTLICHE Wachstumsrate PRO JAHR,
+                # AAGR ist bereits eine ANNUALISIERTE Wachstumsrate (% p.a.),
                 # total_inflation ist die KUMULATIVE Inflation über den
-                # gesamten Zeitraum - ein direkter Vergleich war Äpfel gegen
-                # Birnen (siehe LAUNCH_AUDIT.md, K-4). Daher AAGR erst über
-                # die Anzahl der Perioden zu einem kumulierten Gesamt-
-                # Gewinnwachstum aufzinsen: (1 + aagr)^periods - 1.
-                if periods:
-                    cumulative_growth = round(((1 + aagr / 100) ** periods - 1) * 100, 2)
+                # gesamten Zeitraum - ein direkter Vergleich wäre weiterhin
+                # Äpfel gegen Birnen (siehe LAUNCH_AUDIT.md, K-4). Daher AAGR
+                # über die echte Zeitspanne in Jahren zu einem kumulierten
+                # Gesamt-Gewinnwachstum aufzinsen: (1 + aagr)^years - 1.
+                if years:
+                    cumulative_growth = round(((1 + aagr / 100) ** years - 1) * 100, 2)
                 else:
-                    # Sollte praktisch nie eintreten (periods fehlt nur bei
+                    # Sollte praktisch nie eintreten (years fehlt nur bei
                     # aelteren/fremden growth_result-Objekten) - konservativer
                     # Fallback auf die unkumulierte Rate statt eines Fehlers.
                     cumulative_growth = aagr
@@ -1791,7 +1783,7 @@ class Model:
                     "total_inflation": total_inflation,
                     "outperforms_inflation": outperforms_inflation,
                     "message": (f"Das kumulierte Gewinnwachstum von {cumulative_growth}% "
-                                f"(Ø {aagr}% pro Jahr) von {actual_start_date} bis {actual_end_date} "
+                                f"(AAGR {aagr}% p.a.) von {actual_start_date} bis {actual_end_date} "
                                 f"{'übersteigt' if outperforms_inflation else 'unterliegt'} "
                                 f"der kumulativen Inflation von {total_inflation}% im selben Zeitraum.")
                 }

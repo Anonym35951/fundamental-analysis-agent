@@ -215,7 +215,7 @@ def test_annual_growth_vs_inflation_compares_cumulative_growth(model):
     gemeldet."""
     growth_result = {
         "avg_growth": 5.0,
-        "periods": 3,
+        "years": 3,
         "symbol": "TEST",
         "actual_start_date": "2021-12-31",
         "actual_end_date": "2024-12-31",
@@ -238,7 +238,7 @@ def test_annual_growth_vs_inflation_detects_real_underperformance(model):
     als "unterliegt" erkannt werden."""
     growth_result = {
         "avg_growth": 2.0,
-        "periods": 3,
+        "years": 3,
         "symbol": "TEST",
         "actual_start_date": "2021-12-31",
         "actual_end_date": "2024-12-31",
@@ -260,7 +260,7 @@ def test_quarterly_growth_vs_inflation_compares_cumulative_growth(model):
     kleiner als 10% ist."""
     growth_result = {
         "avg_growth": 2.0,
-        "periods": 8,
+        "years": 8,
         "symbol": "TEST",
         "actual_start_date": "2023-03-31",
         "actual_end_date": "2025-03-31",
