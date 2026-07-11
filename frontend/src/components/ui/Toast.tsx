@@ -66,7 +66,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div
         style={{
           position: "fixed",
-          bottom: "24px",
+          // Zusätzlicher Puffer für den iOS-Home-Indicator (0 auf Geräten
+          // ohne Safe-Area-Inset) — siehe RESPONSIVE.md R-P0-5.
+          bottom: "calc(24px + env(safe-area-inset-bottom))",
           right: "24px",
           display: "flex",
           flexDirection: "column",

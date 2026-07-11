@@ -123,7 +123,12 @@ function AppSidebar({
       style={{
         width: isMobile ? "280px" : isCollapsed ? "76px" : "280px",
         minWidth: isMobile ? "280px" : isCollapsed ? "76px" : "280px",
-        height: "100vh",
+        // dvh statt vh: auf iOS Safari folgt die Höhe der tatsächlich
+        // sichtbaren Fläche, statt gegen den großen Viewport (Toolbar
+        // ausgeblendet) zu rechnen — sonst können Logout/Theme-Button am
+        // Boden des Mobile-Drawers unter der Toolbar liegen (RESPONSIVE.md
+        // R-P0-6).
+        height: "100dvh",
         position: isMobile ? "fixed" : "sticky",
         top: 0,
         left: 0,
@@ -138,7 +143,13 @@ function AppSidebar({
         justifyContent: "space-between",
         background: theme.colors.bgDeep,
         borderRight: `1px solid ${theme.colors.borderSubtle}`,
-        padding: !isMobile && isCollapsed ? "18px 12px" : "28px 16px 22px",
+        padding: !isMobile && isCollapsed
+          ? "18px 12px"
+          : isMobile
+            // Safe-Area-Puffer für den iOS-Home-Indicator hinter dem
+            // Logout-Button (RESPONSIVE.md R-P0-5).
+            ? "28px 16px calc(22px + env(safe-area-inset-bottom))"
+            : "28px 16px 22px",
         boxSizing: "border-box",
         boxShadow: isMobile
           ? "0 20px 60px rgba(0, 0, 0, 0.5)"
@@ -237,7 +248,8 @@ function AppSidebar({
                   background: theme.glass.subtle.background,
                   border: `1px solid ${theme.glass.subtle.border}`,
                   color: theme.colors.textPrimary,
-                  fontSize: "0.92rem",
+                  // >= 16px, sonst zoomt iOS Safari beim Fokussieren die Seite.
+                  fontSize: "max(16px, 0.92rem)",
                   outline: "none",
                   boxSizing: "border-box",
                 }}

@@ -94,7 +94,7 @@ function AppLayout() {
     <div
       style={{
         position: "relative",
-        minHeight: "100vh",
+        minHeight: "100dvh",
         display: "flex",
         background: `radial-gradient(circle at top, ${theme.colors.bgGradientStart}, ${theme.colors.bgGradientEnd})`,
         color: theme.colors.textSecondary,
@@ -153,15 +153,25 @@ function AppLayout() {
             aria-label={isSidebarCollapsed ? "Menü öffnen" : "Menü schließen"}
             style={{
               position: "fixed",
-              top: "16px",
+              // Safe-Area-Puffer gegen die iPhone-Statusleiste/Notch
+              // (RESPONSIVE.md R-P0-5; wirkt erst mit viewport-fit=cover).
+              top: "calc(16px + env(safe-area-inset-top))",
               left: "16px",
               zIndex: 65,
               width: "44px",
               height: "44px",
               borderRadius: "999px",
-              border: "1px solid rgba(148, 163, 184, 0.18)",
-              background: "rgba(15, 23, 42, 0.92)",
-              color: theme.colors.textSecondary,
+              // Theme-bewusste Glass-Tokens statt fest-dunklem Navy: die
+              // vorherige rgba(15,23,42,...) war im Dark Mode zufällig
+              // passend, im Light Mode aber ein dunkler Fleck mit
+              // dunkelgrauem Icon (kaum Kontrast). Gleiche Kombination wie
+              // Modal.tsx für schwebende Elemente über beliebigem Content.
+              border: `1px solid ${theme.glass.elevated.border}`,
+              background: theme.colors.panel,
+              backdropFilter: `blur(${theme.glass.elevated.blur})`,
+              WebkitBackdropFilter: `blur(${theme.glass.elevated.blur})`,
+              boxShadow: theme.glass.elevated.shadow,
+              color: theme.colors.textPrimary,
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
@@ -175,7 +185,7 @@ function AppLayout() {
         <div
           style={{
             flex: 1,
-            minHeight: "100vh",
+            minHeight: "100dvh",
             display: "flex",
             flexDirection: "column",
             minWidth: 0,
@@ -187,7 +197,13 @@ function AppLayout() {
               width: "100%",
               maxWidth: "1400px",
               margin: "0 auto",
-              padding: isMobile ? "84px 18px 28px" : "40px 28px",
+              // Mobile-Top-Padding hält Abstand zum fixed Menü-Button, der
+              // jetzt zusätzlich um env(safe-area-inset-top) nach unten
+              // rückt (RESPONSIVE.md R-P0-5) — Padding zieht mit, damit der
+              // Button auf Notch-Geräten nicht in den Content ragt.
+              padding: isMobile
+                ? "calc(84px + env(safe-area-inset-top)) 18px 28px"
+                : "40px 28px",
               boxSizing: "border-box",
             }}
           >

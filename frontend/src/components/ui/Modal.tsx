@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { theme } from "./theme";
@@ -11,11 +11,21 @@ type ModalProps = {
   maxWidth?: string;
 };
 
-/** Generic backdrop-fade + scale-in modal shell, factored out of the
- * confirm-dialog pattern in ConfirmModal.tsx so new modals (history list,
- * future dialogs) reuse the same entrance animation and glass surface
- * instead of re-implementing it per usage. */
+/** Generic backdrop-fade + scale-in modal shell, reused by every dialog in
+ * the app (history list, confirm dialogs, future modals) instead of each
+ * one re-implementing entrance animation and glass surface separately. */
 export default function Modal({ isOpen, onClose, title, children, maxWidth = "560px" }: ModalProps) {
+  useEffect(() => {
+    if (!isOpen) return;
+    // Verhindert Scroll-Bleed des Hintergrunds hinter dem Overlay (v.a. auf
+    // iOS Safari, wo der Body sonst hinter dem fixed-Overlay weiterscrollt).
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
   return (
     <AnimatePresence>
       {isOpen ? (
@@ -52,10 +62,11 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "56
 
 const overlayStyle: React.CSSProperties = {
   position: "fixed",
-  top: 0,
-  left: 0,
-  width: "100vw",
-  height: "100vh",
+  // inset:0 statt top/left + 100vw/100vh: bleibt auf iOS Safari am
+  // sichtbaren (visuellen) Viewport verankert, unabhängig von der
+  // Toolbar-Dynamik, die 100vh/100vw gegen den GROSSEN Viewport berechnen
+  // würde (siehe RESPONSIVE.md R-P0-2).
+  inset: 0,
   background: "rgba(0, 0, 0, 0.78)",
   backdropFilter: "blur(6px)",
   display: "flex",
@@ -63,6 +74,7 @@ const overlayStyle: React.CSSProperties = {
   justifyContent: "center",
   zIndex: 1000,
   padding: "20px",
+  paddingBottom: "calc(20px + env(safe-area-inset-bottom))",
 };
 
 const modalStyle: React.CSSProperties = {
@@ -79,7 +91,12 @@ const modalStyle: React.CSSProperties = {
   padding: "26px 24px 22px",
   border: `1px solid ${theme.glass.elevated.border}`,
   boxShadow: theme.glass.elevated.shadow,
-  maxHeight: "80vh",
+  // dvh statt vh: auf iOS Safari folgt die Höhe der tatsächlich sichtbaren
+  // Fläche (Toolbar ein-/ausgeblendet), statt gegen den großen Viewport zu
+  // rechnen und den unteren Bestätigungs-Button hinter die Toolbar zu
+  // schieben. Der Body scrollt intern (siehe bodyStyle), falls der Inhalt
+  // trotzdem nicht passt.
+  maxHeight: "min(80vh, calc(100dvh - 40px - env(safe-area-inset-bottom)))",
   display: "flex",
   flexDirection: "column",
 };

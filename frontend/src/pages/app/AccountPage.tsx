@@ -1597,7 +1597,8 @@ const fieldInput = {
   border: "1px solid rgba(148, 163, 184, 0.18)",
   background: theme.colors.panelAlt,
   color: theme.colors.textPrimary,
-  fontSize: "0.98rem",
+  // >= 16px, sonst zoomt iOS Safari beim Fokussieren die Seite.
+  fontSize: "max(16px, 0.98rem)",
   outline: "none",
   boxSizing: "border-box" as const,
 };

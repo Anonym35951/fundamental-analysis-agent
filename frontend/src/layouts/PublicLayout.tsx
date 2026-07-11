@@ -12,7 +12,7 @@ function PublicLayout() {
     <div
       style={{
         position: "relative",
-        minHeight: "100vh",
+        minHeight: "100dvh",
         display: "flex",
         flexDirection: "column",
         background: `${theme.gradients.heroBg}, linear-gradient(180deg, ${theme.colors.bgDeepAlt} 0%, ${theme.colors.bgDeep} 100%)`,

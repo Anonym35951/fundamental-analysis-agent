@@ -169,7 +169,8 @@ const textareaStyle: CSSProperties = {
   border: `1px solid ${theme.glass.subtle.border}`,
   background: theme.glass.subtle.background,
   color: theme.colors.textPrimary,
-  fontSize: "0.95rem",
+  // >= 16px, sonst zoomt iOS Safari beim Fokussieren die Seite.
+  fontSize: "max(16px, 0.95rem)",
   fontFamily: "inherit",
   outline: "none",
   boxSizing: "border-box",

@@ -136,9 +136,33 @@
   --chart-axis: #8e8e93;
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--color-bg-gradient-end);
+}
+
+/* iOS Safari zoomt die Seite beim Fokussieren eines Feldes mit
+   font-size < 16px. Als globales Netz zusätzlich zu den Komponenten-Fixes
+   (Input/Select/Textarea), falls ein Feld die Konvention umgeht. !important
+   ist hier bewusst nötig: die App setzt praktisch jede Komponentenstyle als
+   inline `style`-Attribut, das eine normale Elementregel sonst wirkungslos
+   überschreiben würde (kein Sicherheitsnetz, nur totes Papier). */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
 }
 
 @keyframes analyze-fade-in {

@@ -24,7 +24,8 @@ export default function Select({ style, ...rest }: SelectProps) {
         border: `1px solid ${theme.glass.subtle.border}`,
         background: theme.glass.subtle.background,
         color: theme.colors.textPrimary,
-        fontSize: "0.95rem",
+        // >= 16px, sonst zoomt iOS Safari beim Fokussieren die ganze Seite.
+        fontSize: "max(16px, 0.95rem)",
         outline: "none",
         boxSizing: "border-box",
         transition: `border-color ${theme.motion.fast} ${theme.motion.easing}, box-shadow ${theme.motion.fast} ${theme.motion.easing}`,

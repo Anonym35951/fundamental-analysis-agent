@@ -69,7 +69,11 @@ function CookieConsentBanner() {
             alignItems: "center",
             justifyContent: "space-between",
             gap: isMobile ? "8px 12px" : "12px 20px",
-            padding: isMobile ? "10px 14px" : "14px 24px",
+            // Zusätzlicher Bottom-Puffer für den iOS-Home-Indicator (0 auf
+            // Geräten ohne Safe-Area-Inset) — siehe RESPONSIVE.md R-P0-5.
+            padding: isMobile
+              ? "10px 14px calc(10px + env(safe-area-inset-bottom))"
+              : "14px 24px calc(14px + env(safe-area-inset-bottom))",
             background: theme.glass.elevated.background,
             borderTop: `1px solid ${theme.glass.elevated.border}`,
             boxShadow: theme.glass.elevated.shadow,

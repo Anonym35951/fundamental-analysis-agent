@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getUsageSummary, type UsageSummary } from "../../api/account";
+import { useIsMobile } from "../../hooks/useMediaQuery";
 import Modal from "../ui/Modal";
 import { theme } from "../ui/theme";
 
@@ -22,6 +23,10 @@ function CancelSubscriptionModal({
 }: CancelSubscriptionModalProps) {
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [reason, setReason] = useState("");
+  const isMobile = useIsMobile();
+  // Auf Mobile gestapelt statt nebeneinander — siehe RESPONSIVE.md R-P0-2.
+  const buttonRowStyle = isMobile ? buttonRowMobile : buttonRow;
+  const fullWidthOnMobile = isMobile ? { width: "100%" } : undefined;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -75,12 +80,13 @@ function CancelSubscriptionModal({
         />
       </div>
 
-      <div style={buttonRow}>
+      <div style={buttonRowStyle}>
         <button
           onClick={onCancel}
           disabled={isLoading}
           style={{
             ...cancelButton,
+            ...fullWidthOnMobile,
             cursor: isLoading ? "not-allowed" : "pointer",
             opacity: isLoading ? 0.7 : 1,
           }}
@@ -93,6 +99,7 @@ function CancelSubscriptionModal({
           disabled={isLoading}
           style={{
             ...confirmButton,
+            ...fullWidthOnMobile,
             cursor: isLoading ? "not-allowed" : "pointer",
             opacity: isLoading ? 0.7 : 1,
           }}
@@ -146,7 +153,8 @@ const textareaStyle: React.CSSProperties = {
   border: "1px solid rgba(148, 163, 184, 0.18)",
   background: theme.colors.panelAlt,
   color: theme.colors.textPrimary,
-  fontSize: "0.94rem",
+  // >= 16px, sonst zoomt iOS Safari beim Fokussieren die Seite.
+  fontSize: "max(16px, 0.94rem)",
   fontFamily: "inherit",
   outline: "none",
   resize: "vertical",
@@ -156,6 +164,14 @@ const textareaStyle: React.CSSProperties = {
 const buttonRow: React.CSSProperties = {
   display: "flex",
   justifyContent: "flex-end",
+  gap: "10px",
+};
+
+// Auf Mobile gestapelt statt nebeneinander: volle Touch-Breite, die primäre
+// Aktion (letztes DOM-Kind) landet dadurch unten, näher am Daumen.
+const buttonRowMobile: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
   gap: "10px",
 };
 
