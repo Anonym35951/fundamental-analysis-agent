@@ -33,6 +33,11 @@ export const tourSteps: TourStep[] = [
     content:
       "Markiere ein Unternehmen als Favorit, um es hier in der Seitenleiste für den schnellen Zugriff zu speichern.",
     placement: "right",
+    // Auf Mobile ist die Sidebar per Default ein geschlossener Off-Canvas-
+    // Drawer — AppLayout.tsx liest dieses Flag und öffnet den Drawer
+    // automatisch, solange dieser Schritt aktiv ist (und schließt ihn
+    // danach wieder), statt den Schritt zu überspringen.
+    data: { requireSidebarOpen: true },
   },
   {
     route: "/app/analyze",

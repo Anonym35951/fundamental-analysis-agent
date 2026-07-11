@@ -22,8 +22,19 @@ export const panelTitle: CSSProperties = {
   color: theme.colors.textPrimary,
 };
 
+/** Wrapper for any <table> below: table cells don't wrap long unbroken
+ * strings (e.g. e-mail addresses) by default, which otherwise forces the
+ * table — and with it the whole page — wider than the viewport on mobile.
+ * Scoping the horizontal scroll to this wrapper keeps the page itself intact
+ * (same fix as ComparePivotTable's scroll container). */
+export const tableScroll: CSSProperties = {
+  overflowX: "auto",
+  WebkitOverflowScrolling: "touch",
+};
+
 export const table: CSSProperties = {
   width: "100%",
+  minWidth: "560px",
   borderCollapse: "collapse",
   fontSize: "0.9rem",
 };
@@ -37,12 +48,14 @@ export const th: CSSProperties = {
   textTransform: "uppercase",
   letterSpacing: "0.03em",
   borderBottom: `1px solid ${theme.glass.subtle.border}`,
+  whiteSpace: "nowrap",
 };
 
 export const td: CSSProperties = {
   padding: "8px 10px",
   color: theme.colors.textPrimary,
   borderBottom: `1px solid ${theme.glass.subtle.border}`,
+  whiteSpace: "nowrap",
 };
 
 export const emptyState: CSSProperties = {

@@ -244,22 +244,24 @@ function AdminDashboardPage() {
             <section style={panel}>
               <div style={panelTitle}>Meistanalysierte Symbole</div>
               {analyses && analyses.top_symbols.length > 0 ? (
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>Symbol</th>
-                      <th style={th}>Analysen</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analyses.top_symbols.slice(0, 10).map((row) => (
-                      <tr key={row.symbol ?? "unbekannt"}>
-                        <td style={td}>{row.symbol ?? "–"}</td>
-                        <td style={td}>{row.count}</td>
+                <div style={tableScroll}>
+                  <table style={table}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Symbol</th>
+                        <th style={th}>Analysen</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {analyses.top_symbols.slice(0, 10).map((row) => (
+                        <tr key={row.symbol ?? "unbekannt"}>
+                          <td style={td}>{row.symbol ?? "–"}</td>
+                          <td style={td}>{row.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <div style={emptyState}>Noch keine Analysen erfasst.</div>
               )}
@@ -271,24 +273,26 @@ function AdminDashboardPage() {
             <section style={panel}>
               <div style={panelTitle}>Free-User nahe am Limit</div>
               {nearLimitUsers.length > 0 ? (
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>E-Mail</th>
-                      <th style={th}>Nutzung</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {nearLimitUsers.map((user) => (
-                      <tr key={user.email}>
-                        <td style={td}>{user.email}</td>
-                        <td style={td}>
-                          {user.monthly_request_count}/{user.monthly_request_limit}
-                        </td>
+                <div style={tableScroll}>
+                  <table style={table}>
+                    <thead>
+                      <tr>
+                        <th style={th}>E-Mail</th>
+                        <th style={th}>Nutzung</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {nearLimitUsers.map((user) => (
+                        <tr key={user.email}>
+                          <td style={td}>{user.email}</td>
+                          <td style={td}>
+                            {user.monthly_request_count}/{user.monthly_request_limit}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <div style={emptyState}>Aktuell niemand über 80 % Auslastung.</div>
               )}
@@ -297,22 +301,24 @@ function AdminDashboardPage() {
             <section style={panel}>
               <div style={panelTitle}>Kündigungsgründe</div>
               {churnReasons.length > 0 ? (
-                <table style={table}>
-                  <thead>
-                    <tr>
-                      <th style={th}>Grund</th>
-                      <th style={th}>Anzahl</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {churnReasons.map((row) => (
-                      <tr key={row.reason ?? "unbekannt"}>
-                        <td style={td}>{row.reason ?? "Kein Grund angegeben"}</td>
-                        <td style={td}>{row.count}</td>
+                <div style={tableScroll}>
+                  <table style={table}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Grund</th>
+                        <th style={th}>Anzahl</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {churnReasons.map((row) => (
+                        <tr key={row.reason ?? "unbekannt"}>
+                          <td style={td}>{row.reason ?? "Kein Grund angegeben"}</td>
+                          <td style={td}>{row.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <div style={emptyState}>
                   Noch keine erfassten Kündigungsgründe (Erfassung im Cancel-Flow folgt).
@@ -470,8 +476,17 @@ const twoColGrid = {
   gap: "24px",
 };
 
+// Tabellen ohne Scroll-Wrapper zwingen bei unbrechbaren langen Strings (z. B.
+// E-Mail-Adressen) sonst die ganze Seite über die Viewportbreite hinaus
+// (RESPONSIVE.md R-P1-4) — gleicher Fix wie adminTableStyles.ts::tableScroll.
+const tableScroll = {
+  overflowX: "auto" as const,
+  WebkitOverflowScrolling: "touch" as const,
+};
+
 const table = {
   width: "100%",
+  minWidth: "360px",
   borderCollapse: "collapse" as const,
   fontSize: "0.9rem",
 };
@@ -485,12 +500,14 @@ const th = {
   textTransform: "uppercase" as const,
   letterSpacing: "0.03em",
   borderBottom: `1px solid ${theme.glass.subtle.border}`,
+  whiteSpace: "nowrap" as const,
 };
 
 const td = {
   padding: "8px 10px",
   color: theme.colors.textPrimary,
   borderBottom: `1px solid ${theme.glass.subtle.border}`,
+  whiteSpace: "nowrap" as const,
 };
 
 const emptyState = {

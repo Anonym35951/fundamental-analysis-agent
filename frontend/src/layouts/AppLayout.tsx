@@ -21,12 +21,27 @@ const IntroOverlay = lazy(() => import("../components/intro/IntroOverlay"));
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { useScrollProgress } from "../hooks/useScrollProgress";
 import { TourStatusProvider } from "../hooks/TourStatusProvider";
+import { useTourStatus } from "../hooks/useTourStatus";
 import { theme } from "../components/ui/theme";
 import { clearAuthAndWorkspaceState } from "../api/client";
 
+/** Wraps AppLayoutInner in the tour-status context so the inner component
+ * can itself read isTourRunning/currentStepData (e.g. to auto-open the
+ * mobile sidebar drawer for a step that targets something inside it) — a
+ * component can't consume a context it provides to its own children, so the
+ * provider has to live one level up. */
 function AppLayout() {
+  return (
+    <TourStatusProvider>
+      <AppLayoutInner />
+    </TourStatusProvider>
+  );
+}
+
+function AppLayoutInner() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { isTourRunning, currentStepData } = useTourStatus();
   useScrollProgress();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
     () => localStorage.getItem("app_sidebar_collapsed") === "true"
@@ -71,6 +86,29 @@ function AppLayout() {
     }
   }, [isMobile]);
 
+  // Einige Tour-Schritte zielen auf ein Element in der Sidebar
+  // (data-tour="sidebar-favorites"), die auf Mobile per Default als
+  // geschlossener Off-Canvas-Drawer gerendert wird (unsichtbar, per
+  // transform aus dem Viewport geschoben). Statt den Schritt zu
+  // überspringen: die Sidebar für genau diesen Schritt automatisch öffnen
+  // und danach wieder schließen, damit der nächste (Sidebar-fremde) Schritt
+  // nicht dahinter verdeckt bleibt. Läuft bewusst nur während die Tour aktiv
+  // ist, damit ein manuell vom Nutzer geöffneter/geschlossener Drawer
+  // außerhalb der Tour unangetastet bleibt.
+  useEffect(() => {
+    if (!isMobile || !isTourRunning) return;
+    const shouldBeOpen = Boolean(currentStepData?.requireSidebarOpen);
+    setIsSidebarCollapsed(!shouldBeOpen);
+    if (shouldBeOpen) {
+      // Die Sidebar öffnet per CSS-Transition (~0.22s, siehe AppSidebar.tsx);
+      // ein Resize-Event danach stößt react-joyride an, die Zielposition
+      // neu zu berechnen, statt sie noch gegen die alte (geschlossene)
+      // Position zu zeigen.
+      const timer = setTimeout(() => window.dispatchEvent(new Event("resize")), 260);
+      return () => clearTimeout(timer);
+    }
+  }, [isMobile, isTourRunning, currentStepData]);
+
   function handleLogout() {
     clearAuthAndWorkspaceState();
     navigate("/login");
@@ -90,7 +128,6 @@ function AppLayout() {
   }
 
   return (
-    <TourStatusProvider>
     <div
       style={{
         position: "relative",
@@ -217,7 +254,6 @@ function AppLayout() {
         </div>
       </motion.div>
     </div>
-    </TourStatusProvider>
   );
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { listCustomers, type CustomerListItem } from "../../api/adminCustomers";
 import { theme } from "../ui/theme";
 import Input from "../ui/Input";
-import { panel, panelTitle, table, th, td, emptyState, trClickable } from "./adminTableStyles";
+import { panel, panelTitle, table, tableScroll, th, td, emptyState, trClickable } from "./adminTableStyles";
 
 type CustomerListViewProps = {
   onSelectCustomer: (id: number) => void;
@@ -87,34 +87,36 @@ function CustomerListView({ onSelectCustomer }: CustomerListViewProps) {
       {isLoading ? (
         <div style={emptyState}>Kunden werden geladen...</div>
       ) : customers.length > 0 ? (
-        <table style={table}>
-          <thead>
-            <tr>
-              <th style={th}>E-Mail</th>
-              <th style={th}>Name</th>
-              <th style={th}>Plan</th>
-              <th style={th}>Status</th>
-              <th style={th}>Registriert</th>
-            </tr>
-          </thead>
-          <tbody>
-            {customers.map((customer) => (
-              <tr
-                key={customer.id}
-                style={trClickable}
-                onClick={() => onSelectCustomer(customer.id)}
-              >
-                <td style={td}>{customer.email}</td>
-                <td style={td}>{formatName(customer)}</td>
-                <td style={td}>{customer.plan}</td>
-                <td style={td}>{customer.billing_status}</td>
-                <td style={td}>
-                  {new Date(customer.created_at).toLocaleDateString("de-DE")}
-                </td>
+        <div style={tableScroll}>
+          <table style={table}>
+            <thead>
+              <tr>
+                <th style={th}>E-Mail</th>
+                <th style={th}>Name</th>
+                <th style={th}>Plan</th>
+                <th style={th}>Status</th>
+                <th style={th}>Registriert</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {customers.map((customer) => (
+                <tr
+                  key={customer.id}
+                  style={trClickable}
+                  onClick={() => onSelectCustomer(customer.id)}
+                >
+                  <td style={td}>{customer.email}</td>
+                  <td style={td}>{formatName(customer)}</td>
+                  <td style={td}>{customer.plan}</td>
+                  <td style={td}>{customer.billing_status}</td>
+                  <td style={td}>
+                    {new Date(customer.created_at).toLocaleDateString("de-DE")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div style={emptyState}>Keine Kunden gefunden.</div>
       )}

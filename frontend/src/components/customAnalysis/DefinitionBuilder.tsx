@@ -45,11 +45,15 @@ export default function DefinitionBuilder({
         onChange={setMetrics}
       />
 
-      <div style={{ display: "flex", gap: "12px" }}>
-        <Button variant="ghost" onClick={onCancel}>
+      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+        <Button variant="ghost" onClick={onCancel} style={{ flexShrink: 0 }}>
           Abbrechen
         </Button>
-        <Button disabled={isSaving || !name.trim() || metrics.length === 0} onClick={() => onSave(name.trim(), metrics)}>
+        <Button
+          disabled={isSaving || !name.trim() || metrics.length === 0}
+          onClick={() => onSave(name.trim(), metrics)}
+          style={{ flexShrink: 0 }}
+        >
           {isSaving ? "Wird gespeichert..." : "Speichern"}
         </Button>
       </div>
