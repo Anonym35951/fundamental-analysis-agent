@@ -212,13 +212,13 @@ function LandingPage() {
 
             <div style={checklistRow}>
               <span style={checklistItem}>
-                <CheckCircle2 size={16} color={theme.colors.success} /> Direkt aus SEC-Filings — nicht aus Dritt-Aggregatoren
+                <CheckCircle2 size={16} color={theme.colors.success} style={checklistIcon} /> Direkt aus SEC-Filings — nicht aus Dritt-Aggregatoren
               </span>
               <span style={checklistItem}>
-                <CheckCircle2 size={16} color={theme.colors.success} /> Jede Formel offen einsehbar
+                <CheckCircle2 size={16} color={theme.colors.success} style={checklistIcon} /> Jede Formel offen einsehbar
               </span>
               <span style={checklistItem}>
-                <CheckCircle2 size={16} color={theme.colors.success} /> Keine Anlageberatung. Nur transparent berechnete Kennzahlen.
+                <CheckCircle2 size={16} color={theme.colors.success} style={checklistIcon} /> Keine Anlageberatung. Nur transparent berechnete Kennzahlen.
               </span>
             </div>
           </motion.div>
@@ -370,14 +370,17 @@ function LandingPage() {
             aussehen kann.
           </p>
 
-          <div style={finalCtaButtonRow}>
+          <div style={isMobile ? finalCtaButtonRowMobile : finalCtaButtonRow}>
             <motion.div
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.97 }}
               transition={theme.motion.spring}
-              style={{ display: "inline-block" }}
+              style={isMobile ? { display: "block", width: "100%" } : { display: "inline-block" }}
             >
-              <Link to="/register" style={finalCtaPrimary}>
+              <Link
+                to="/register"
+                style={isMobile ? { ...finalCtaPrimary, display: "block", width: "100%", boxSizing: "border-box" } : finalCtaPrimary}
+              >
                 Kostenlos registrieren
               </Link>
             </motion.div>
@@ -385,9 +388,16 @@ function LandingPage() {
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.97 }}
               transition={theme.motion.spring}
-              style={{ display: "inline-block" }}
+              style={
+                isMobile
+                  ? { display: "block", width: "100%", marginTop: "14px" }
+                  : { display: "inline-block" }
+              }
             >
-              <Link to="/login" style={finalCtaSecondary}>
+              <Link
+                to="/login"
+                style={isMobile ? { ...finalCtaSecondary, display: "block", width: "100%", boxSizing: "border-box" } : finalCtaSecondary}
+              >
                 Bereits registriert? Login
               </Link>
             </motion.div>
@@ -530,8 +540,20 @@ const checklistRow: React.CSSProperties = {
 
 const checklistItem: React.CSSProperties = {
   display: "inline-flex",
-  alignItems: "center",
+  // flex-start statt center: bei zweizeilig umgebrochenem Text (schmale
+  // Mobile-/Tablet-Breiten) zentrierte sich das Icon sonst gegen die GANZE
+  // Textblock-Höhe und "schwebte" sichtbar losgelöst von der ersten Zeile
+  // statt sauber neben ihr zu sitzen.
+  alignItems: "flex-start",
   gap: "8px",
+  textAlign: "left",
+};
+
+// Optischer Ausgleich zur Cap-Height der ersten Textzeile + garantiert
+// unveränderte Icon-Größe im Flex-Layout.
+const checklistIcon: React.CSSProperties = {
+  flexShrink: 0,
+  marginTop: "3px",
 };
 
 const panelStack: React.CSSProperties = {
@@ -768,6 +790,17 @@ const finalCtaButtonRow: React.CSSProperties = {
   justifyContent: "center",
   gap: "14px",
   flexWrap: "wrap",
+};
+
+// Eigenständiges Mobile-Layout statt sich auf Flex-Wrap-Zeilenumbruch mit
+// row-gap zu verlassen: beide CTAs wurden auf schmalen Screens live
+// überlappend beobachtet. Echtes Block-Stacking mit explizitem marginTop
+// (statt gap) schließt jede Überlappung unabhängig von Zeilenumbruch-
+// Timing aus — volle Breite macht die Buttons nebenbei präsenter/stärker.
+const finalCtaButtonRowMobile: React.CSSProperties = {
+  position: "relative",
+  display: "block",
+  width: "100%",
 };
 
 const finalCtaPrimary: React.CSSProperties = {

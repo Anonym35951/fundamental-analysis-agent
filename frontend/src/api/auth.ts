@@ -6,7 +6,9 @@ export type RegisterPayload = {
   username: string;
   first_name: string;
   last_name: string;
-  age: number;
+  // ISO "YYYY-MM-DD" - ersetzt "age" (aendert sich nicht jaehrlich, siehe
+  // api/models/user.py).
+  birth_date: string;
   terms_accepted: boolean;
   privacy_accepted: boolean;
 };
@@ -15,7 +17,7 @@ export type UserProfileUpdatePayload = Partial<{
   username: string;
   first_name: string;
   last_name: string;
-  age: number;
+  birth_date: string;
 }>;
 
 export type LoginPayload = {
@@ -49,7 +51,10 @@ export type CurrentUserResponse = {
   username: string | null;
   first_name: string | null;
   last_name: string | null;
+  // Legacy: nur bei vor der Umstellung auf birth_date registrierten Konten
+  // gesetzt. birth_date ist der neue, kanonische Wert.
   age: number | null;
+  birth_date: string | null;
   onboarding_completed_at: string | null;
 };
 

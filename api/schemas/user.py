@@ -1,10 +1,29 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, EmailStr, field_validator
 
 USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_.-]{3,50}$")
 MIN_AGE = 16
+
+
+def calculate_age(birth_date: date, *, today: date | None = None) -> int:
+    """Ganze Jahre seit birth_date, korrekt fuer noch nicht erreichte
+    Geburtstage im laufenden Jahr (nicht nur Jahresdifferenz)."""
+    reference = today or date.today()
+    years = reference.year - birth_date.year
+    if (reference.month, reference.day) < (birth_date.month, birth_date.day):
+        years -= 1
+    return years
+
+
+def _validate_birth_date(value: date) -> date:
+    today = date.today()
+    if value > today:
+        raise ValueError("Geburtsdatum darf nicht in der Zukunft liegen.")
+    if calculate_age(value, today=today) < MIN_AGE:
+        raise ValueError(f"Mindestalter ist {MIN_AGE} Jahre.")
+    return value
 
 
 class UserCreate(BaseModel):
@@ -13,7 +32,7 @@ class UserCreate(BaseModel):
     username: str
     first_name: str
     last_name: str
-    age: int
+    birth_date: date
     terms_accepted: bool
     privacy_accepted: bool
 
@@ -34,12 +53,10 @@ class UserCreate(BaseModel):
             raise ValueError("Darf nicht leer sein.")
         return value.strip()
 
-    @field_validator("age")
+    @field_validator("birth_date")
     @classmethod
-    def validate_age(cls, value: int) -> int:
-        if value < MIN_AGE:
-            raise ValueError(f"Mindestalter ist {MIN_AGE} Jahre.")
-        return value
+    def validate_birth_date(cls, value: date) -> date:
+        return _validate_birth_date(value)
 
     @field_validator("terms_accepted")
     @classmethod
@@ -60,7 +77,10 @@ class UserProfileUpdateRequest(BaseModel):
     username: str | None = None
     first_name: str | None = None
     last_name: str | None = None
-    age: int | None = None
+    # Ersetzt `age` (siehe api/models/user.py) - auch fuer Bestandsnutzer, die
+    # ihr Profil jetzt erstmals/erneut nachpflegen, wird ab sofort das
+    # Geburtsdatum statt eines statischen Alters erfasst.
+    birth_date: date | None = None
 
     @field_validator("username")
     @classmethod
@@ -79,12 +99,12 @@ class UserProfileUpdateRequest(BaseModel):
             raise ValueError("Darf nicht leer sein.")
         return value.strip() if value is not None else value
 
-    @field_validator("age")
+    @field_validator("birth_date")
     @classmethod
-    def validate_age(cls, value: int | None) -> int | None:
-        if value is not None and value < MIN_AGE:
-            raise ValueError(f"Mindestalter ist {MIN_AGE} Jahre.")
-        return value
+    def validate_birth_date(cls, value: date | None) -> date | None:
+        if value is None:
+            return value
+        return _validate_birth_date(value)
 
 
 class UserResponse(BaseModel):
@@ -119,7 +139,11 @@ class UserResponse(BaseModel):
     username: str | None
     first_name: str | None
     last_name: str | None
+    # age: Legacy-Feld, nur bei vor der Umstellung registrierten Konten
+    # gesetzt (siehe api/models/user.py). birth_date ist der neue,
+    # kanonische Wert - Frontend zeigt age nur an, wenn birth_date fehlt.
     age: int | None
+    birth_date: date | None
     onboarding_completed_at: datetime | None
 
     class Config:

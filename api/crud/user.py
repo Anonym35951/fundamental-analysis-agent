@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -33,7 +33,7 @@ def create_user(
     username: str,
     first_name: str,
     last_name: str,
-    age: int,
+    birth_date: date,
     terms_version: str,
     privacy_version: str,
 ):
@@ -44,7 +44,7 @@ def create_user(
         username=username,
         first_name=first_name,
         last_name=last_name,
-        age=age,
+        birth_date=birth_date,
         terms_accepted_at=now,
         terms_version=terms_version,
         privacy_accepted_at=now,

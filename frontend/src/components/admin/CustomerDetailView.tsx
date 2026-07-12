@@ -17,7 +17,19 @@ import { theme } from "../ui/theme";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
 import { useToast } from "../ui/Toast";
+import { calculateAge } from "../../lib/age";
 import { panel, panelTitle, emptyState } from "./adminTableStyles";
+
+/** birth_date ist der neue, kanonische Wert; Konten von vor der Umstellung
+ * haben oft nur das statische Legacy-`age` gesetzt. */
+function formatCustomerAge(customer: { age: number | null; birth_date: string | null }): string {
+  if (customer.birth_date) {
+    const formatted = new Date(customer.birth_date).toLocaleDateString("de-DE");
+    return `${formatted} (${calculateAge(customer.birth_date)} Jahre)`;
+  }
+  if (customer.age) return `${customer.age} Jahre`;
+  return "–";
+}
 
 type CustomerDetailViewProps = {
   customerId: number;
@@ -203,7 +215,7 @@ function CustomerDetailView({ customerId, onBack }: CustomerDetailViewProps) {
                   [customer.first_name, customer.last_name].filter(Boolean).join(" ") || "–"
                 }
               />
-              <DetailField label="Alter" value={customer.age ?? "–"} />
+              <DetailField label="Geburtsdatum" value={formatCustomerAge(customer)} />
               <DetailField label="Plan" value={customer.plan} />
               <DetailField label="Billing-Status" value={customer.billing_status} />
               <DetailField

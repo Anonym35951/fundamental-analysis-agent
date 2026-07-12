@@ -7,9 +7,10 @@ import { useToast } from "../../components/ui/Toast";
 import { theme } from "../../components/ui/theme";
 import Input from "../../components/ui/Input";
 import Button from "../../components/ui/Button";
+import { MIN_AGE, calculateAge } from "../../lib/age";
 
-const MIN_AGE = 16;
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,50}$/;
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
 function RegisterPage() {
   const navigate = useNavigate();
@@ -21,7 +22,7 @@ function RegisterPage() {
   const [username, setUsername] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [age, setAge] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
 
@@ -65,8 +66,17 @@ function RegisterPage() {
       return;
     }
 
-    const ageNumber = Number(age);
-    if (!age || Number.isNaN(ageNumber) || ageNumber < MIN_AGE) {
+    if (!birthDate) {
+      setErrorMessage("Bitte gib dein Geburtsdatum ein.");
+      return;
+    }
+
+    if (birthDate > TODAY_ISO) {
+      setErrorMessage("Das Geburtsdatum darf nicht in der Zukunft liegen.");
+      return;
+    }
+
+    if (calculateAge(birthDate) < MIN_AGE) {
       setErrorMessage(`Du musst mindestens ${MIN_AGE} Jahre alt sein.`);
       return;
     }
@@ -92,7 +102,7 @@ function RegisterPage() {
         username: username.trim(),
         first_name: firstName.trim(),
         last_name: lastName.trim(),
-        age: ageNumber,
+        birth_date: birthDate,
         terms_accepted: termsAccepted,
         privacy_accepted: privacyAccepted,
       });
@@ -107,7 +117,7 @@ function RegisterPage() {
       setUsername("");
       setFirstName("");
       setLastName("");
-      setAge("");
+      setBirthDate("");
       setTermsAccepted(false);
       setPrivacyAccepted(false);
 
@@ -228,17 +238,16 @@ function RegisterPage() {
         </div>
 
         <div>
-          <label htmlFor="age" style={labelStyle}>
-            Alter
+          <label htmlFor="birthDate" style={labelStyle}>
+            Geburtsdatum
           </label>
 
           <Input
-            id="age"
-            type="number"
-            min={MIN_AGE}
-            placeholder="Mindestens 16"
-            value={age}
-            onChange={(event) => setAge(event.target.value)}
+            id="birthDate"
+            type="date"
+            max={TODAY_ISO}
+            value={birthDate}
+            onChange={(event) => setBirthDate(event.target.value)}
             disabled={isSubmitting}
           />
         </div>

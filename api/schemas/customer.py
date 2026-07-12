@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -20,7 +20,10 @@ class CustomerListItem(BaseModel):
 
 
 class CustomerDetail(CustomerListItem):
+    # age: Legacy, nur bei vor der Umstellung auf birth_date registrierten
+    # Konten gesetzt (siehe api/models/user.py).
     age: int | None
+    birth_date: date | None
     email_verified: bool
     current_period_end: datetime | None
     stripe_customer_id: str | None

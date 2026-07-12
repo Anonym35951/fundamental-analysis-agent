@@ -18,6 +18,9 @@ import Modal from "../../components/ui/Modal";
 import Input from "../../components/ui/Input";
 import { theme } from "../../components/ui/theme";
 import ParticleBeamBackground from "../../components/landing/ParticleBeamBackground";
+import { MIN_AGE, calculateAge } from "../../lib/age";
+
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
 function AccountPage() {
   const navigate = useNavigate();
@@ -27,7 +30,7 @@ function AccountPage() {
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Optionale Profil-Nachpflege (Benutzername/Vorname/Nachname/Alter) -
+  // Optionale Profil-Nachpflege (Benutzername/Vorname/Nachname/Geburtsdatum) -
   // gleiches State-Namensmuster wie die Passwort-Sektion unten.
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -36,7 +39,7 @@ function AccountPage() {
   const [profileUsername, setProfileUsername] = useState("");
   const [profileFirstName, setProfileFirstName] = useState("");
   const [profileLastName, setProfileLastName] = useState("");
-  const [profileAge, setProfileAge] = useState("");
+  const [profileBirthDate, setProfileBirthDate] = useState("");
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -86,7 +89,9 @@ function AccountPage() {
     setProfileUsername(currentUser?.username ?? "");
     setProfileFirstName(currentUser?.first_name ?? "");
     setProfileLastName(currentUser?.last_name ?? "");
-    setProfileAge(currentUser?.age ? String(currentUser.age) : "");
+    // Nur aus birth_date vorbefuellen, nicht aus dem Legacy-age-Feld
+    // zurueckrechnen (waere nur eine Schaetzung, keine echte Angabe).
+    setProfileBirthDate(currentUser?.birth_date ?? "");
     setIsEditingProfile(true);
   }
 
@@ -111,11 +116,13 @@ function AccountPage() {
       return;
     }
 
-    let ageNumber: number | undefined;
-    if (profileAge.trim()) {
-      ageNumber = Number(profileAge);
-      if (Number.isNaN(ageNumber) || ageNumber < 16) {
-        setProfileErrorMessage("Du musst mindestens 16 Jahre alt sein.");
+    if (profileBirthDate) {
+      if (profileBirthDate > TODAY_ISO) {
+        setProfileErrorMessage("Das Geburtsdatum darf nicht in der Zukunft liegen.");
+        return;
+      }
+      if (calculateAge(profileBirthDate) < MIN_AGE) {
+        setProfileErrorMessage(`Du musst mindestens ${MIN_AGE} Jahre alt sein.`);
         return;
       }
     }
@@ -127,7 +134,7 @@ function AccountPage() {
         ...(trimmedUsername ? { username: trimmedUsername } : {}),
         ...(trimmedFirstName ? { first_name: trimmedFirstName } : {}),
         ...(trimmedLastName ? { last_name: trimmedLastName } : {}),
-        ...(ageNumber !== undefined ? { age: ageNumber } : {}),
+        ...(profileBirthDate ? { birth_date: profileBirthDate } : {}),
       });
       setCurrentUser(updated);
       setIsEditingProfile(false);
@@ -635,8 +642,8 @@ const canManageSubscriptionPortal =
           <div style={sectionEyebrow}>Profil</div>
           <h2 style={passwordTitle}>Dein Profil</h2>
           <p style={passwordText}>
-            Benutzername, Vor- und Nachname sowie Alter sind optional und
-            können jederzeit ergänzt oder geändert werden.
+            Benutzername, Vor- und Nachname sowie Geburtsdatum sind optional
+            und können jederzeit ergänzt oder geändert werden.
           </p>
 
           {profileErrorMessage ? (
@@ -693,17 +700,16 @@ const canManageSubscriptionPortal =
                 </div>
 
                 <div style={fieldGroup}>
-                  <label htmlFor="profile-age" style={fieldLabel}>
-                    Alter
+                  <label htmlFor="profile-birth-date" style={fieldLabel}>
+                    Geburtsdatum
                   </label>
                   <input
-                    id="profile-age"
-                    type="number"
-                    min={16}
-                    value={profileAge}
-                    onChange={(event) => setProfileAge(event.target.value)}
+                    id="profile-birth-date"
+                    type="date"
+                    max={TODAY_ISO}
+                    value={profileBirthDate}
+                    onChange={(event) => setProfileBirthDate(event.target.value)}
                     style={fieldInput}
-                    placeholder="Mindestens 16"
                   />
                 </div>
               </div>
@@ -770,11 +776,9 @@ const canManageSubscriptionPortal =
                 </div>
 
                 <div style={infoRow}>
-                  <span style={infoLabel}>Alter</span>
+                  <span style={infoLabel}>Geburtsdatum</span>
                   <span style={infoValue}>
-                    {isLoadingUser
-                      ? "Wird geladen..."
-                      : currentUser?.age ?? "Noch nicht festgelegt"}
+                    {isLoadingUser ? "Wird geladen..." : formatBirthDateDisplay(currentUser)}
                   </span>
                 </div>
               </div>
@@ -1114,6 +1118,23 @@ const canManageSubscriptionPortal =
       </Modal>
     </>
   );
+}
+
+/** birth_date ist der neue, kanonische Wert (zeigt Alter + Datum); Konten von
+ * vor der Umstellung haben oft nur das statische Legacy-`age` gesetzt - dafuer
+ * unveraendert weiter dessen reine Zahl anzeigen. */
+function formatBirthDateDisplay(user: CurrentUserResponse | null): string {
+  if (!user) return "Noch nicht festgelegt";
+  if (user.birth_date) {
+    const formatted = new Date(user.birth_date).toLocaleDateString("de-DE", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    return `${formatted} (${calculateAge(user.birth_date)} Jahre)`;
+  }
+  if (user.age) return `${user.age} Jahre`;
+  return "Noch nicht festgelegt";
 }
 
 function getPlanLabel(plan: string): string {

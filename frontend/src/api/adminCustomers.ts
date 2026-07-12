@@ -14,7 +14,10 @@ export type CustomerListItem = {
 };
 
 export type CustomerDetail = CustomerListItem & {
+  // Legacy: nur bei vor der Umstellung auf birth_date registrierten Konten
+  // gesetzt. birth_date ist der neue, kanonische Wert.
   age: number | null;
+  birth_date: string | null;
   email_verified: boolean;
   current_period_end: string | null;
   stripe_customer_id: string | null;

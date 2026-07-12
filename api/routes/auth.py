@@ -99,7 +99,7 @@ def register(
         username=user.username,
         first_name=user.first_name,
         last_name=user.last_name,
-        age=user.age,
+        birth_date=user.birth_date,
         terms_version=CURRENT_TERMS_VERSION,
         privacy_version=CURRENT_PRIVACY_VERSION,
     )

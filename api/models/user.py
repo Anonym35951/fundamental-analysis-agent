@@ -165,10 +165,22 @@ class User(Base):
         nullable=True
     )
 
-    # Nur die Zahl, kein Geburtsdatum (Datenminimierung) — selbstzertifiziert
-    # bei der Registrierung, keine Altersverifikation.
+    # Legacy: nur bei Konten, die vor der Umstellung auf birth_date
+    # registriert wurden (2026-07). Selbstzertifiziert, keine
+    # Altersverifikation. Für Bestandsnutzer unverändert gelassen (kein
+    # Backfill) und wird bei keiner Registrierung/Profilbearbeitung mehr
+    # geschrieben — siehe birth_date.
     age: Mapped[int | None] = mapped_column(
         Integer,
+        nullable=True
+    )
+
+    # Ersetzt `age` für neue Registrierungen: einmal erfasst bleibt es
+    # korrekt (kein jährliches Nachpflegen nötig) und ist die für
+    # Marketing/Segmentierung wertvollere Angabe. Selbstzertifiziert, keine
+    # Altersverifikation — gleiche Vertrauensbasis wie das bisherige `age`.
+    birth_date: Mapped[date | None] = mapped_column(
+        Date,
         nullable=True
     )
 
