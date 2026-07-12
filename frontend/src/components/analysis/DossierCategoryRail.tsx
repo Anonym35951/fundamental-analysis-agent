@@ -1,4 +1,4 @@
-import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useIsNarrow } from "../../hooks/useMediaQuery";
 import { theme } from "../ui/theme";
 
 type Props = {
@@ -13,7 +13,7 @@ type Props = {
  * Notion/Arc sidebar rather than a tab strip. Collapses to a horizontal
  * segmented control under ~640px where a side column would crowd the page. */
 export default function DossierCategoryRail({ groupNames, activeGroup, onSelect, counts }: Props) {
-  const isNarrow = useMediaQuery("(max-width: 640px)");
+  const isNarrow = useIsNarrow();
 
   return (
     <div

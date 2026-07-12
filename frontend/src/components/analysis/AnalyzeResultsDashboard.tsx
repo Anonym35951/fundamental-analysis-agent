@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { FullResult } from "../../types/analysis";
 import { theme } from "../ui/theme";
-import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useIsNarrow } from "../../hooks/useMediaQuery";
 import { extractCriteria, buildSummary, type AnalysisItem } from "./analysisResultUtils";
 import DossierSummaryCard from "./DossierSummaryCard";
 import DossierCategoryRail from "./DossierCategoryRail";
@@ -46,7 +46,7 @@ function AnalyzeResultsDashboard({ data, query = "" }: Props) {
   const activeItems = grouped[activeGroup] ?? [];
 
   const summary = useMemo(() => buildSummary(items), [items]);
-  const isNarrow = useMediaQuery("(max-width: 640px)");
+  const isNarrow = useIsNarrow();
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};

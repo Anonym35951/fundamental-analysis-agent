@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { theme, useChartTokens } from "../ui/theme";
+import { useIsMobile } from "../../hooks/useMediaQuery";
 
 export type ChartLayer = {
   id: string;
@@ -129,8 +130,13 @@ type DragState = { axis: "left" | "right"; startY: number; startZoom: number };
  * of being stuck with whatever range the data happens to span. */
 export default function MultiLayerChart({ layers, height = 320 }: Props) {
   const chartTokens = useChartTokens();
+  const isMobile = useIsMobile();
   const merged = useMemo(() => mergeLayers(layers), [layers]);
   const hasRightAxis = layers.some((layer) => layer.axis === "right");
+  // Schmalere Y-Achsen-Spalte auf Mobile: 64px pro Achse (128px bei zwei
+  // Achsen) lässt auf 375px kaum noch Zeichenfläche übrig
+  // (RESPONSIVE.md R-P1-6).
+  const axisWidth = isMobile ? 42 : 64;
 
   const [zoom, setZoom] = useState<{ left: number; right: number }>({ left: 1, right: 1 });
   const dragState = useRef<DragState | null>(null);
@@ -183,14 +189,22 @@ export default function MultiLayerChart({ layers, height = 320 }: Props) {
 
   return (
     <div style={{ position: "relative", width: "100%", height }}>
-      <div
-        onMouseDown={startDrag("left")}
-        onDoubleClick={() => resetZoom("left")}
-        onDragStart={(e) => e.preventDefault()}
-        title="Ziehen, um die linke Achse zu stauchen/strecken — Doppelklick setzt zurück"
-        style={axisHandle("left")}
-      />
-      {hasRightAxis ? (
+      {/* Zieh-Griffe sind reine Mouse-Event-Handler (mousemove/mouseup) ohne
+       * Touch-Äquivalent — auf Touch-Geräten überlagerten sie bisher nur
+       * nutzlos den Chart-Rand, ohne je auf einen Tap/Drag zu reagieren
+       * (RESPONSIVE.md R-P1-6). Touch-Zoom nachzurüsten wäre ein größerer,
+       * eigenständiger Eingriff; bis dahin werden sie auf Mobile ausgeblendet
+       * statt eine funktionslose Fläche zu zeigen. */}
+      {!isMobile ? (
+        <div
+          onMouseDown={startDrag("left")}
+          onDoubleClick={() => resetZoom("left")}
+          onDragStart={(e) => e.preventDefault()}
+          title="Ziehen, um die linke Achse zu stauchen/strecken — Doppelklick setzt zurück"
+          style={axisHandle("left")}
+        />
+      ) : null}
+      {!isMobile && hasRightAxis ? (
         <div
           onMouseDown={startDrag("right")}
           onDoubleClick={() => resetZoom("right")}
@@ -206,20 +220,22 @@ export default function MultiLayerChart({ layers, height = 320 }: Props) {
           <XAxis
             dataKey="date"
             stroke={chartTokens.axis}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: isMobile ? 10 : 12 }}
             tickLine={false}
             tickFormatter={formatDateLabel}
+            minTickGap={isMobile ? 24 : 8}
+            interval="preserveStartEnd"
           />
           <YAxis
             yAxisId="left"
             domain={leftDomain}
             allowDataOverflow
             stroke={chartTokens.axis}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: isMobile ? 10 : 12 }}
             tickLine={false}
             axisLine={false}
             tickFormatter={formatCompactNumber}
-            width={64}
+            width={axisWidth}
           />
           {hasRightAxis ? (
             <YAxis
@@ -228,11 +244,11 @@ export default function MultiLayerChart({ layers, height = 320 }: Props) {
               domain={rightDomain}
               allowDataOverflow
               stroke={chartTokens.axis}
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: isMobile ? 10 : 12 }}
               tickLine={false}
               axisLine={false}
               tickFormatter={formatCompactNumber}
-              width={64}
+              width={axisWidth}
             />
           ) : null}
           <Tooltip

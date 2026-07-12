@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { theme } from "./theme";
+import { useIsMobile } from "../../hooks/useMediaQuery";
 
 type ToastTone = "success" | "error" | "info";
 
@@ -45,6 +46,7 @@ const AUTO_DISMISS_MS = 4000;
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextId = useRef(0);
+  const isMobile = useIsMobile();
 
   const dismissToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -69,9 +71,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           // Zusätzlicher Puffer für den iOS-Home-Indicator (0 auf Geräten
           // ohne Safe-Area-Inset) — siehe RESPONSIVE.md R-P0-5.
           bottom: "calc(24px + env(safe-area-inset-bottom))",
-          right: "24px",
+          // Auf Mobile links+rechts statt rechtsbündig-fix: sonst klebt der
+          // Toast auf schmalen Screens an der rechten Kante statt die volle
+          // Breite auszunutzen (RESPONSIVE.md R-P1-10).
+          ...(isMobile ? { left: "16px", right: "16px" } : { right: "24px" }),
           display: "flex",
           flexDirection: "column",
+          alignItems: isMobile ? "stretch" : "flex-end",
           gap: "10px",
           zIndex: 1000,
         }}
@@ -89,7 +95,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 border: `1px solid ${style.border}`,
                 color: style.color,
                 fontSize: "0.92rem",
-                maxWidth: "360px",
+                maxWidth: isMobile ? "none" : "360px",
                 boxShadow: "0 10px 30px rgba(0, 0, 0, 0.5)",
                 cursor: "pointer",
               }}

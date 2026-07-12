@@ -514,7 +514,7 @@ function FavoriteItem({ symbol }: { symbol: string }) {
         display: "flex",
         alignItems: "center",
         gap: "12px",
-        minHeight: "42px",
+        minHeight: "44px",
         padding: "0 16px",
         borderRadius: theme.radius.pill,
         color: theme.colors.textSecondary,

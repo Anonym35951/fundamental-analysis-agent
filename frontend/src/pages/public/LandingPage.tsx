@@ -127,21 +127,29 @@ function LandingPage() {
       <ParticleBeamBackground />
 
       {/* Hero Section — cinematic, full-bleed */}
-      <section style={heroSection}>
+      <section
+        style={
+          isMobile
+            ? { ...heroSection, padding: "88px 20px 32px" }
+            : heroSection
+        }
+      >
         <div aria-hidden="true" style={gridOverlay} />
 
         <HeroIconRail items={audienceTabs} activeId={activeTabId} onChange={setActiveTabId} />
 
-        <div style={heroContent}>
+        <div style={isMobile ? { ...heroContent, gap: "32px" } : heroContent}>
           <motion.div
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
             style={{ textAlign: "center" }}
           >
-            <div style={heroEyebrow}>Fundamentalanalyse · neu gedacht</div>
+            <div style={isMobile ? { ...heroEyebrow, marginBottom: "16px" } : heroEyebrow}>
+              Fundamentalanalyse · neu gedacht
+            </div>
 
-            <h1 style={heroHeadline}>
+            <h1 style={isMobile ? { ...heroHeadline, marginBottom: "14px" } : heroHeadline}>
               ALLE FUNDAMENTALDATEN.
               <br />
               EINE QUELLE.
@@ -158,14 +166,20 @@ function LandingPage() {
               </span>
             </h1>
 
-            <p style={heroSubtext}>
+            <p
+              style={
+                isMobile
+                  ? { ...heroSubtext, marginBottom: "20px", lineHeight: 1.6 }
+                  : heroSubtext
+              }
+            >
               ComAnalysis bündelt SEC-Originaldaten und transparent berechnete
               Kennzahlen in einem Werkzeug. Zu jeder Zahl siehst du, woher sie
               stammt und wie sie berechnet wurde. Die Interpretation — und
               jede Entscheidung — bleibt bei dir.
             </p>
 
-            <div style={heroCtaRow}>
+            <div style={isMobile ? { ...heroCtaRow, marginBottom: "16px" } : heroCtaRow}>
               <motion.div
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.97 }}
@@ -189,7 +203,10 @@ function LandingPage() {
               </motion.div>
             </div>
 
-            <Link to="/pricing" style={pricingInlineLink}>
+            <Link
+              to="/pricing"
+              style={isMobile ? { ...pricingInlineLink, marginBottom: "14px" } : pricingInlineLink}
+            >
               Was kostet Pro? Preise ansehen →
             </Link>
 
@@ -386,7 +403,10 @@ function LandingPage() {
 const heroSection: React.CSSProperties = {
   position: "relative",
   overflow: "hidden",
-  minHeight: "94vh",
+  // svh statt vh: rechnet gegen den KLEINEN iOS-Safari-Viewport (Toolbar
+  // eingeblendet) statt den großen, damit der Hero-CTA auch mit sichtbarer
+  // Toolbar in den ersten Viewport passt (RESPONSIVE.md R-P1-7).
+  minHeight: "94svh",
   display: "flex",
   alignItems: "center",
   padding: "120px 24px 48px",

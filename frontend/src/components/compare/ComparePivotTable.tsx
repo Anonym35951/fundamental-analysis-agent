@@ -1,9 +1,10 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Badge from "../ui/Badge";
 import InfoTooltip from "../ui/InfoTooltip";
 import { theme } from "../ui/theme";
 import { formatMetricValue } from "../metrics/metricFormatting";
 import { getMetricConfig } from "../../config/metricsConfig";
+import { useIsMobile } from "../../hooks/useMediaQuery";
 import type { CompareGroupMeta, CompareLayer } from "../../types/compare";
 
 type Props = {
@@ -20,6 +21,13 @@ type Row = {
  * shares the same metric selection, so rows line up directly across
  * columns with no namespacing needed. */
 export default function ComparePivotTable({ layers, groups }: Props) {
+  const isMobile = useIsMobile();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Zeigt eine Fade-Kante rechts, solange noch weitere Firmen-Spalten
+  // ungescrollt sind — die sticky erste Spalte deckt das linke Ende bereits
+  // ab, dort ist kein Hinweis nötig (RESPONSIVE.md R-P1-5).
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
   const rows = useMemo<Row[]>(() => {
     const seen = new Map<string, string>();
     for (const layer of layers) {
@@ -41,10 +49,49 @@ export default function ComparePivotTable({ layers, groups }: Props) {
     return map;
   }, [layers]);
 
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    function updateFade() {
+      setCanScrollRight(el!.scrollLeft + el!.clientWidth < el!.scrollWidth - 2);
+    }
+
+    updateFade();
+    el.addEventListener("scroll", updateFade, { passive: true });
+    const resizeObserver = new ResizeObserver(updateFade);
+    resizeObserver.observe(el);
+    return () => {
+      el.removeEventListener("scroll", updateFade);
+      resizeObserver.disconnect();
+    };
+  }, [rows, groups]);
+
   if (rows.length === 0 || groups.length === 0) return null;
 
+  const stickyColumnMaxWidth = isMobile ? "140px" : "220px";
+  // Mask statt eines farbig überlagerten Divs: blendet nur die
+  // Content-Opazität am rechten Rand aus (zeigt den tatsächlichen
+  // Hintergrund durch, unabhängig von der Zebra-Streifung der Zeilen) statt
+  // eine Farbe erraten zu müssen, die zur wechselnden Zeilenfarbe passt
+  // (RESPONSIVE.md R-P1-5).
+  const rightFadeMask = canScrollRight
+    ? "linear-gradient(to right, black calc(100% - 28px), transparent)"
+    : undefined;
+
   return (
-    <div style={{ overflowX: "auto", borderRadius: theme.radius.lg, border: `1px solid ${theme.colors.border}` }}>
+    <div
+      ref={scrollRef}
+      style={{
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
+        overscrollBehaviorX: "contain",
+        borderRadius: theme.radius.lg,
+        border: `1px solid ${theme.colors.border}`,
+        maskImage: rightFadeMask,
+        WebkitMaskImage: rightFadeMask,
+      }}
+    >
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
         <thead>
           <tr>
@@ -60,7 +107,13 @@ export default function ComparePivotTable({ layers, groups }: Props) {
           {rows.map((row, index) => (
             <tr key={row.metricKey} style={{ background: index % 2 === 0 ? "transparent" : theme.colors.panelAlt }}>
               <td
-                style={{ ...bodyCellStyle, ...stickyColumnStyle, textAlign: "left", fontWeight: 700, maxWidth: "220px" }}
+                style={{
+                  ...bodyCellStyle,
+                  ...stickyColumnStyle,
+                  textAlign: "left",
+                  fontWeight: 700,
+                  maxWidth: stickyColumnMaxWidth,
+                }}
                 title={row.label}
               >
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", maxWidth: "100%" }}>

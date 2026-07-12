@@ -93,11 +93,18 @@ function Header({ variant = "public" }: HeaderProps) {
 
 /* STYLES */
 
+// display:inline-flex + minHeight statt nur Padding: garantiert die
+// ~44px-Touch-Zielfläche unabhängig vom Zeilenumbruch-Verhalten des <a>
+// (RESPONSIVE.md R-P1-2).
 const pillLinkGhost: React.CSSProperties = {
   textDecoration: "none",
   color: theme.colors.textSecondary,
   fontWeight: 600,
   padding: "10px 16px",
+  minHeight: "44px",
+  boxSizing: "border-box",
+  display: "inline-flex",
+  alignItems: "center",
   borderRadius: theme.radius.pill,
 };
 
@@ -107,6 +114,10 @@ const pillCta: React.CSSProperties = {
   background: theme.gradients.ctaPrimary,
   fontWeight: 700,
   padding: "10px 18px",
+  minHeight: "44px",
+  boxSizing: "border-box",
+  display: "inline-flex",
+  alignItems: "center",
   borderRadius: theme.radius.pill,
   boxShadow: "0 10px 24px rgba(0, 0, 0, 0.35)",
 };

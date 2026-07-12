@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { theme, useChartTokens } from "../ui/theme";
+import { useIsMobile } from "../../hooks/useMediaQuery";
 
 export type TimeSeriesPoint = { date: string; [seriesKey: string]: number | string };
 
@@ -41,6 +42,7 @@ export default function TimeSeriesChart({
   valueFormatter,
 }: TimeSeriesChartProps) {
   const chartTokens = useChartTokens();
+  const isMobile = useIsMobile();
 
   if (data.length === 0) {
     return null;
@@ -56,15 +58,18 @@ export default function TimeSeriesChart({
           <XAxis
             dataKey="date"
             stroke={chartTokens.axis}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: isMobile ? 10 : 12 }}
             tickLine={false}
+            minTickGap={isMobile ? 24 : 8}
+            interval="preserveStartEnd"
           />
           <YAxis
             stroke={chartTokens.axis}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: isMobile ? 10 : 12 }}
             tickLine={false}
             axisLine={false}
             tickFormatter={valueFormatter}
+            width={isMobile ? 42 : 60}
           />
           <Tooltip
             contentStyle={{

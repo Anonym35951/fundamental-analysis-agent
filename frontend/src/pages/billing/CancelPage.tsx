@@ -196,7 +196,10 @@ const secondaryButton = {
 
 const contentGrid = {
   display: "grid",
-  gridTemplateColumns: "1fr 1fr",
+  // auto-fit statt fix "1fr 1fr": kollabiert auf schmalen Screens von selbst
+  // auf 1 Spalte statt zwei Info-Karten mit Fließtext zu quetschen
+  // (RESPONSIVE.md R-P1-3).
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))",
   gap: "22px",
 };
 

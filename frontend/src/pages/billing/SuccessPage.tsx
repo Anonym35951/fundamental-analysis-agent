@@ -196,7 +196,10 @@ const secondaryButton = {
 
 const contentGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))",
+  // min(420px, 100%) statt fix 420px: eine einzelne Spalte darf nicht
+  // breiter als der verfügbare Platz werden, sonst überläuft die ganze
+  // Seite auf jedem Handy (RESPONSIVE.md R-P0-7).
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(420px, 100%), 1fr))",
   gap: "22px",
 };
 

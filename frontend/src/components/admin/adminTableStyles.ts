@@ -30,6 +30,9 @@ export const panelTitle: CSSProperties = {
 export const tableScroll: CSSProperties = {
   overflowX: "auto",
   WebkitOverflowScrolling: "touch",
+  // Verhindert Scroll-Chaining: am Rand angekommen soll die Seite dahinter
+  // nicht mitscrollen (RESPONSIVE.md R-P2-5).
+  overscrollBehaviorX: "contain",
 };
 
 export const table: CSSProperties = {

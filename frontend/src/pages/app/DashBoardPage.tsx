@@ -284,7 +284,7 @@ function DashboardPage() {
           position: "relative",
           zIndex: 1,
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
           gap: "28px",
           alignItems: "start",
           marginBottom: "16px",
@@ -380,7 +380,7 @@ function DashboardPage() {
           position: "relative",
           zIndex: 0,
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
           gap: "22px",
           alignItems: "stretch",
         }}

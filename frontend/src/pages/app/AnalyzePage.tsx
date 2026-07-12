@@ -659,7 +659,9 @@ useEffect(() => {
         <h1
           style={{
             margin: "0 0 14px 0",
-            fontSize: "3rem",
+            // clamp() statt fix 3rem: skaliert auf sehr schmalen Screens
+            // herunter statt die Zeile umzubrechen (RESPONSIVE.md R-P2-2).
+            fontSize: "clamp(2rem, 6vw, 3rem)",
             lineHeight: 1.05,
             letterSpacing: "-0.045em",
             color: theme.colors.textPrimary,
@@ -689,6 +691,7 @@ useEffect(() => {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            flexWrap: "wrap",
             gap: "16px",
             padding: "14px 16px",
             borderRadius: "14px",

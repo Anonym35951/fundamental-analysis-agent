@@ -36,7 +36,7 @@ export default class ErrorBoundary extends Component<
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            minHeight: "60vh",
+            minHeight: "60dvh",
             padding: "48px 24px",
             textAlign: "center",
             gap: "16px",

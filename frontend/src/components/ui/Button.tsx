@@ -17,6 +17,11 @@ const baseStyle: CSSProperties = {
   justifyContent: "center",
   gap: "8px",
   padding: "11px 22px",
+  // Guarantees the ~44px touch-target minimum regardless of font-size/
+  // padding overrides at call sites (RESPONSIVE.md R-P1-2) — default
+  // padding already lands close to this, so it's a no-op visually there.
+  minHeight: "44px",
+  boxSizing: "border-box",
   fontSize: "0.95rem",
   fontWeight: 600,
   cursor: "pointer",

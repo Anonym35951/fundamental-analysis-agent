@@ -472,7 +472,7 @@ const funnelLabel = {
 
 const twoColGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
   gap: "24px",
 };
 
@@ -482,6 +482,7 @@ const twoColGrid = {
 const tableScroll = {
   overflowX: "auto" as const,
   WebkitOverflowScrolling: "touch" as const,
+  overscrollBehaviorX: "contain" as const,
 };
 
 const table = {

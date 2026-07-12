@@ -186,7 +186,16 @@ function RegisterPage() {
           />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px" }}>
+        <div
+          style={{
+            display: "grid",
+            // auto-fit statt fix "1fr 1fr": kollabiert auf sehr schmalen
+            // Screens (iPhone SE) von selbst auf 1 Spalte statt beide Felder
+            // auf ~150px zu quetschen (RESPONSIVE.md R-P1-3).
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(150px, 100%), 1fr))",
+            gap: "18px",
+          }}
+        >
           <div>
             <label htmlFor="firstName" style={labelStyle}>
               Vorname

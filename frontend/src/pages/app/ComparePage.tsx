@@ -442,7 +442,9 @@ const heroBadge: React.CSSProperties = {
 
 const titleStyle: React.CSSProperties = {
   margin: "0 0 14px 0",
-  fontSize: "2.4rem",
+  // clamp() statt fix 2.4rem: skaliert auf sehr schmalen Screens herunter
+  // statt die Zeile umzubrechen (RESPONSIVE.md R-P2-2).
+  fontSize: "clamp(1.7rem, 5.5vw, 2.4rem)",
   lineHeight: 1.1,
   letterSpacing: "-0.04em",
   color: theme.colors.textPrimary,

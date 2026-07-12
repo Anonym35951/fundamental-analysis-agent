@@ -792,7 +792,7 @@ const sectionText = {
 
 const pricingGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
   gap: "22px",
 };
 
@@ -1011,7 +1011,10 @@ const benefitsSection = {
 
 const benefitsGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  // auto-fit statt fixem repeat(3, ...): kollabiert auf schmalen Screens von
+  // selbst auf 1 Spalte, statt drei ~105px-Spalten auf 375px zu quetschen
+  // (RESPONSIVE.md R-P0-7).
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))",
   gap: "20px",
 };
 
