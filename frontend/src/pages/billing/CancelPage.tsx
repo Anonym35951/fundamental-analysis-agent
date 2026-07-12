@@ -124,11 +124,11 @@ function BillingCancelPage() {
 /* styles */
 
 const heroSection = {
-  background: "linear-gradient(135deg, #0c0c0e, #1c1c1f)",
+  background: theme.glass.elevated.background,
   borderRadius: "28px",
   padding: "34px 34px 36px",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
-  boxShadow: "0 20px 50px rgba(0, 0, 0, 0.35)",
+  border: `1px solid ${theme.glass.elevated.border}`,
+  boxShadow: theme.glass.elevated.shadow,
 };
 
 const heroBadge = {
@@ -136,9 +136,9 @@ const heroBadge = {
   marginBottom: "16px",
   padding: "8px 12px",
   borderRadius: "999px",
-  background: "rgba(30, 41, 59, 0.7)",
-  border: "1px solid rgba(248, 113, 113, 0.18)",
-  color: "#fca5a5",
+  background: theme.colors.dangerSoft,
+  border: `1px solid ${theme.colors.dangerBorder}`,
+  color: theme.colors.dangerText,
   fontSize: "0.86rem",
   fontWeight: 700,
   letterSpacing: "0.03em",
@@ -148,13 +148,13 @@ const heroMessageBox = {
   marginTop: "22px",
   padding: "18px 20px",
   borderRadius: "18px",
-  background: "rgba(255,255,255,0.06)",
-  border: "1px solid rgba(148, 163, 184, 0.14)",
+  background: theme.glass.subtle.background,
+  border: `1px solid ${theme.glass.subtle.border}`,
   maxWidth: "820px",
 };
 
 const heroMessageTitle = {
-  color: "#ffffff",
+  color: theme.colors.textPrimary,
   fontSize: "1rem",
   fontWeight: 800,
   marginBottom: "8px",
@@ -174,10 +174,10 @@ const primaryButton = {
   padding: "14px 18px",
   borderRadius: "14px",
   background: theme.gradients.ctaPrimary,
-  color: "#ffffff",
+  color: theme.colors.onChrome,
   fontWeight: 800,
   fontSize: "1rem",
-  boxShadow: "0 14px 30px rgba(37, 99, 235, 0.22)",
+  boxShadow: theme.glass.elevated.shadow,
 };
 
 const secondaryButton = {
@@ -187,11 +187,11 @@ const secondaryButton = {
   justifyContent: "center",
   padding: "14px 18px",
   borderRadius: "14px",
-  background: "#1c1c1f",
+  background: theme.colors.panelAlt,
   color: theme.colors.textPrimary,
   fontWeight: 700,
   fontSize: "1rem",
-  border: "1px solid rgba(148, 163, 184, 0.14)",
+  border: `1px solid ${theme.colors.border}`,
 };
 
 const contentGrid = {
@@ -204,11 +204,11 @@ const contentGrid = {
 };
 
 const infoCard = {
-  background: "#000000",
+  background: theme.colors.panel,
   borderRadius: "24px",
   padding: "28px",
-  border: "1px solid rgba(148, 163, 184, 0.12)",
-  boxShadow: "0 14px 34px rgba(0, 0, 0, 0.22)",
+  border: `1px solid ${theme.colors.borderSubtle}`,
+  boxShadow: theme.glass.elevated.shadow,
 };
 
 const sectionEyebrow = {
@@ -224,7 +224,7 @@ const cardTitle = {
   marginBottom: "10px",
   fontSize: "1.4rem",
   fontWeight: 800,
-  color: "#ffffff",
+  color: theme.colors.textPrimary,
   lineHeight: 1.35,
 };
 
@@ -236,18 +236,18 @@ const cardText = {
 };
 
 const helpSection = {
-  background: "linear-gradient(135deg, #1c1c1f, #1c1c1f)",
+  background: theme.colors.panelAlt,
   borderRadius: "28px",
   padding: "34px",
-  border: "1px solid rgba(148, 163, 184, 0.18)",
-  boxShadow: "0 20px 50px rgba(0, 0, 0, 0.35)",
+  border: `1px solid ${theme.glass.elevated.border}`,
+  boxShadow: theme.glass.elevated.shadow,
 };
 
 const helpTitle = {
   margin: "10px 0 14px 0",
   fontSize: "2.1rem",
   lineHeight: 1.15,
-  color: "#ffffff",
+  color: theme.colors.textPrimary,
   letterSpacing: "-0.03em",
 };
 
@@ -266,8 +266,8 @@ const helpPrimaryButton = {
   justifyContent: "center",
   padding: "15px 18px",
   borderRadius: "14px",
-  background: "#ffffff",
-  color: "#0c0c0e",
+  background: theme.colors.chromeStrong,
+  color: theme.colors.onChrome,
   fontWeight: 800,
   fontSize: "1rem",
 };
@@ -283,7 +283,7 @@ const helpSecondaryButton = {
   color: theme.colors.textPrimary,
   fontWeight: 700,
   fontSize: "1rem",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
+  border: `1px solid ${theme.colors.border}`,
 };
 
 export default BillingCancelPage;

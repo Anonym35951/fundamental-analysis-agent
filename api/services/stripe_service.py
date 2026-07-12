@@ -37,6 +37,25 @@ def create_checkout_session(user_id: int, user_email: str, billing_interval: str
             "billing_interval": billing_interval,
             "stripe_price_id": price_id,
         },
+        # Widerrufsrecht (TermsPage.tsx Abschnitt 4): erlischt bei digitalen
+        # Dienstleistungen nur vorzeitig, wenn der Kunde VOR Vertragsbeginn
+        # ausdrücklich zustimmt, dass die Ausführung sofort startet, und
+        # bestätigt, dass ihm der dadurch entstehende Verlust des
+        # Widerrufsrechts bekannt ist (§ 356 Abs. 4 BGB). Ohne diese
+        # Checkbox behält der Kunde 14 Tage lang einen vollen
+        # Rückerstattungsanspruch, unabhängig von einer Kündigung.
+        "consent_collection": {"terms_of_service": "required"},
+        "custom_text": {
+            "terms_of_service_acceptance": {
+                "message": (
+                    "Ich stimme ausdrücklich zu, dass ComAnalysis mit der Ausführung "
+                    "des Vertrags (Freischaltung des Pro-Zugangs) vor Ablauf der "
+                    "gesetzlichen Widerrufsfrist beginnt. Mir ist bekannt, dass mein "
+                    "Widerrufsrecht dadurch mit Beginn der Vertragsausführung erlischt. "
+                    f"[Details in unseren AGB]({settings.FRONTEND_URL}/legal/terms)."
+                )
+            }
+        },
     }
 
     # Erst einschalten, wenn Stripe Tax im Dashboard eingerichtet ist
