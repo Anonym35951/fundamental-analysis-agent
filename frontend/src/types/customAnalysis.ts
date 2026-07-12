@@ -38,6 +38,9 @@ export type CustomAnalysisStartRequest = {
   symbol: string;
   frequency?: CustomAnalysisFrequency | null;
   metrics: MetricSelection[];
+  /** Fürs Event-Logging: unterscheidet Compare-Aufrufe vom Custom-Analysis-
+   * Builder. Default (weggelassen) ist "custom_builder". */
+  source?: "compare" | "custom_builder";
 };
 
 export type CustomAnalysisStartResponse = {

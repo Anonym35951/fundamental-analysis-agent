@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from api.utils.time import utcnow
 from sqlalchemy import String, Boolean, DateTime, Date, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -36,7 +37,7 @@ class User(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=utcnow,
         nullable=False
     )
 

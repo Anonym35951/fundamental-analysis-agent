@@ -2,6 +2,7 @@ import logging
 import os
 import time
 from datetime import datetime
+from api.utils.time import utcnow
 
 from sqlalchemy.orm import Session
 
@@ -93,7 +94,7 @@ def check_new_filings(db: Session) -> int:
             continue
 
         if state.last_seen_accession_number == accession_number:
-            state.last_checked_at = datetime.utcnow()
+            state.last_checked_at = utcnow()
             db.commit()
             continue
 

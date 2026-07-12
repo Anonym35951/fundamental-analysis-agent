@@ -100,6 +100,37 @@ def test_aqgr_majority_negative_still_returns_net_incomes_list(model):
     assert "avg_growth" not in result
 
 
+def test_aqgr_negative_values_scaled_to_millions(model):
+    """LAUNCH_AUDIT.md P2-4: der Quartals-Negativfall gab Rohwerte aus,
+    obwohl Message/Feldname "Mio. USD" versprachen (Faktor 10^6 fehlte) -
+    der Annual-Fall (test unten) skaliert korrekt, das ist der Regressions-
+    Guard dafür, dass beide Pfade jetzt gleich skalieren."""
+    financials = _financials({"2024-03-31": -10_000_000.0, "2024-06-30": -20_000_000.0, "2024-09-30": 5_000_000.0})
+
+    with patch.object(model.dataloader, "get_stock_financials", return_value=financials):
+        result = model.calculate_avg_quarterly_profit_growth("TEST")
+
+    values = {entry["date"]: entry["value"] for entry in result["net_incomes"]}
+    assert values["2024-03-31"] == pytest.approx(-10.0)
+    assert values["2024-06-30"] == pytest.approx(-20.0)
+    assert values["2024-09-30"] == pytest.approx(5.0)
+
+
+def test_aagr_negative_values_scaled_to_millions(model):
+    """Kontrollgruppe zum AQGR-Test oben: der Annual-Pfad skalierte schon
+    vorher korrekt - dokumentiert, dass beide Frequenzen jetzt konsistent
+    sind."""
+    financials = _financials({"2022-12-31": -50_000_000.0, "2023-12-31": -60_000_000.0, "2024-12-31": 10_000_000.0})
+
+    with patch.object(model.dataloader, "get_stock_financials", return_value=financials):
+        result = model.calculate_avg_annual_profit_growth("TEST")
+
+    values = {entry["date"]: entry["value"] for entry in result["net_incomes"]}
+    assert values["2022-12-31"] == pytest.approx(-50.0)
+    assert values["2023-12-31"] == pytest.approx(-60.0)
+    assert values["2024-12-31"] == pytest.approx(10.0)
+
+
 def test_aagr_too_few_positive_points_returns_error(model):
     """Nicht strukturell negativ (Minderheit <=0), aber weniger als 2
     positive Punkte übrig nach walk-inward -> Fehler statt Crash."""

@@ -34,6 +34,15 @@ def sanitize_for_json(obj: Any) -> Any:
 
 
 class JobManager:
+    # LAUNCH_AUDIT.md P2-1: _jobs wuchs vorher unbegrenzt (kein Eviction) -
+    # abgeschlossene Jobs (done/error) veralten nach ein paar Stunden von
+    # selbst (Ergebnisse landen ohnehin dauerhaft in analysis_history), ein
+    # "running"-Job, der länger als das Stuck-Timeout offen ist, kann nur
+    # ein verwaister Eintrag nach einem Crash/Deploy sein - kein legitimer
+    # Analyse-Lauf dauert so lange.
+    FINISHED_JOB_TTL_SECONDS = 6 * 3600
+    STUCK_JOB_TTL_SECONDS = 2 * 3600
+
     def __init__(self, max_workers: int = 4, max_active_jobs_per_user: int = 3):
         self._lock = threading.Lock()
         self._jobs: Dict[str, Dict[str, Any]] = {}
@@ -43,6 +52,27 @@ class JobManager:
             max_workers=max_workers, thread_name_prefix="analysis"
         )
         self.max_active_jobs_per_user = max_active_jobs_per_user
+
+    def _evict_expired_locked(self) -> None:
+        """Muss innerhalb von self._lock aufgerufen werden. Räumt abgelaufene
+        Jobs aus _jobs - lazy statt per Background-Thread, um keinen
+        zusätzlichen Lifecycle (Start/Stop, Thread-Leaks) zu verwalten."""
+        now = time.time()
+        expired = [
+            job_id
+            for job_id, job in self._jobs.items()
+            if (
+                job["status"] in ("done", "error")
+                and job["finished_at"] is not None
+                and now - job["finished_at"] > self.FINISHED_JOB_TTL_SECONDS
+            )
+            or (
+                job["status"] == "running"
+                and now - job["started_at"] > self.STUCK_JOB_TTL_SECONDS
+            )
+        ]
+        for job_id in expired:
+            del self._jobs[job_id]
 
     def count_active_jobs(self, user_id: int) -> int:
         with self._lock:
@@ -58,6 +88,7 @@ class JobManager:
     def create_job(self, symbol: str, total: int, user_id: int) -> str:
         job_id = str(uuid.uuid4())
         with self._lock:
+            self._evict_expired_locked()
             self._jobs[job_id] = {
                 "job_id": job_id,
                 "symbol": symbol,

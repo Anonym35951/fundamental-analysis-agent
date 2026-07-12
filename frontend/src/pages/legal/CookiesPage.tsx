@@ -51,13 +51,13 @@ function CookiesPage() {
       <p>
         Diese Seite erklärt, welche Analyse-Tools ComAnalysis einsetzt und
         welche Daten dabei anfallen. Aktuell setzen wir ausschließlich
-        Plausible Analytics ein.
+        Cloudflare Web Analytics ein.
       </p>
 
-      <h2 style={sectionHeading}>2. Plausible Analytics</h2>
+      <h2 style={sectionHeading}>2. Cloudflare Web Analytics</h2>
       <p>
-        Plausible ist ein datenschutzfreundlicher Analyse-Dienst. Im
-        Unterschied zu klassischen Tracking-Tools setzt Plausible{" "}
+        Cloudflare Web Analytics ist ein datenschutzfreundlicher
+        Analyse-Dienst. Im Unterschied zu klassischen Tracking-Tools setzt er{" "}
         <strong>keine Cookies</strong> und verarbeitet{" "}
         <strong>keine personenbezogenen Daten</strong>. Es werden lediglich
         anonymisierte, aggregierte Kennzahlen erfasst:
@@ -85,8 +85,9 @@ function CookiesPage() {
 
       <h2 style={sectionHeading}>4. Widerruf</h2>
       <p>
-        Du kannst deine Zustimmung jederzeit widerrufen. Da Plausible keine
-        Cookies setzt, gibt es dabei nichts im klassischen Sinn zu löschen —
+        Du kannst deine Zustimmung jederzeit widerrufen. Da Cloudflare Web
+        Analytics keine Cookies setzt, gibt es dabei nichts im klassischen
+        Sinn zu löschen —
         ein Widerruf sorgt lediglich dafür, dass das Script nicht mehr
         nachgeladen wird.
       </p>

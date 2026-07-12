@@ -1,23 +1,15 @@
 import {
-  createContext,
-  useContext,
   useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
 import { useLocation } from "react-router-dom";
+import { ThemeModeContext, type ThemeMode, type ThemeModeContextValue } from "./themeModeContextValue";
 
-export type ThemeMode = "light" | "dark";
+export type { ThemeMode } from "./themeModeContextValue";
 
 const STORAGE_KEY = "theme-mode";
-
-type ThemeModeContextValue = {
-  mode: ThemeMode;
-  toggleMode: () => void;
-};
-
-const ThemeModeContext = createContext<ThemeModeContextValue | null>(null);
 
 /** Post-login (authenticated) area always lives under /app/* — see App.tsx.
  * Everything else (landing, login, register, legal pages) is pre-login. */
@@ -88,12 +80,4 @@ export function ThemeModeProvider({ children }: { children: ReactNode }) {
       {children}
     </ThemeModeContext.Provider>
   );
-}
-
-export function useThemeMode(): ThemeModeContextValue {
-  const ctx = useContext(ThemeModeContext);
-  if (!ctx) {
-    throw new Error("useThemeMode must be used within a ThemeModeProvider");
-  }
-  return ctx;
 }

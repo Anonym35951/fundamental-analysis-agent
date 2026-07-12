@@ -1,4 +1,5 @@
 from datetime import datetime
+from api.utils.time import utcnow
 
 from sqlalchemy import DateTime, ForeignKey, Index, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -35,5 +36,5 @@ class CustomerNote(Base):
     note: Mapped[str] = mapped_column(Text, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        DateTime, default=utcnow, nullable=False
     )

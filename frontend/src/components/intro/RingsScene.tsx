@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { createGlossyBlackMatcap } from "./glossyMatcap";
-import { useThemeMode } from "../ui/ThemeModeContext";
+import { useThemeMode } from "../ui/useThemeMode";
 import { FLY_IN_DURATION, FLY_OUT_DURATION } from "./introTiming";
 
 // Ring band geometry: a real finger-ring band has a FLAT, wide surface with
@@ -115,7 +115,13 @@ function SceneContents({ phase }: RingsSceneProps) {
   // changed, a ring could read the *previous* phase's stale timestamp,
   // computing a huge `elapsed` and snapping to t=0 for one frame before
   // self-correcting, which was the visible glitch right before fly-out.
-  const phaseStartedAtRef = useRef<number>(performance.now());
+  // 0 as a pure placeholder instead of performance.now() here
+  // (LAUNCH_AUDIT.md P2-10, react-hooks/purity - calling an impure function
+  // during render is flagged even as a useRef initial value) - the mount
+  // effect below (dependency array includes the initial `phase`) sets the
+  // real timestamp synchronously after commit, before any useFrame callback
+  // can read it.
+  const phaseStartedAtRef = useRef<number>(0);
 
   useEffect(() => {
     phaseStartedAtRef.current = performance.now();

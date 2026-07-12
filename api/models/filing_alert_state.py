@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from api.utils.time import utcnow
 
 from sqlalchemy import Date, DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -29,5 +30,5 @@ class FilingAlertState(Base):
     last_seen_filing_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     last_checked_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
     )

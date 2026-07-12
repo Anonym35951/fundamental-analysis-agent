@@ -6,7 +6,7 @@ import { theme } from "../ui/theme";
 import Input from "../ui/Input";
 import Select from "../ui/Select";
 import Button from "../ui/Button";
-import { useToast } from "../ui/Toast";
+import { useToast } from "../ui/useToast";
 
 // Muss mit api/schemas/support.py (SUPPORT_CATEGORIES) synchron bleiben.
 const SUPPORT_CATEGORIES: SupportCategory[] = [

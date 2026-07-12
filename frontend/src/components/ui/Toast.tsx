@@ -1,27 +1,18 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { theme } from "./theme";
 import { useIsMobile } from "../../hooks/useMediaQuery";
-
-type ToastTone = "success" | "error" | "info";
+import { ToastContext, type ToastTone } from "./toastContextValue";
 
 type ToastItem = {
   id: number;
   message: string;
   tone: ToastTone;
 };
-
-type ToastContextValue = {
-  showToast: (message: string, tone?: ToastTone) => void;
-};
-
-const ToastContext = createContext<ToastContextValue | null>(null);
 
 const toneStyles: Record<ToastTone, { background: string; border: string; color: string }> = {
   success: {
@@ -107,12 +98,4 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       </div>
     </ToastContext.Provider>
   );
-}
-
-export function useToast(): ToastContextValue {
-  const context = useContext(ToastContext);
-  if (!context) {
-    throw new Error("useToast must be used within a ToastProvider");
-  }
-  return context;
 }

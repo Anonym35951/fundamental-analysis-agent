@@ -31,6 +31,11 @@ export function useAppTour(introDone: boolean) {
     const params = new URLSearchParams(location.search);
     if (params.get(RESTART_QUERY_PARAM) !== "1") return;
 
+    // Reagiert auf einen URL-Query-Param (externes Signal) und loest
+    // zusaetzlich eine Navigation als Seiteneffekt aus - kein waehrend des
+    // Renders berechenbarer Wert, legitimer Effect-Fall
+    // (LAUNCH_AUDIT.md P2-10).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStepIndex(0);
     setRun(true);
     // Query-Param sofort entfernen, damit ein spaeterer Reload derselben URL

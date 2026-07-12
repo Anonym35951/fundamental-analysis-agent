@@ -78,23 +78,17 @@ function PrivacyPage() {
       <h2 style={sectionHeading}>4. Eingesetzte Drittanbieter</h2>
       <ul style={list}>
         <li>
-          <strong>Render</strong> – Hosting von Backend (API) und Datenbank.
-          Serverstandort: EU (Frankfurt).
-        </li>
-        <li>
-          <strong>Vercel</strong> – Hosting der Weboberfläche (Frontend) über
-          ein globales Content-Delivery-Network. Vercel Inc. hat seinen Sitz
-          in den USA; die Auslieferung erfolgt auch über Standorte außerhalb
-          der EU. Für die damit verbundene Datenübermittlung gelten
-          EU-Standardvertragsklauseln (Art. 46 DSGVO).
+          <strong>Render</strong> – Hosting von Backend (API), Datenbank und
+          Weboberfläche (Frontend). Serverstandort: EU (Frankfurt).
         </li>
         <li>
           <strong>Stripe</strong> – Zahlungsabwicklung und
           Abonnementverwaltung.
         </li>
         <li>
-          <strong>SMTP-E-Mail-Versand</strong> – Versand von
-          Transaktions-E-Mails (z. B. Zahlungsbenachrichtigungen).
+          <strong>Resend</strong> – Versand von Transaktions-E-Mails (z. B.
+          Zahlungsbenachrichtigungen, Verifizierung) über eine verifizierte
+          eigene Domain.
         </li>
         <li>
           <strong>Externe Finanzdatenquellen</strong> (SEC EDGAR, Yahoo
@@ -104,7 +98,7 @@ function PrivacyPage() {
           personenbezogenen Daten an diese Anbieter übermittelt.
         </li>
         <li>
-          <strong>Plausible Analytics</strong> – datenschutzfreundlicher,
+          <strong>Cloudflare Web Analytics</strong> – datenschutzfreundlicher,
           cookieloser Analyse-Dienst zur Auswertung der Website-Nutzung.
           Verarbeitet keine personenbezogenen Daten und erkennt einzelne
           Besucher nicht wieder; wird erst nach deiner Zustimmung im

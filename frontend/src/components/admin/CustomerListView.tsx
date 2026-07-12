@@ -24,6 +24,9 @@ function CustomerListView({ onSelectCustomer }: CustomerListViewProps) {
 
   useEffect(() => {
     let isCancelled = false;
+    // Klassisches Loading-Flag vor einem (hier debounced) Fetch - legitimer
+    // Effect-Zweck (LAUNCH_AUDIT.md P2-10).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoading(true);
 
     const timeout = setTimeout(() => {

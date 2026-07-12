@@ -7,7 +7,7 @@ testende Logik besteht fast ausschließlich aus SQL-Aggregationen
 (func.count/distinct/filter), die sich nur gegen eine echte (wenn auch
 leichtgewichtige) DB sinnvoll prüfen lassen.
 """
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from api.models.product_event import ProductEvent
 from api.models.user import User
@@ -18,6 +18,7 @@ from api.routes.admin_stats import (
     PRO_MONTHLY_PRICE_EUR,
     PRO_YEARLY_MONTHLY_EQUIVALENT_EUR,
 )
+from api.utils.time import utcnow
 
 
 def _make_user(db, **kwargs) -> User:
@@ -35,7 +36,7 @@ def _log_event(db, event_type: str, user_id: int, days_ago: float = 0, metadata=
         event_type=event_type,
         user_id=user_id,
         event_metadata=metadata,
-        created_at=datetime.utcnow() - timedelta(days=days_ago),
+        created_at=utcnow() - timedelta(days=days_ago),
     )
     db.add(event)
     db.commit()

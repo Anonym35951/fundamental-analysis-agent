@@ -3,7 +3,8 @@ import { Trash2 } from "lucide-react";
 import { Button, Card, Input, Select, theme } from "../ui";
 import { getMetricHistory } from "../../api/customAnalysis";
 import type { MetricCatalogEntry } from "../../types/customAnalysis";
-import MultiLayerChart, { LAYER_COLORS, type ChartLayer } from "./MultiLayerChart";
+import MultiLayerChart from "./MultiLayerChart";
+import { LAYER_COLORS, type ChartLayer } from "./chartUtils";
 
 type Layer = {
   id: string;

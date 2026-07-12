@@ -2,6 +2,7 @@ import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta
+from api.utils.time import utcnow
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
@@ -65,7 +66,7 @@ def _issue_email_verification_token(db: Session, user: User) -> str:
     user.email_verification_token_hash = hashlib.sha256(
         raw_token.encode()
     ).hexdigest()
-    user.email_verification_expires = datetime.utcnow() + timedelta(
+    user.email_verification_expires = utcnow() + timedelta(
         hours=EMAIL_VERIFICATION_TOKEN_TTL_HOURS
     )
     db.commit()
@@ -77,7 +78,15 @@ def _send_verification_email(background_tasks: BackgroundTasks, user: User, raw_
     background_tasks.add_task(send_email_safely, send_email_verification_email, user.email, verify_link)
 
 
-@router.post("/register", response_model=UserResponse)
+_REGISTER_GENERIC_RESPONSE = {
+    "message": (
+        "Registrierung erfolgreich. Bitte bestätige deine E-Mail-Adresse "
+        "über den Link, den wir dir geschickt haben."
+    )
+}
+
+
+@router.post("/register")
 @limiter.limit("3/minute")
 def register(
     request: Request,
@@ -85,12 +94,20 @@ def register(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    existing_user = get_user_by_email(db, str(user.email))
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-
+    # Benutzername bleibt eine sofortige, konkrete Fehlermeldung - normale,
+    # erwartete Signup-UX (wie bei GitHub/Twitter), kein sensibles PII, kein
+    # Enumeration-Risiko im eigentlichen Sinn.
     if get_user_by_username(db, user.username):
         raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
+
+    # Email dagegen enumeration-sicher behandeln (LAUNCH_AUDIT.md P2-13):
+    # dieselbe generische Erfolgsantwort unabhängig davon, ob die Adresse
+    # schon registriert ist - Kontrast vorher war, dass "Email already
+    # registered" die Existenz eines Kontos eindeutig bestätigte, während
+    # /forgot-password und /resend-verification-public das genau vermeiden.
+    existing_user = get_user_by_email(db, str(user.email))
+    if existing_user:
+        return _REGISTER_GENERIC_RESPONSE
 
     created = create_user(
         db,
@@ -109,7 +126,7 @@ def register(
 
     log_event(db, "user_registered", user_id=created.id)
 
-    return created
+    return _REGISTER_GENERIC_RESPONSE
 
 
 @router.post("/verify-email")
@@ -129,7 +146,7 @@ def verify_email(
     if (
         not user
         or not user.email_verification_expires
-        or user.email_verification_expires < datetime.utcnow()
+        or user.email_verification_expires < utcnow()
     ):
         raise HTTPException(status_code=400, detail="Token is invalid or has expired")
 
@@ -203,9 +220,14 @@ def login(
     user = get_user_by_email_or_username(db, form_data.username)
 
     if not user:
+        # Bewusst ohne Email/Username in event_metadata (keine PII, siehe
+        # LAUNCH.md P2-17-Konvention) - reicht als Trend-/Abuse-Signal
+        # ("wie viele Failed Logins pro Tag"), Details bleiben im Server-Log.
+        log_event(db, "login_failed", metadata={"reason": "unknown_user"})
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not verify_password(form_data.password, user.hashed_password):
+        log_event(db, "login_failed", user_id=user.id, metadata={"reason": "wrong_password"})
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     if not user.email_verified:
@@ -257,7 +279,7 @@ def onboarding_complete(
 ):
     """Markiert die gefuehrte Tour als abgeschlossen (oder uebersprungen -
     beides zaehlt als 'erledigt', damit sie nicht erneut nervt)."""
-    current_user.onboarding_completed_at = datetime.utcnow()
+    current_user.onboarding_completed_at = utcnow()
     db.commit()
     log_event(db, "onboarding_tour_completed", user_id=current_user.id)
     return {"message": "ok"}
@@ -319,7 +341,7 @@ def forgot_password(
 
     raw_token = secrets.token_urlsafe(32)
     user.password_reset_token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    user.password_reset_expires = datetime.utcnow() + timedelta(
+    user.password_reset_expires = utcnow() + timedelta(
         minutes=PASSWORD_RESET_TOKEN_TTL_MINUTES
     )
     db.commit()
@@ -348,7 +370,7 @@ def reset_password(
     if (
         not user
         or not user.password_reset_expires
-        or user.password_reset_expires < datetime.utcnow()
+        or user.password_reset_expires < utcnow()
     ):
         raise HTTPException(status_code=400, detail="Token is invalid or has expired")
 

@@ -11,67 +11,14 @@ import {
 } from "recharts";
 import { theme, useChartTokens } from "../ui/theme";
 import { useIsMobile } from "../../hooks/useMediaQuery";
+import { formatCompactNumber, type ChartLayer } from "./chartUtils";
 
-export type ChartLayer = {
-  id: string;
-  label: string;
-  data: Array<{ date: string; value: number }>;
-  axis: "left" | "right";
-  color: string;
-};
+export type { ChartLayer } from "./chartUtils";
 
 type Props = {
   layers: ChartLayer[];
   height?: number;
 };
-
-/** Deliberate exception to the app's otherwise-monochrome theme: the compare
- * chart can overlay many company×metric series at once, so it needs a large,
- * highly saturated, mutually-distinguishable categorical palette instead of
- * the 6-shade greyscale ramp used elsewhere. Colors alternate warm/cool/hue
- * families so consecutive indices (sequential assignment in
- * compare/mapping.ts) never land next to a visually similar neighbor. Cycles
- * only once a comparison exceeds this many series. */
-export const LAYER_COLORS = [
-  "#22d3ee", // cyan
-  "#fb7185", // rose
-  "#a3e635", // lime
-  "#c084fc", // violet
-  "#fbbf24", // amber
-  "#38bdf8", // sky
-  "#f472b6", // pink
-  "#4ade80", // green
-  "#fb923c", // orange
-  "#818cf8", // indigo
-  "#facc15", // yellow
-  "#2dd4bf", // teal
-  "#f87171", // red
-  "#a78bfa", // purple
-  "#34d399", // emerald
-  "#e879f9", // fuchsia
-  "#60a5fa", // blue
-  "#fde047", // pale yellow
-  "#d946ef", // magenta
-  "#5eead4", // light teal
-];
-
-/** Compact German number formatting (k / Mio. / Mrd.) so large axis ticks
- * and tooltip values (market cap, enterprise value, ...) stay readable
- * instead of rendering as long unbroken digit strings. */
-export function formatCompactNumber(value: number): string {
-  const abs = Math.abs(value);
-
-  if (abs >= 1_000_000_000) {
-    return `${(value / 1_000_000_000).toFixed(abs >= 10_000_000_000 ? 0 : 1)} Mrd.`;
-  }
-  if (abs >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)} Mio.`;
-  }
-  if (abs >= 1_000) {
-    return `${(value / 1_000).toFixed(abs >= 10_000 ? 0 : 1)} Tsd.`;
-  }
-  return value.toLocaleString("de-DE", { maximumFractionDigits: 2 });
-}
 
 /** Backend timestamps come through as e.g. "2007-12-31 00:00:00" — every
  * metric in this app is daily-or-coarser, so the time component is always
@@ -157,7 +104,6 @@ export default function MultiLayerChart({ layers, height = 320 }: Props) {
     document.body.style.userSelect = "";
     document.body.style.cursor = "";
     window.removeEventListener("mousemove", handleDragMove);
-    window.removeEventListener("mouseup", handleDragEnd);
   }, [handleDragMove]);
 
   const startDrag = useCallback(
@@ -171,7 +117,13 @@ export default function MultiLayerChart({ layers, height = 320 }: Props) {
       document.body.style.cursor = "ns-resize";
       dragState.current = { axis, startY: event.clientY, startZoom: zoom[axis] };
       window.addEventListener("mousemove", handleDragMove);
-      window.addEventListener("mouseup", handleDragEnd);
+      // { once: true } statt manuellem removeEventListener(handleDragEnd) in
+      // handleDragEnd selbst - eine Funktion, die sich per Namen selbst aus
+      // einem Listener entfernt, war ein "used before declared"-ESLint-Fund
+      // (react-hooks/immutability); mouseup feuert ohnehin nur einmal pro
+      // Drag-Geste, once:true entfernt den Listener automatisch nach dem
+      // ersten Auftreten.
+      window.addEventListener("mouseup", handleDragEnd, { once: true });
     },
     [zoom, handleDragMove, handleDragEnd]
   );

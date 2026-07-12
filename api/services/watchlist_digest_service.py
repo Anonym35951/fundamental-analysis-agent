@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta
+from api.utils.time import utcnow
 
 from sqlalchemy.orm import Session
 
@@ -20,7 +21,7 @@ def _recent_filing_entries_by_symbol(db: Session) -> dict[str, dict]:
     Events aus product_events — statt eine zweite eigene SEC-Abfrage zu
     machen, wird der bereits vom 4-A-Worker ermittelte Zustand
     wiederverwendet."""
-    since = datetime.utcnow() - timedelta(days=DIGEST_LOOKBACK_DAYS)
+    since = utcnow() - timedelta(days=DIGEST_LOOKBACK_DAYS)
     events = (
         db.query(ProductEvent)
         .filter(

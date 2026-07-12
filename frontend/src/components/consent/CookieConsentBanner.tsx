@@ -3,16 +3,17 @@ import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { theme } from "../ui/theme";
 import Button from "../ui/Button";
-import { loadPlausibleScript } from "../../lib/plausible";
+import { loadWebAnalyticsScript } from "../../lib/webAnalytics";
 import { useIsMobile } from "../../hooks/useMediaQuery";
 
 const CONSENT_KEY = "analytics_consent";
 
-/** Fixiertes Banner am unteren Bildschirmrand: fragt einmalig, ob Plausible
- * Analytics geladen werden darf. Plausible selbst nutzt keine Cookies und
- * keine personenbezogenen Daten (anonymisierte Seitenaufrufe/Referrer) -
- * das Banner bleibt trotzdem als allgemeines Consent-Framework bestehen,
- * falls spaeter echte First-Party-Cookies dazukommen. */
+/** Fixiertes Banner am unteren Bildschirmrand: fragt einmalig, ob Cloudflare
+ * Web Analytics geladen werden darf. Cloudflare Web Analytics selbst nutzt
+ * keine Cookies und keine personenbezogenen Daten (anonymisierte
+ * Seitenaufrufe/Referrer) - das Banner bleibt trotzdem als allgemeines
+ * Consent-Framework bestehen, falls spaeter echte First-Party-Cookies
+ * dazukommen. */
 function CookieConsentBanner() {
   const [isVisible, setIsVisible] = useState(false);
   const isMobile = useIsMobile();
@@ -20,9 +21,9 @@ function CookieConsentBanner() {
   useEffect(() => {
     const consent = localStorage.getItem(CONSENT_KEY);
     if (consent === "accepted") {
-      loadPlausibleScript();
+      loadWebAnalyticsScript();
     } else if (consent !== "rejected") {
-      // Kurze Verzögerung statt sofortiger Einblendung: Plausible lädt
+      // Kurze Verzögerung statt sofortiger Einblendung: Web Analytics lädt
       // ohnehin erst nach explizitem "Zustimmen" (siehe unten), eine
       // verzögerte Anzeige der reinen Abfrage ist DSGVO-unkritisch. Lässt
       // dem wichtigsten Conversion-Moment - der erste Blick auf den
@@ -35,7 +36,7 @@ function CookieConsentBanner() {
 
   function handleAccept() {
     localStorage.setItem(CONSENT_KEY, "accepted");
-    loadPlausibleScript();
+    loadWebAnalyticsScript();
     setIsVisible(false);
   }
 
@@ -91,7 +92,7 @@ function CookieConsentBanner() {
           >
             {isMobile ? (
               <>
-                <strong style={{ color: theme.colors.textPrimary }}>Plausible Analytics</strong>{" "}
+                <strong style={{ color: theme.colors.textPrimary }}>Cloudflare Web Analytics</strong>{" "}
                 — cookielos, keine PII.{" "}
                 <Link to="/legal/cookies" style={{ color: theme.colors.chrome, fontWeight: 700 }}>
                   Details
@@ -100,7 +101,7 @@ function CookieConsentBanner() {
             ) : (
               <>
                 Wir nutzen{" "}
-                <strong style={{ color: theme.colors.textPrimary }}>Plausible Analytics</strong> —
+                <strong style={{ color: theme.colors.textPrimary }}>Cloudflare Web Analytics</strong> —
                 datenschutzfreundlich, ohne Cookies und ohne personenbezogene
                 Daten. Details in unseren{" "}
                 <Link to="/legal/cookies" style={{ color: theme.colors.chrome, fontWeight: 700 }}>

@@ -394,7 +394,7 @@ class DataLoader:
         try:
             url = f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
             headers = {"User-Agent": self.user_agent}
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=30)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -528,7 +528,9 @@ class DataLoader:
 
             try:
                 self.logger.info(f"API-Aufruf: {function} für {symbol}")
-                response = requests.get(self.base_url, params=params, headers={"User-Agent": self.user_agent})
+                response = requests.get(
+                    self.base_url, params=params, headers={"User-Agent": self.user_agent}, timeout=30
+                )
                 response.raise_for_status()
                 data = response.json()
 
@@ -1409,13 +1411,36 @@ class DataLoader:
                     "symbol": symbol}
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
+    def _fetch_yahoo_shares_outstanding(self, symbol: str) -> dict:
+        """Isoliert vom umschließenden try/except in get_shares_outstanding
+        (LAUNCH_AUDIT.md P2-12) - kein internes Abfangen um den echten
+        Yahoo-Call, damit @retry bei transienten Netzwerkfehlern tatsächlich
+        greift, statt sofort in einem Error-Dict zu enden. get_shares_outstanding
+        bleibt nach außen unverändert ein reiner Dict-Rückgabewert (nie eine
+        Exception), da es dort weiterhin ein eigenes try/except gibt."""
+        stock = yf.Ticker(symbol)
+        shares = stock.info.get("sharesOutstanding")
+
+        if shares is None:
+            return {
+                "error": f"Keine Daten zu ausstehenden Aktien für {symbol} gefunden.",
+                "symbol": symbol
+            }
+
+        return {
+            "shares_outstanding": float(shares),
+            "symbol": symbol.upper(),
+            "date": None,
+            "source": "Yahoo Finance"
+        }
+
     def get_shares_outstanding(self, symbol: str) -> dict:
         """
         Ruft die Anzahl der ausstehenden Aktien ab.
 
         Priorität:
         1. SEC Company Facts
-        2. Yahoo Finance Fallback
+        2. Yahoo Finance Fallback (siehe _fetch_yahoo_shares_outstanding)
 
         Returns:
             {
@@ -1488,24 +1513,10 @@ class DataLoader:
             # ==========================================================
             #
 
-            stock = yf.Ticker(symbol)
+            result = self._fetch_yahoo_shares_outstanding(symbol)
 
-            shares = stock.info.get("sharesOutstanding")
-
-            if shares is None:
-                return {
-                    "error": f"Keine Daten zu ausstehenden Aktien für {symbol} gefunden.",
-                    "symbol": symbol
-                }
-
-            result = {
-                "shares_outstanding": float(shares),
-                "symbol": symbol.upper(),
-                "date": None,
-                "source": "Yahoo Finance"
-            }
-
-            self._cache_data(result, symbol, data_type)
+            if "error" not in result:
+                self._cache_data(result, symbol, data_type)
 
             return result
 
@@ -2809,7 +2820,7 @@ class DataLoader:
             if start_date and end_date:
                 url += f'&observation_start={start_date}&observation_end={end_date}'
 
-            response = requests.get(url)
+            response = requests.get(url, timeout=30)
             response.raise_for_status()
 
             observations = response.json()['observations']
@@ -2859,7 +2870,7 @@ class DataLoader:
             api_key = os.environ["FRED_API_KEY"]
             series_id = 'GDPC1'
             url = f'https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={api_key}&file_type=json'
-            response = requests.get(url)
+            response = requests.get(url, timeout=30)
             response.raise_for_status()
             data = response.json()['observations']
             if len(data) < 2:

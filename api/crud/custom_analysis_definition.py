@@ -1,4 +1,5 @@
 from datetime import datetime
+from api.utils.time import utcnow
 
 from sqlalchemy.orm import Session
 
@@ -49,7 +50,7 @@ def update_definition(
 
 
 def mark_definition_run(db: Session, definition: CustomAnalysisDefinition) -> None:
-    definition.last_run_at = datetime.utcnow()
+    definition.last_run_at = utcnow()
     db.commit()
 
 

@@ -1,4 +1,5 @@
 from datetime import datetime
+from api.utils.time import utcnow
 
 from sqlalchemy import String, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -24,6 +25,6 @@ class Favorite(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=utcnow,
         nullable=False,
     )

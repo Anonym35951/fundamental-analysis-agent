@@ -1,5 +1,6 @@
 import logging
 from datetime import date, datetime
+from api.utils.time import utcnow
 
 import stripe
 from sqlalchemy import and_, case, or_, update
@@ -76,7 +77,7 @@ def delete_user_account(
 def _current_period_start() -> date:
     """Erster Tag des laufenden Kalendermonats (UTC) — Referenzpunkt für den
     on-read-Reset des Free-Kontingents in try_consume_monthly_request_quota."""
-    now = datetime.utcnow()
+    now = utcnow()
     return date(now.year, now.month, 1)
 
 
@@ -232,7 +233,7 @@ def reset_all_free_users_monthly_request_counts(db: Session) -> int:
 
 
 def downgrade_expired_past_due_users(db: Session) -> int:
-    now = datetime.utcnow()
+    now = utcnow()
 
     users = (
         db.query(User)

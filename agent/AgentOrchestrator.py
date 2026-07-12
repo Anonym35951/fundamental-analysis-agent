@@ -1,5 +1,5 @@
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 class AgentOrchestrator:
     def __init__(self, action_module):
@@ -46,7 +46,7 @@ class AgentOrchestrator:
             "symbol": symbol,
             "results": results,
             "meta": {
-                "started_at": datetime.utcnow().isoformat() + "Z",
+                "started_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
                 "duration_ms": duration_ms,
                 "count": len(results)
             }

@@ -237,8 +237,15 @@ class Model:
             if dividends.empty or "dividend" not in dividends.columns:
                 return {"error": "Keine Dividendenhistorie verfügbar."}
 
-            # 3) Jährliche Dividenden summieren
+            # 3) Jährliche Dividenden summieren - das laufende, noch nicht
+            # abgeschlossene Kalenderjahr ausschließen (LAUNCH_AUDIT.md P2-5):
+            # ein Teiljahr würde sowohl den CAGR-Endwert als auch
+            # "years_with_dividends"/"years_with_increases" verzerren, da es
+            # strukturell niedriger ausfällt als ein volles Jahr.
             annual_dividends = dividends["dividend"].resample("YE").sum().astype(float)
+            current_year = pd.Timestamp.now().year
+            if not annual_dividends.empty and annual_dividends.index[-1].year >= current_year:
+                annual_dividends = annual_dividends.iloc[:-1]
 
             # 4) Metriken
             years_with_dividends = int((annual_dividends > 0).sum())
@@ -308,8 +315,11 @@ class Model:
             if prices.index.tz is not None:
                 prices.index = prices.index.tz_localize(None)
 
-            annual_dividends = dividends.resample('A').sum()
-            year_end_prices = prices.resample('A').last()
+            # 'A' ist ein deprecated pandas-Resample-Alias (LAUNCH_AUDIT.md
+            # P2-5) - 'YE' (Year-End) ist der aktuelle, nicht-deprecated Alias
+            # mit identischer Bedeutung.
+            annual_dividends = dividends.resample('YE').sum()
+            year_end_prices = prices.resample('YE').last()
 
             yields = (annual_dividends / year_end_prices) * 100
             average_yield = yields.dropna().mean()
@@ -543,7 +553,7 @@ class Model:
                 if len(quarterly_financials.loc[
                            "Net Income" if "Net Income" in quarterly_financials.index else "Net Income Common Stockholders"]) < 4:
                     return {"error": f"Nicht genügend Quartalsdaten für {symbol} zur TTM-Berechnung."}
-                print(f"TTM Net Income für {symbol}: {net_income}")  # Debugging-Ausgabe
+                self.logger.debug(f"TTM Net Income für {symbol}: {net_income}")
             else:  # frequency == "quarterly"
                 financials = self.dataloader.get_stock_financials(symbol, frequency="quarterly")
                 if isinstance(financials, dict) and "error" in financials:
@@ -556,7 +566,7 @@ class Model:
                 else:
                     return {
                         "error": f"Das Unternehmen {symbol} liefert keine Nettogewinn-Daten (weder 'Net Income' noch 'Net Income Common Stockholders') für {frequency}."}
-                print(f"Quarterly Net Income für {symbol}: {net_income}")  # Debugging-Ausgabe
+                self.logger.debug(f"Quarterly Net Income für {symbol}: {net_income}")
 
             # Eigenkapital abrufen
             balance_sheet = self.dataloader.get_balance_sheet(symbol, frequency=frequency)
@@ -566,7 +576,7 @@ class Model:
                 return {
                     "error": f"Keine Eigenkapital-Daten für {symbol} ({frequency}) gefunden. Verfügbare Labels: {list(balance_sheet.index)}"}
             equity = balance_sheet.loc["Stockholders Equity"].iloc[0]
-            print(f"Stockholders Equity für {symbol} ({frequency}): {equity}")  # Debugging-Ausgabe
+            self.logger.debug(f"Stockholders Equity für {symbol} ({frequency}): {equity}")
 
             # Prüfen auf ungültige Werte
             if pd.isna(net_income):
@@ -1435,7 +1445,7 @@ class Model:
             if has_negative_values:
                 # Schritt 6a: Daten auflisten und Warnung ausgeben
                 net_income_list = [
-                    {"date": date.strftime('%Y-%m-%d'), "value": value}
+                    {"date": date.strftime('%Y-%m-%d'), "value": value / 1000000}  # Umrechnung in Mio. USD (LAUNCH_AUDIT.md P2-4)
                     for date, value in zip(net_incomes.index, net_incomes.values)
                 ]
                 message = (f"Das Unternehmen {symbol} weist überwiegend negative Nettogewinne auf: "
@@ -5410,16 +5420,13 @@ class Model:
 
             # Alle Spalten ausgeben
             self.logger.info(f"Balance Sheet Spalten für {symbol}: {balance_sheet.columns.tolist()}")
-            print(f"\nBalance Sheet Spalten für {symbol}:")
-            print(balance_sheet.columns.tolist())
 
             # Spezifische Datenpunkte ausgeben, falls angegeben
             if dates:
                 balance_sheet_subset = balance_sheet.loc[balance_sheet.index.isin(pd.to_datetime(dates))]
                 if not balance_sheet_subset.empty:
-                    print(f"\nBalance Sheet für {symbol} an spezifischen Daten ({dates}):")
                     with pd.option_context('display.max_rows', None, 'display.max_columns', None):
-                        print(balance_sheet_subset)
+                        self.logger.info(f"Balance Sheet für {symbol} an spezifischen Daten ({dates}):\n{balance_sheet_subset}")
                 else:
                     self.logger.warning(f"Keine Balance Sheet-Daten für {symbol} an den angegebenen Daten: {dates}")
 

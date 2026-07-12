@@ -1,6 +1,6 @@
 import type { CustomMetricResult, MetricCatalogEntry } from "../types/customAnalysis";
 import type { CompareLayer } from "../types/compare";
-import { LAYER_COLORS } from "../components/charts/MultiLayerChart";
+import { LAYER_COLORS } from "../components/charts/chartUtils";
 
 /** Each company gets one stable color (by its index among the companies
  * currently rendered) that stays the same across every metric's chart box —

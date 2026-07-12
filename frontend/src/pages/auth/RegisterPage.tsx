@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle } from "lucide-react";
 import { registerUser } from "../../api/auth";
-import { useToast } from "../../components/ui/Toast";
+import { useToast } from "../../components/ui/useToast";
 import { theme } from "../../components/ui/theme";
 import Input from "../../components/ui/Input";
 import Button from "../../components/ui/Button";

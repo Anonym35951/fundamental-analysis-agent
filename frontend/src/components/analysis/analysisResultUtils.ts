@@ -1,8 +1,21 @@
+/** Backend-Ergebnis-Dict für eine Analysemethode - Top-Level-Metafelder sind
+ * bekannt, die restlichen Keys sind dynamisch je Analysemodus (jeweils
+ * selbst ein PayloadEntry-artiges Objekt, siehe extractCriteria). */
+export type AnalysisPayload = {
+  symbol?: string;
+  frequency?: string;
+  overall_assessment?: string;
+  message?: string;
+  error?: string;
+  crv?: unknown;
+  [key: string]: unknown;
+};
+
 export type AnalysisItem = {
   key: string;
   name: string;
   frequency: string;
-  payload: any;
+  payload: AnalysisPayload;
 };
 
 export type Criterion = {
@@ -12,10 +25,19 @@ export type Criterion = {
   meets: boolean | null;
 };
 
+/** Shape of a single object-valued payload entry once narrowed - matches
+ * the metric-result dicts the backend actually sends (value/message/
+ * meets_criterion), not the full range of possible payload shapes. */
+type PayloadEntry = {
+  value?: unknown;
+  message?: unknown;
+  meets_criterion?: boolean;
+};
+
 /** Pulls every object-valued payload key (excluding the known meta fields)
  * out as a displayable criterion — this is the exact pre-redesign extraction
  * logic, unchanged, so downstream score/summary numbers stay identical. */
-export function extractCriteria(payload: any): Criterion[] {
+export function extractCriteria(payload: AnalysisPayload | undefined): Criterion[] {
   if (!payload || typeof payload !== "object") return [];
 
   return Object.entries(payload)
@@ -25,12 +47,15 @@ export function extractCriteria(payload: any): Criterion[] {
         value &&
         typeof value === "object"
     )
-    .map(([key, value]: any) => ({
-      key,
-      value: value?.value,
-      message: value?.message ? String(value.message) : undefined,
-      meets: value?.meets_criterion === true ? true : value?.meets_criterion === false ? false : null,
-    }));
+    .map(([key, rawValue]) => {
+      const value = rawValue as PayloadEntry;
+      return {
+        key,
+        value: value?.value,
+        message: value?.message ? String(value.message) : undefined,
+        meets: value?.meets_criterion === true ? true : value?.meets_criterion === false ? false : null,
+      };
+    });
 }
 
 export function calculateScore(criteria: Array<{ meets: boolean | null }>) {

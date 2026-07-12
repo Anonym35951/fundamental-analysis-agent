@@ -1,4 +1,5 @@
 from datetime import datetime
+from api.utils.time import utcnow
 
 from sqlalchemy import JSON, String, DateTime, Integer, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
@@ -38,7 +39,7 @@ class AnalysisHistory(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=utcnow,
         nullable=False,
     )
 

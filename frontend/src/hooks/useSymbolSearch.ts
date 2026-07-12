@@ -15,6 +15,11 @@ export function useSymbolSearch(query: string, limit = 8) {
 
   useEffect(() => {
     let isCancelled = false;
+    // Klassisches Loading-Flag vor einem (hier debounced) Fetch - legitimer
+    // Effect-Zweck laut React-Doku ("Fetching data"), kein Fall von
+    // Zustand, der stattdessen während des Renders berechnet werden könnte
+    // (LAUNCH_AUDIT.md P2-10).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoadingSuggestions(true);
 
     const timeoutId = window.setTimeout(() => {

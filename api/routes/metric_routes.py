@@ -2,8 +2,9 @@ import logging
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from api.utils.json_sanitize import make_json_safe
+from api.core.rate_limit import limiter
 from api.routes.analyze import get_action
 from api.core.dependencies import get_current_user, require_analysis_access
 from api.models.user import User
@@ -45,7 +46,9 @@ _DATA_SOURCE_CACHE_TTL_SECONDS = 3600
 
 
 @router.get("/current-price/{symbol}")
+@limiter.limit("60/minute")
 def current_price(
+    request: Request,
     symbol: str,
     current_user: User = Depends(get_current_user),  # 🔐 PROTECTION
 ):
@@ -76,7 +79,9 @@ def current_price(
 
 
 @router.get("/data-source/{symbol}")
+@limiter.limit("60/minute")
 def data_source_summary(
+    request: Request,
     symbol: str,
     frequency: str = "annual",
     current_user: User = Depends(get_current_user),  # 🔐 PROTECTION
@@ -106,7 +111,9 @@ def data_source_summary(
 # =============================
 
 @router.get("/profit-growth")
+@limiter.limit("60/minute")
 def profit_growth(
+    request: Request,
     symbol: str,
     frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),  # 🔐 PROTECTION + Quota
@@ -137,7 +144,8 @@ def profit_growth(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/kgv")
-def kgv(symbol: str,
+@limiter.limit("60/minute")
+def kgv(request: Request, symbol: str,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -152,7 +160,8 @@ def kgv(symbol: str,
 
 
 @router.get("/net-debt-to-ebitda")
-def net_debt_to_ebitda(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def net_debt_to_ebitda(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -166,7 +175,8 @@ def net_debt_to_ebitda(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/dividend-yield-average")
-def dividend_yield_average(symbol: str, years: int = 10,
+@limiter.limit("60/minute")
+def dividend_yield_average(request: Request, symbol: str, years: int = 10,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -183,7 +193,8 @@ def dividend_yield_average(symbol: str, years: int = 10,
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/tbv-and-price")
-def tbv_and_price(symbol: str,
+@limiter.limit("60/minute")
+def tbv_and_price(request: Request, symbol: str,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -207,7 +218,8 @@ def tbv_and_price(symbol: str,
 
 
 @router.get("/kuv")
-def kuv(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def kuv(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -221,7 +233,8 @@ def kuv(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/roe")
-def roe(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def roe(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -235,7 +248,8 @@ def roe(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/debt-to-equity")
-def debt_to_equity(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def debt_to_equity(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -249,7 +263,8 @@ def debt_to_equity(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/peg-ratio")
-def peg_ratio(symbol: str,
+@limiter.limit("60/minute")
+def peg_ratio(request: Request, symbol: str,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -268,7 +283,8 @@ def peg_ratio(symbol: str,
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/interest-coverage-ratio")
-def interest_coverage_ratio(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def interest_coverage_ratio(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -282,7 +298,8 @@ def interest_coverage_ratio(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/cashflow-margin")
-def cashflow_margin(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def cashflow_margin(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -296,7 +313,8 @@ def cashflow_margin(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/inventory-to-revenue")
-def inventory_to_revenue(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def inventory_to_revenue(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -313,7 +331,8 @@ def inventory_to_revenue(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/cash-to-market-cap")
-def cash_to_market_cap(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def cash_to_market_cap(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -331,7 +350,8 @@ def cash_to_market_cap(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/payout-ratio")
-def payout_ratio(symbol: str, threshold: float = 75.0,
+@limiter.limit("60/minute")
+def payout_ratio(request: Request, symbol: str, threshold: float = 75.0,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -348,7 +368,8 @@ def payout_ratio(symbol: str, threshold: float = 75.0,
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/ev-to-sales")
-def ev_to_sales(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def ev_to_sales(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -366,7 +387,8 @@ def ev_to_sales(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/price-to-free-cashflow")
-def price_to_free_cashflow(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def price_to_free_cashflow(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -384,7 +406,9 @@ def price_to_free_cashflow(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/annual-inflation-rate")
+@limiter.limit("60/minute")
 def annual_inflation_rate(
+    request: Request,
     current_date_str: str | None = None,
     target_date_str: str | None = None,
     current_user: User = Depends(require_analysis_access),
@@ -402,7 +426,8 @@ def annual_inflation_rate(
         return {"error": _GENERIC_METRIC_ERROR}
 
 @router.get("/total-inflation")
-def total_inflation_for_period(start_date: str, end_date: str,
+@limiter.limit("60/minute")
+def total_inflation_for_period(request: Request, start_date: str, end_date: str,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -419,7 +444,8 @@ def total_inflation_for_period(start_date: str, end_date: str,
         return {"error": _GENERIC_METRIC_ERROR}
 
 @router.get("/avg-quarterly-profit-growth")
-def avg_quarterly_profit_growth(symbol: str,
+@limiter.limit("60/minute")
+def avg_quarterly_profit_growth(request: Request, symbol: str,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -438,7 +464,8 @@ def avg_quarterly_profit_growth(symbol: str,
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/avg-annual-profit-growth")
-def avg_annual_profit_growth(symbol: str,
+@limiter.limit("60/minute")
+def avg_annual_profit_growth(request: Request, symbol: str,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -457,7 +484,8 @@ def avg_annual_profit_growth(symbol: str,
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/compare-quarterly-profit-growth-to-inflation")
-def compare_quarterly_profit_growth_to_inflation(symbol: str,
+@limiter.limit("60/minute")
+def compare_quarterly_profit_growth_to_inflation(request: Request, symbol: str,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -476,7 +504,8 @@ def compare_quarterly_profit_growth_to_inflation(symbol: str,
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/compare-annual-profit-growth-to-inflation")
-def compare_annual_profit_growth_to_inflation(symbol: str,
+@limiter.limit("60/minute")
+def compare_annual_profit_growth_to_inflation(request: Request, symbol: str,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -495,7 +524,8 @@ def compare_annual_profit_growth_to_inflation(symbol: str,
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/ev-to-ebit")
-def ev_to_ebit(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def ev_to_ebit(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -513,7 +543,8 @@ def ev_to_ebit(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/ev-to-ebitda")
-def ev_to_ebitda(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def ev_to_ebitda(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -531,7 +562,8 @@ def ev_to_ebitda(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/price-to-ebit")
-def price_to_ebit(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def price_to_ebit(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -549,7 +581,8 @@ def price_to_ebit(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/roic")
-def roic(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def roic(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -567,7 +600,8 @@ def roic(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/net-current-assets")
-def net_current_assets(symbol: str, frequency: str = "annual",
+@limiter.limit("60/minute")
+def net_current_assets(request: Request, symbol: str, frequency: str = "annual",
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -585,7 +619,9 @@ def net_current_assets(symbol: str, frequency: str = "annual",
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-market-cap")
+@limiter.limit("60/minute")
 def historical_market_cap(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -624,7 +660,9 @@ def historical_market_cap(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-enterprise-value")
+@limiter.limit("60/minute")
 def historical_enterprise_value(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -661,7 +699,9 @@ def historical_enterprise_value(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-sales")
+@limiter.limit("60/minute")
 def historical_sales(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -698,7 +738,9 @@ def historical_sales(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-ebit")
+@limiter.limit("60/minute")
 def historical_ebit(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -735,7 +777,9 @@ def historical_ebit(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-ebitda")
+@limiter.limit("60/minute")
 def historical_ebitda(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -774,7 +818,9 @@ def historical_ebitda(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-net-current-assets")
+@limiter.limit("60/minute")
 def historical_net_current_assets(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -811,7 +857,9 @@ def historical_net_current_assets(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-operating-cashflow")
+@limiter.limit("60/minute")
 def historical_operating_cashflow(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -848,7 +896,9 @@ def historical_operating_cashflow(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-free-cashflow")
+@limiter.limit("60/minute")
 def historical_free_cashflow(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -887,7 +937,9 @@ def historical_free_cashflow(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-tangible-book-value")
+@limiter.limit("60/minute")
 def historical_tangible_book_value(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -930,7 +982,9 @@ def historical_tangible_book_value(
 
 
 @router.get("/historical-ev-sales")
+@limiter.limit("60/minute")
 def historical_ev_sales(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -967,7 +1021,9 @@ def historical_ev_sales(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-ev-ebit")
+@limiter.limit("60/minute")
 def historical_ev_ebit(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1004,7 +1060,9 @@ def historical_ev_ebit(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-ev-ebitda")
+@limiter.limit("60/minute")
 def historical_ev_ebitda(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1041,7 +1099,9 @@ def historical_ev_ebitda(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-price-to-book")
+@limiter.limit("60/minute")
 def historical_price_to_book(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1082,7 +1142,9 @@ def historical_price_to_book(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-price-to-sales")
+@limiter.limit("60/minute")
 def historical_price_to_sales(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1122,7 +1184,9 @@ def historical_price_to_sales(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-price-to-ebit")
+@limiter.limit("60/minute")
 def historical_price_to_ebit(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1163,7 +1227,9 @@ def historical_price_to_ebit(
 
 
 @router.get("/historical-price-to-net-current-assets")
+@limiter.limit("60/minute")
 def historical_price_to_net_current_assets(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1203,7 +1269,9 @@ def historical_price_to_net_current_assets(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-price-to-operating-cashflow")
+@limiter.limit("60/minute")
 def historical_price_to_operating_cashflow(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1243,7 +1311,9 @@ def historical_price_to_operating_cashflow(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-price-to-free-cashflow")
+@limiter.limit("60/minute")
 def historical_price_to_free_cashflow(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1285,7 +1355,9 @@ def historical_price_to_free_cashflow(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/historical-price-to-tangible-book-value")
+@limiter.limit("60/minute")
 def historical_price_to_tangible_book_value(
+    request: Request,
     symbol: str,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -1325,7 +1397,8 @@ def historical_price_to_tangible_book_value(
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/tbv-bandwidth")
-def tbv_bandwidth(symbol: str, min_years: float = 10.0,
+@limiter.limit("60/minute")
+def tbv_bandwidth(request: Request, symbol: str, min_years: float = 10.0,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -1361,7 +1434,8 @@ def tbv_bandwidth(symbol: str, min_years: float = 10.0,
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/ebit-bandwidth")
-def ebit_bandwidth(symbol: str, min_years: float = 10.0,
+@limiter.limit("60/minute")
+def ebit_bandwidth(request: Request, symbol: str, min_years: float = 10.0,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()
@@ -1396,7 +1470,8 @@ def ebit_bandwidth(symbol: str, min_years: float = 10.0,
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
 
 @router.get("/crv")
-def crv(symbol: str,
+@limiter.limit("60/minute")
+def crv(request: Request, symbol: str,
     current_user: User = Depends(require_analysis_access),
 ):
     action = get_action()

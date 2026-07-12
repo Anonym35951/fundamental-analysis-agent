@@ -26,6 +26,11 @@ export default function SourceBadge({ symbol, frequency = "annual" }: Props) {
 
   useEffect(() => {
     let isMounted = true;
+    // Alten Badge-Stand sofort löschen, bevor der neue Fetch für ein
+    // gewechseltes Symbol/Frequenz startet - sonst würde kurzzeitig die
+    // Quelle des VORHERIGEN Symbols neben dem neuen Analyseergebnis stehen
+    // (LAUNCH_AUDIT.md P2-10, legitimer Reset-bei-Props-Wechsel-Fall).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSummary(null);
 
     if (!symbol) return undefined;

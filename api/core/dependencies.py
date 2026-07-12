@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from api.utils.time import utcnow
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -110,7 +111,7 @@ def _next_monthly_reset_date() -> str:
     (try_consume_monthly_request_quota, usage_period_start) — dieses Datum
     ist rein informativ fürs Frontend und unabhängig vom gespeicherten
     Zählerstand immer korrekt, da beide auf demselben Kalendermonat basieren."""
-    now = datetime.utcnow()
+    now = utcnow()
     if now.month == 12:
         reset_day = date(now.year + 1, 1, 1)
     else:

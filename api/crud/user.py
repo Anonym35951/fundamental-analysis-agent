@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from api.utils.time import utcnow
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -37,7 +38,7 @@ def create_user(
     terms_version: str,
     privacy_version: str,
 ):
-    now = datetime.utcnow()
+    now = utcnow()
     user = User(
         email=email,
         hashed_password=hash_password(password),

@@ -3,11 +3,12 @@
 Suche/-Details, Notizen und Aktivitaets-Timeline. Kein Sales-Pipeline/Lead-
 Stage-System - Notizen decken Freitext-Kontext ab, passend zur Projektgroesse.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from api.core.dependencies import get_db, require_admin
+from api.core.rate_limit import limiter
 from api.crud.customer_note import create_note, get_notes_for_user
 from api.models.product_event import ProductEvent
 from api.models.user import User
@@ -18,6 +19,7 @@ from api.schemas.customer import (
     CustomerNoteResponse,
     UpdateCustomerPlanRequest,
 )
+from api.services.event_service import log_event
 from api.services.user_service import (
     StripeCancellationError,
     delete_user_account,
@@ -29,7 +31,9 @@ router = APIRouter(prefix="/admin/customers", tags=["admin-customers"])
 
 
 @router.get("", response_model=list[CustomerListItem])
+@limiter.limit("20/minute")
 def list_customers(
+    request: Request,
     search: str | None = Query(default=None),
     plan: str | None = Query(default=None),
     db: Session = Depends(get_db),
@@ -55,19 +59,32 @@ def list_customers(
 
 
 @router.get("/{user_id}", response_model=CustomerDetail)
+@limiter.limit("20/minute")
 def get_customer(
+    request: Request,
     user_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_admin: User = Depends(require_admin),
 ):
     customer = db.query(User).filter(User.id == user_id).first()
     if customer is None:
         raise HTTPException(status_code=404, detail="Customer not found")
+    # Audit-Log für CRM-Zugriffe (LAUNCH.md P2-21) - wer hat wann in wessen
+    # Kundendaten reingeschaut. Nur der Zugriffszeitpunkt/die Akteure, keine
+    # Kopie der eingesehenen Daten selbst.
+    log_event(
+        db,
+        "admin_customer_viewed",
+        user_id=current_admin.id,
+        metadata={"viewed_user_id": user_id},
+    )
     return customer
 
 
 @router.get("/{user_id}/notes", response_model=list[CustomerNoteResponse])
+@limiter.limit("20/minute")
 def list_customer_notes(
+    request: Request,
     user_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
@@ -76,7 +93,9 @@ def list_customer_notes(
 
 
 @router.post("/{user_id}/notes", response_model=CustomerNoteResponse)
+@limiter.limit("20/minute")
 def add_customer_note(
+    request: Request,
     user_id: int,
     data: CustomerNoteCreate,
     db: Session = Depends(get_db),
@@ -89,7 +108,9 @@ def add_customer_note(
 
 
 @router.get("/{user_id}/activity")
+@limiter.limit("20/minute")
 def get_customer_activity(
+    request: Request,
     user_id: int,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
@@ -121,7 +142,9 @@ ADMIN_ASSIGNABLE_PLANS = {"free", "friends", "pro"}
 
 
 @router.post("/{user_id}/plan", response_model=CustomerDetail)
+@limiter.limit("20/minute")
 def update_customer_plan(
+    request: Request,
     user_id: int,
     data: UpdateCustomerPlanRequest,
     db: Session = Depends(get_db),
@@ -147,7 +170,9 @@ def update_customer_plan(
 
 
 @router.post("/{user_id}/reset-usage", response_model=CustomerDetail)
+@limiter.limit("20/minute")
 def reset_customer_usage(
+    request: Request,
     user_id: int,
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_admin),
@@ -168,7 +193,9 @@ def reset_customer_usage(
 
 
 @router.delete("/{user_id}", status_code=204)
+@limiter.limit("20/minute")
 def delete_customer(
+    request: Request,
     user_id: int,
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_admin),

@@ -712,7 +712,20 @@ class SecSource:
             }
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_company_facts(self, symbol: str, use_cache: bool = True):
+        """LAUNCH_AUDIT.md P2-12: @retry war hier wirkungslos, weil ein
+        umschließendes try/except JEDE Exception (auch transiente
+        Netzwerkfehler auf dem echten requests.get-Call) abfing, bevor der
+        Decorator sie je sehen konnte - der Choke-Point hinter praktisch
+        jedem SEC-Datenpfad (get_balance_sheet, get_stock_financials,
+        get_cashflow_statement usw. rufen alle transitiv hierher durch).
+        Jetzt propagieren echte Fehler zum Decorator; nur das bewusste
+        "CIK nicht gefunden"-Dict von get_cik bleibt ein normaler
+        Rückgabewert (kein transienter Fehler, kein Retry sinnvoll). Aufrufer
+        weiter oben (z. B. get_balance_sheet) haben weiterhin ihr eigenes
+        try/except und liefern nach erschöpften Retries unverändert ein
+        {"error": ...}-Dict, kein rohes RetryError."""
         symbol = symbol.upper().strip()
         cache_key = f"{symbol}_companyfacts"
 
@@ -721,47 +734,42 @@ class SecSource:
             if cached is not None:
                 return cached
 
-        try:
-            cik = self.get_cik(symbol)
-            if isinstance(cik, dict) and "error" in cik:
-                return cik
+        cik = self.get_cik(symbol)
+        if isinstance(cik, dict) and "error" in cik:
+            return cik
 
-            url = f"{self.base_url}/CIK{cik}.json"
-            response = requests.get(url, headers=self._headers(), timeout=30)
-            response.raise_for_status()
+        url = f"{self.base_url}/CIK{cik}.json"
+        response = requests.get(url, headers=self._headers(), timeout=30)
+        response.raise_for_status()
 
-            data = response.json()
+        data = response.json()
 
-            if use_cache:
-                self._cache_data(data, cache_key)
+        if use_cache:
+            self._cache_data(data, cache_key)
 
-            return data
-
-        except Exception as e:
-            return {"error": f"Fehler beim Abrufen der SEC Company Facts für {symbol}: {describe_exception(e)}", "symbol": symbol}
+        return data
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_cik(self, symbol: str):
+        """Gleiches P2-12-Muster wie get_company_facts: der echte
+        Netzwerk-Call (Ticker->CIK-Mapping) propagiert jetzt zu @retry; nur
+        "Symbol nicht in der Liste" bleibt ein Dict statt einer Exception."""
         symbol = symbol.upper().strip()
         cache_key = "sec_company_tickers"
 
-        try:
-            cached = self._load_cached_data(cache_key, max_age=timedelta(days=30))
+        cached = self._load_cached_data(cache_key, max_age=timedelta(days=30))
 
-            if cached is None:
-                response = requests.get(self.ticker_url, headers=self._headers(), timeout=30)
-                response.raise_for_status()
-                cached = response.json()
-                self._cache_data(cached, cache_key)
+        if cached is None:
+            response = requests.get(self.ticker_url, headers=self._headers(), timeout=30)
+            response.raise_for_status()
+            cached = response.json()
+            self._cache_data(cached, cache_key)
 
-            for item in cached.values():
-                if item.get("ticker", "").upper() == symbol:
-                    return str(item["cik_str"]).zfill(10)
+        for item in cached.values():
+            if item.get("ticker", "").upper() == symbol:
+                return str(item["cik_str"]).zfill(10)
 
-            return {"error": f"Kein SEC-CIK für Symbol {symbol} gefunden.", "symbol": symbol}
-
-        except Exception as e:
-            return {"error": f"Fehler beim Abrufen des CIK für {symbol}: {describe_exception(e)}", "symbol": symbol}
+        return {"error": f"Kein SEC-CIK für Symbol {symbol} gefunden.", "symbol": symbol}
 
     def get_latest_filing(self, symbol: str, use_cache: bool = True) -> Dict[str, Any]:
         """Liefert die zuletzt eingereichte 10-K/10-Q-Meldung für ein Symbol —

@@ -17,6 +17,7 @@ from datetime import datetime
 import pytest
 import stripe
 from fastapi import HTTPException
+from starlette.requests import Request
 
 import api.services.user_service as user_service
 from api.core.dependencies import require_admin
@@ -57,6 +58,23 @@ def _make_user(db, **kwargs) -> User:
     db.commit()
     db.refresh(user)
     return user
+
+
+def _fake_request() -> Request:
+    """Minimaler ASGI-Scope für einen direkten (Nicht-HTTP-)Aufruf der
+    Route-Funktion - seit LAUNCH.md P2-21 verlangt @limiter.limit ein
+    echtes starlette.requests.Request-Objekt als `request`-Parameter."""
+    scope = {
+        "type": "http",
+        "method": "DELETE",
+        "path": "/admin/customers/1",
+        "headers": [],
+        "client": ("testclient", 12345),
+        "server": ("testserver", 80),
+        "scheme": "http",
+        "query_string": b"",
+    }
+    return Request(scope)
 
 
 def _add_child_rows(db, user_id: int):
@@ -202,7 +220,7 @@ def test_delete_customer_happy_path_logs_admin_metadata(db_full, monkeypatch):
     target_id = target.id
     _add_child_rows(db_full, target_id)
 
-    delete_customer(user_id=target_id, db=db_full, current_admin=admin)
+    delete_customer(request=_fake_request(), user_id=target_id, db=db_full, current_admin=admin)
 
     assert _count_rows_for_user(db_full, target_id)["user"] == 0
     events = _account_deleted_events(db_full)
@@ -218,7 +236,7 @@ def test_delete_customer_unknown_id_returns_404(db_full):
     admin = _make_user(db_full, email="admin@x.com", plan="admin")
 
     with pytest.raises(HTTPException) as exc_info:
-        delete_customer(user_id=999999, db=db_full, current_admin=admin)
+        delete_customer(request=_fake_request(), user_id=999999, db=db_full, current_admin=admin)
 
     assert exc_info.value.status_code == 404
 
@@ -227,7 +245,7 @@ def test_delete_customer_blocks_self_deletion(db_full):
     admin = _make_user(db_full, email="admin@x.com", plan="admin")
 
     with pytest.raises(HTTPException) as exc_info:
-        delete_customer(user_id=admin.id, db=db_full, current_admin=admin)
+        delete_customer(request=_fake_request(), user_id=admin.id, db=db_full, current_admin=admin)
 
     assert exc_info.value.status_code == 400
     assert db_full.query(User).filter(User.id == admin.id).count() == 1
@@ -240,7 +258,7 @@ def test_delete_customer_blocks_other_admin_accounts(db_full):
     other_admin = _make_user(db_full, email="admin2@x.com", plan="admin")
 
     with pytest.raises(HTTPException) as exc_info:
-        delete_customer(user_id=other_admin.id, db=db_full, current_admin=admin)
+        delete_customer(request=_fake_request(), user_id=other_admin.id, db=db_full, current_admin=admin)
 
     assert exc_info.value.status_code == 400
     assert db_full.query(User).filter(User.id == other_admin.id).count() == 1
@@ -258,7 +276,7 @@ def test_delete_customer_stripe_failure_returns_502_and_keeps_user(db_full, monk
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        delete_customer(user_id=target.id, db=db_full, current_admin=admin)
+        delete_customer(request=_fake_request(), user_id=target.id, db=db_full, current_admin=admin)
 
     assert exc_info.value.status_code == 502
     assert db_full.query(User).filter(User.id == target.id).count() == 1

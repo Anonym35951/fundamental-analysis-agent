@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta
+from api.utils.time import utcnow
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 import stripe
@@ -305,7 +306,7 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
 
                 elif status in ["past_due", "unpaid"]:
                     user.billing_status = "past_due"
-                    user.grace_until = datetime.utcnow() + timedelta(hours=24)
+                    user.grace_until = utcnow() + timedelta(hours=24)
 
                 elif status in ["canceled", "incomplete_expired"]:
                     user.billing_status = "canceled"
@@ -581,7 +582,7 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
 
             if user is not None:
                 user.billing_status = "past_due"
-                user.grace_until = datetime.utcnow() + timedelta(hours=24)
+                user.grace_until = utcnow() + timedelta(hours=24)
 
                 db.commit()
                 db.refresh(user)
@@ -620,7 +621,7 @@ async def stripe_webhook(request: Request, background_tasks: BackgroundTasks):
 
             if user is not None:
                 user.billing_status = "past_due"
-                user.grace_until = datetime.utcnow() + timedelta(hours=24)
+                user.grace_until = utcnow() + timedelta(hours=24)
 
                 db.commit()
                 db.refresh(user)

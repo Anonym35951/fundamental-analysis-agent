@@ -31,6 +31,10 @@ function CancelSubscriptionModal({
   useEffect(() => {
     if (!isOpen) return;
 
+    // Formular-/Rückblick-Stand vom vorherigen Öffnen zurücksetzen, bevor
+    // der neue Fetch startet (LAUNCH_AUDIT.md P2-10, legitimer
+    // Reset-bei-Props-Wechsel-Fall).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSummary(null);
     setReason("");
 

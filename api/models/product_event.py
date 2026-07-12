@@ -1,4 +1,5 @@
 from datetime import datetime
+from api.utils.time import utcnow
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -37,5 +38,5 @@ class ProductEvent(Base):
     event_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        DateTime, default=utcnow, nullable=False, index=True
     )

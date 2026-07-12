@@ -18,6 +18,12 @@ export function useMediaQuery(query: string): boolean {
     const mediaQueryList = window.matchMedia(query);
     const listener = (event: MediaQueryListEvent) => setMatches(event.matches);
 
+    // Nicht redundant zum useState-Initializer oben: der läuft nur einmal
+    // beim Mount, dieser Sync greift, wenn `query` sich zwischen Renders
+    // ändert (das [query]-Dependency-Array unten) - ohne ihn würde `matches`
+    // bis zur nächsten "change"-Media-Query-Änderung den alten Query-Wert
+    // zeigen (LAUNCH_AUDIT.md P2-10, legitimer Sync-zu-externem-Zustand-Fall).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMatches(mediaQueryList.matches);
     mediaQueryList.addEventListener("change", listener);
 

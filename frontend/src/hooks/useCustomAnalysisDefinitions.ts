@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useToast } from "../components/ui/Toast";
+import { useToast } from "../components/ui/useToast";
 import { getCurrentUser } from "../api/auth";
 import {
   createDefinition,
@@ -40,7 +40,7 @@ export function useCustomAnalysisDefinitions() {
 
   useEffect(() => {
     refreshUsage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   useEffect(() => {

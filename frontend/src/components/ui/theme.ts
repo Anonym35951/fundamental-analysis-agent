@@ -1,4 +1,4 @@
-import { useThemeMode } from "./ThemeModeContext";
+import { useThemeMode } from "./useThemeMode";
 
 /** Shared design tokens for the monochrome / chrome visual system.
  * Color values resolve through CSS custom properties so the same token

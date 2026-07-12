@@ -63,8 +63,14 @@ function AppLayoutInner() {
   // screen too small to appreciate the animation. isMobile above is already
   // resolved synchronously (useIsMobile reads matchMedia in its own useState
   // initializer), so it's safe to read here in the same render.
+  // Direkter sessionStorage-Read statt hadIntroFlag.current hier
+  // (LAUNCH_AUDIT.md P2-10, react-hooks/refs) - ein Ref-Zugriff innerhalb
+  // eines useState-Lazy-Initializers gilt als Ref-Lesung während des
+  // Renders. sessionStorage.getItem ist ebenso eine reine, wiederholbare
+  // Lesung (kein Löschen hier), also unproblematisch bei StrictMode-
+  // Doppel-Invocation. Der Ref bleibt für den Cleanup-Effect unten bestehen.
   const [showIntro] = useState(() => {
-    if (!hadIntroFlag.current) return false;
+    if (sessionStorage.getItem("show_intro") !== "1") return false;
     const prefersReducedMotion =
       window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
     return !prefersReducedMotion && !isMobile;
@@ -81,7 +87,12 @@ function AppLayoutInner() {
   useEffect(() => {
     // Auf Mobile bleibt die Sidebar als Off-Canvas-Drawer immer initial
     // geschlossen, unabhängig von der gespeicherten Desktop-Präferenz.
+    // Sync zu einem sich ändernden externen Zustand (isMobile via
+    // matchMedia), kein waehrend des Renders ableitbarer Wert - isCollapsed
+    // wird auch direkt vom Nutzer (handleToggleSidebar) verändert
+    // (LAUNCH_AUDIT.md P2-10).
     if (isMobile) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsSidebarCollapsed(true);
     }
   }, [isMobile]);
@@ -98,6 +109,10 @@ function AppLayoutInner() {
   useEffect(() => {
     if (!isMobile || !isTourRunning) return;
     const shouldBeOpen = Boolean(currentStepData?.requireSidebarOpen);
+    // Sync zu externem, sich änderndem Tour-Zustand + zusätzlicher
+    // Seiteneffekt (Resize-Event unten) - kein reiner Ableitungsfall
+    // (LAUNCH_AUDIT.md P2-10).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsSidebarCollapsed(!shouldBeOpen);
     if (shouldBeOpen) {
       // Die Sidebar öffnet per CSS-Transition (~0.22s, siehe AppSidebar.tsx);

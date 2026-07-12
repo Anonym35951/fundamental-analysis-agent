@@ -136,6 +136,21 @@ function buildSitemap(entries: GlossaryEntry[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urlEntries}\n</urlset>\n`;
 }
 
+// LAUNCH.md P2-21: robots.txt fehlte komplett. /app/* (authenticated,
+// clientseitig gerendert) und die Token-in-Query-Param-Flows sind fürs
+// Crawlen wertlos bzw. sollen keine Tokens über Referrer/Suchindex
+// verlieren - alles andere (Landing, Pricing, Glossar, Legal) bleibt offen.
+function buildRobotsTxt(): string {
+  return [
+    "User-agent: *",
+    "Disallow: /app/",
+    "Disallow: /verify-email",
+    "Disallow: /reset-password",
+    `Sitemap: ${SITE_URL}/sitemap.xml`,
+    "",
+  ].join("\n");
+}
+
 function main() {
   const entries: GlossaryEntry[] = Object.entries(METRICS_CONFIG)
     .filter(([, config]) => Boolean(config.description))
@@ -157,6 +172,7 @@ function main() {
 
   writeFileSync(join(GLOSSARY_DIR, "index.html"), renderIndexPage(entries), "utf-8");
   writeFileSync(join(DIST_DIR, "sitemap.xml"), buildSitemap(entries), "utf-8");
+  writeFileSync(join(DIST_DIR, "robots.txt"), buildRobotsTxt(), "utf-8");
 
   console.log(`Glossar generiert: ${entries.length} Kennzahl-Seiten unter dist/glossar/`);
 }

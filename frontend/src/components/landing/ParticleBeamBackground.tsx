@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useThemeMode } from "../ui/ThemeModeContext";
+import { useThemeMode } from "../ui/useThemeMode";
 
 type Particle = {
   /** Normalized horizontal position within the beam (-1..1), independent of
@@ -76,7 +76,7 @@ export default function ParticleBeamBackground({ densityMultiplier = 1 }: Partic
 
     let width = 0;
     let height = 0;
-    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let particles: Particle[] = [];
     let rafId: number | null = null;
     let isVisible = true;

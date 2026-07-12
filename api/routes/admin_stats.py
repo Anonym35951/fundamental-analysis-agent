@@ -3,9 +3,10 @@
 im Frontend). Kein Dritt-Anbieter-Tracking — alle Daten kommen aus
 product_events (api/models/product_event.py) und der users-Tabelle."""
 from datetime import datetime, timedelta
+from api.utils.time import utcnow
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import Date, cast, func
+from sqlalchemy import Date, and_, case, cast, func
 from sqlalchemy.orm import Session
 
 from api.core.dependencies import get_db, require_admin
@@ -105,7 +106,7 @@ def get_activity(
     """DAU/WAU/MAU, gemessen an Nutzern mit mindestens einem Event im
     jeweiligen Zeitraum (jede Aktion zählt, nicht nur Analysen). Schließt
     interne Accounts aus (siehe INTERNAL_PLANS)."""
-    now = datetime.utcnow()
+    now = utcnow()
     internal_ids = _internal_user_ids_subquery(db)
 
     def active_users_since(delta: timedelta) -> int:
@@ -137,8 +138,19 @@ def get_daily_activity(
     _: User = Depends(require_admin),
 ):
     """Zeitreihe für Recharts: Registrierungen und gestartete Analysen pro
-    Tag. Schließt interne Accounts aus (siehe INTERNAL_PLANS)."""
-    since = datetime.utcnow() - timedelta(days=days)
+    Tag. Schließt interne Accounts aus (siehe INTERNAL_PLANS).
+
+    Bekannte Einschränkung (LAUNCH.md P2-21): Tagesgrenzen laufen auf UTC-
+    Kalendertagen (cast auf Date, kein Zeitzonen-Offset), für ein
+    DE-Produkt also um 1-2h verschoben (CET/CEST je nach Sommerzeit) -
+    Events kurz vor/nach Mitternacht Berlin-Zeit können im falschen
+    Tages-Balken landen. Bewusst nicht auf Europe/Berlin umgestellt: die
+    korrekte Umrechnung müsste die DST-Umstellung zweimal im Jahr abbilden
+    und in Postgres (Prod) vs. SQLite (Tests) unterschiedlich funktionieren
+    - ein Trend-Chart mit 1-2h-Rand-Unschärfe ist das kleinere Risiko als
+    eine fehlerhafte Zeitzonen-Umrechnung, die sich in den Tests nicht
+    zuverlässig nachstellen lässt."""
+    since = utcnow() - timedelta(days=days)
     day_col = cast(ProductEvent.created_at, Date)
     internal_ids = _internal_user_ids_subquery(db)
 
@@ -170,24 +182,30 @@ def get_daily_activity(
     ]
 
 
-@router.get("/analyses")
-@limiter.limit("20/minute")
-def get_analyses_breakdown(
-    request: Request,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
-):
+def _compute_analyses_breakdown(db: Session) -> dict:
     """Analysen pro Modus + meistanalysierte Symbole. Schließt interne
     Accounts aus (siehe INTERNAL_PLANS) - sonst dominieren eigene Testläufe
-    die "Top Symbole"."""
+    die "Top Symbole". Reine Funktion (kein Request/Depends), damit sie ohne
+    HTTP-Layer testbar ist - Stil wie _compute_subscription_stats."""
     mode_col = ProductEvent.event_metadata["mode"].as_string()
+    source_col = ProductEvent.event_metadata["source"].as_string()
     symbol_col = ProductEvent.event_metadata["symbol"].as_string()
     base_query = _external_events(db, "analysis_started")
 
+    # Compare startet Jobs über denselben "custom"-Endpunkt wie der
+    # Custom-Analysis-Builder (siehe custom_analysis.py::_launch_custom_job)
+    # - ohne diese Fallunterscheidung waren beide im Modus-Chart nicht
+    # unterscheidbar (LAUNCH.md P2-17). Events vor dieser Änderung haben kein
+    # "source"-Feld -> source_col ist NULL -> fällt korrekt auf "custom".
+    effective_mode_col = case(
+        (and_(mode_col == "custom", source_col == "compare"), "compare"),
+        else_=mode_col,
+    )
+
     by_mode = (
         base_query
-        .with_entities(mode_col.label("mode"), func.count(ProductEvent.id).label("count"))
-        .group_by(mode_col)
+        .with_entities(effective_mode_col.label("mode"), func.count(ProductEvent.id).label("count"))
+        .group_by(effective_mode_col)
         .order_by(func.count(ProductEvent.id).desc())
         .all()
     )
@@ -205,6 +223,16 @@ def get_analyses_breakdown(
         "by_mode": [{"mode": mode, "count": count} for mode, count in by_mode],
         "top_symbols": [{"symbol": symbol, "count": count} for symbol, count in top_symbols],
     }
+
+
+@router.get("/analyses")
+@limiter.limit("20/minute")
+def get_analyses_breakdown(
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    return _compute_analyses_breakdown(db)
 
 
 def _compute_subscription_stats(db: Session) -> dict:
@@ -265,7 +293,7 @@ def _compute_subscription_stats(db: Session) -> dict:
                 unknown_interval_count += 1
         # billing_status == "canceled": kein Umsatz, bewusst ignoriert.
 
-    since_30d = datetime.utcnow() - timedelta(days=30)
+    since_30d = utcnow() - timedelta(days=30)
 
     churned_last_30d = (
         db.query(func.count(func.distinct(ProductEvent.user_id)))

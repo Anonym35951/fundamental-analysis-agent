@@ -21,7 +21,7 @@ import { getCurrentUser } from "../../api/auth";
 import { getFavorites, type FavoriteEntry } from "../../api/favorites";
 import { useIsMobile } from "../../hooks/useMediaQuery";
 import { theme } from "../ui/theme";
-import { useThemeMode } from "../ui/ThemeModeContext";
+import { useThemeMode } from "../ui/useThemeMode";
 import LivePriceBadge from "../shared/LivePriceBadge";
 
 type AppSidebarProps = {

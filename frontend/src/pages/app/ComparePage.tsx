@@ -7,7 +7,7 @@ import MetricCatalogPicker from "../../components/customAnalysis/MetricCatalogPi
 import MultiLayerChart, { type ChartLayer } from "../../components/charts/MultiLayerChart";
 import ComparePivotTable from "../../components/compare/ComparePivotTable";
 import SymbolSuggestField from "../../components/compare/SymbolSuggestField";
-import { useCompare } from "../../hooks/useCompare";
+import { useCompare } from "../../hooks/useCompareContext";
 import { useLivePrice } from "../../hooks/useLivePrice";
 import { getCompanyColor, mapCompanyComplexMetrics, mapCompanyMetricsToLayers } from "../../compare/mapping";
 import CrvTargetPanel from "../../components/metrics/CrvTargetPanel";
@@ -67,8 +67,14 @@ function ComparePage() {
   // Only seed the two empty input rows on a truly fresh workspace — if
   // companies were already restored from localStorage, showing extra blank
   // rows on every reload would duplicate what "+ Weiteres Unternehmen
-  // hinzufügen" is for.
-  const [draftRows, setDraftRows] = useState<DraftRow[]>(() => (companies.length === 0 ? [newDraft(), newDraft()] : []));
+  // hinzufügen" is for. Fixed negative ids instead of calling newDraft()
+  // here (LAUNCH_AUDIT.md P2-10, react-hooks/refs) - reading nextDraftId.current
+  // inside a useState lazy initializer is flagged as a ref access during
+  // render; -1/-2 can never collide with the ref-based ids newDraft()
+  // produces later (0, 1, 2, ...).
+  const [draftRows, setDraftRows] = useState<DraftRow[]>(() =>
+    companies.length === 0 ? [{ id: -1, value: "" }, { id: -2, value: "" }] : []
+  );
 
   // MetricCatalogPicker only seeds its internal selection from
   // `initialMetrics` once at mount — bumping this key forces a remount so
@@ -91,6 +97,9 @@ function ComparePage() {
 
   useEffect(() => {
     let isMounted = true;
+    // Klassisches Loading-Flag vor einem Fetch - legitimer Effect-Zweck
+    // (LAUNCH_AUDIT.md P2-10).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsLoadingCatalog(true);
     setCatalogError(false);
     getCustomMetricsCatalog()

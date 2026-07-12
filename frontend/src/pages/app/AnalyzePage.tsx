@@ -199,7 +199,7 @@ function AnalyzePage() {
       setSelectedDefinition(definition);
       setAdHocMetrics(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [searchParams, isLoadingDefinitions, definitions]);
 
   function handleSelectCustomDefinition(definition: CustomAnalysisDefinition) {

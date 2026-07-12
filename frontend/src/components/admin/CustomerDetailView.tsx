@@ -16,7 +16,7 @@ import {
 import { theme } from "../ui/theme";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
-import { useToast } from "../ui/Toast";
+import { useToast } from "../ui/useToast";
 import { calculateAge } from "../../lib/age";
 import { panel, panelTitle, emptyState } from "./adminTableStyles";
 

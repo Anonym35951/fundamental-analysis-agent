@@ -7,5 +7,6 @@ export { default as ParallaxCard } from "./ParallaxCard";
 export { default as StackedCards } from "./StackedCards";
 export { default as Modal } from "./Modal";
 export { default as InfoTooltip } from "./InfoTooltip";
-export { ToastProvider, useToast } from "./Toast";
+export { ToastProvider } from "./Toast";
+export { useToast } from "./useToast";
 export { theme } from "./theme";

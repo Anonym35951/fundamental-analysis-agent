@@ -26,3 +26,58 @@ jobs:
 
       - name: Run engine + API regression tests
         run: python -m pytest agent/tests/ api/tests/ -v
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check + production build
+        # Blockierend - ein kaputter Build heißt, das Deploy-Artefakt (Render
+        # Static Site) ist kaputt. LAUNCH_AUDIT.md P2-9: CI führte bisher
+        # weder Frontend-Build noch Lint aus.
+        run: npm run build
+
+      - name: ESLint
+        # Blockierend seit LAUNCH_AUDIT.md P2-10 behoben ist (19 Errors/3
+        # Warnings auf 0 gebracht) - neue Verstöße sollen den Merge jetzt
+        # verhindern statt nur informativ im Log zu stehen.
+        run: npm run lint
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install scanners
+        run: pip install bandit pip-audit
+
+      - name: Bandit (static security lint, Python)
+        # Nur Medium+ Severity blockiert den Build - siehe LAUNCH.md P2-21:
+        # ~368 Low-Severity-Funde (Erstlauf) sind zu viel unsortiertes Rauschen
+        # für einen Merge-Blocker. Medium+ (aktuell 0, siehe Umsetzungsnotiz)
+        # bleibt hart, damit neue reale Findings nicht unbemerkt einziehen.
+        run: bandit -r api/ agent/ -ll
+
+      - name: pip-audit (bekannte CVEs in Dependencies)
+        # Informativ statt blockierend: der Erstlauf fand 40 bekannte CVEs in
+        # 14 Paketen, viele mit Major-Version-Fixes (z. B. pydantic-settings,
+        # starlette) die gezielte Kompatibilitätstests brauchen, keinen
+        # blinden CI-Block. Ergebnis bleibt trotzdem sichtbar im Job-Log.
+        run: pip-audit -r requirements.txt || true

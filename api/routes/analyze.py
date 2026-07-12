@@ -240,7 +240,7 @@ def start_single_analysis(
     mode: str,
     symbol: str = Query(...),
     frequency: str = Query("annual"),
-    current_user: User = Depends(require_analysis_access),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     registry = get_analysis_registry()
@@ -248,11 +248,16 @@ def start_single_analysis(
     if mode not in registry:
         raise HTTPException(status_code=404, detail="Unknown analysis mode")
 
+    # Active-Jobs-Check VOR dem Quota-Verbrauch (LAUNCH_AUDIT.md P2-3) - vorher
+    # verbrauchte Depends(require_analysis_access) das Kontingent schon, bevor
+    # dieser 429-Check überhaupt lief (ebenso beim unbekannten-Modus-404 oben).
     if (
         job_manager.count_active_jobs(current_user.id)
         >= job_manager.max_active_jobs_per_user
     ):
         raise HTTPException(status_code=429, detail=TOO_MANY_ACTIVE_JOBS_DETAIL)
+
+    require_analysis_access(db, current_user)
 
     symbol = _norm_symbol(symbol)
     pretty_name = DISPLAY_NAME.get(mode, mode)

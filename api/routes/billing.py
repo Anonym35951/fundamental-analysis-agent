@@ -29,6 +29,25 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 
 logger = logging.getLogger(__name__)
 
+
+def _modify_and_reload_subscription(modify_fn, stripe_subscription_id: str):
+    """Ruft `modify_fn(stripe_subscription_id)` auf und lädt das Abo danach
+    frisch via `stripe.Subscription.retrieve` nach - beide Stripe-Calls
+    zusammen abgesichert (LAUNCH_AUDIT.md P2-7). Vorher liefen sie unguarded:
+    ein Stripe-Ausfall wurde ein roher 500 statt eines verständlichen 502
+    (Kontrast: user_service.py::delete_user_account fängt Stripe-Fehler ab)."""
+    try:
+        modify_fn(stripe_subscription_id)
+        return stripe.Subscription.retrieve(stripe_subscription_id)
+    except stripe.error.StripeError:
+        logger.exception(
+            "Stripe-Aufruf fehlgeschlagen für subscription_id=%s", stripe_subscription_id
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Zahlungsanbieter vorübergehend nicht erreichbar. Bitte später erneut versuchen.",
+        )
+
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
@@ -92,6 +111,7 @@ def billing_usage_summary(
 @router.post("/create-portal-session")
 def billing_create_portal_session(
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     if not current_user.stripe_customer_id:
         raise HTTPException(status_code=400, detail="No Stripe customer found")
@@ -100,6 +120,8 @@ def billing_create_portal_session(
         customer=current_user.stripe_customer_id,
         return_url=f"{settings.FRONTEND_URL}/app/account",
     )
+
+    log_event(db, "billing_portal_opened", user_id=current_user.id)
 
     return {"url": session.url}
 
@@ -117,9 +139,7 @@ def billing_cancel_subscription(
     if not current_user.stripe_subscription_id:
         raise HTTPException(status_code=400, detail="No active subscription found")
 
-    cancel_subscription(current_user.stripe_subscription_id)
-
-    subscription = stripe.Subscription.retrieve(current_user.stripe_subscription_id)
+    subscription = _modify_and_reload_subscription(cancel_subscription, current_user.stripe_subscription_id)
 
     current_period_end_ts = None
     try:
@@ -208,9 +228,7 @@ def billing_resume_subscription(
             detail="Subscription is not scheduled for cancellation",
         )
 
-    resume_subscription(current_user.stripe_subscription_id)
-
-    subscription = stripe.Subscription.retrieve(current_user.stripe_subscription_id)
+    subscription = _modify_and_reload_subscription(resume_subscription, current_user.stripe_subscription_id)
 
     current_period_end_ts = None
     try:

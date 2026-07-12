@@ -202,13 +202,8 @@ def _launch_custom_job(
     frequency: str | None,
     metrics: List[MetricSelection],
     definition_id: int | None,
+    source: str = "custom_builder",
 ) -> str:
-    if (
-        job_manager.count_active_jobs(user.id)
-        >= job_manager.max_active_jobs_per_user
-    ):
-        raise HTTPException(status_code=429, detail=TOO_MANY_ACTIVE_JOBS_DETAIL)
-
     job_id = job_manager.create_job(symbol=symbol, total=len(metrics), user_id=user.id)
     create_history_entry(db, user.id, job_id, symbol, "custom", frequency)
     if definition_id is not None:
@@ -220,6 +215,7 @@ def _launch_custom_job(
         user_id=user.id,
         metadata={
             "mode": "custom",
+            "source": source,
             "frequency": frequency,
             "symbol": symbol,
             "metric_count": len(metrics),
@@ -275,6 +271,10 @@ def _launch_custom_job(
 
 class CustomAnalysisStartRequest(CustomAnalysisDefinitionRunRequest):
     metrics: List[MetricSelection]
+    # Nur fürs Event-Logging (P2-17): unterscheidet Compare-Aufrufe vom
+    # eigentlichen Custom-Analysis-Builder, beide teilen sich sonst denselben
+    # "mode": "custom"-Event und waren im Funnel nicht unterscheidbar.
+    source: str = "custom_builder"
 
 
 @router.post("/start")
@@ -292,10 +292,20 @@ def start_custom_analysis(
     if unknown:
         raise HTTPException(status_code=400, detail=f"Unbekannte Metriken: {', '.join(unknown)}")
 
+    # Active-Jobs-Check VOR dem Quota-Verbrauch (LAUNCH_AUDIT.md P2-3) - der
+    # Check lag vorher in _launch_custom_job, NACH dem Quota-Verbrauch hier.
+    if (
+        job_manager.count_active_jobs(current_user.id)
+        >= job_manager.max_active_jobs_per_user
+    ):
+        raise HTTPException(status_code=429, detail=TOO_MANY_ACTIVE_JOBS_DETAIL)
+
     require_analysis_access_for_units(db, current_user, units=len(payload.metrics))
 
     symbol = _norm_symbol(payload.symbol)
-    job_id = _launch_custom_job(db, current_user, symbol, payload.frequency, payload.metrics, None)
+    job_id = _launch_custom_job(
+        db, current_user, symbol, payload.frequency, payload.metrics, None, source=payload.source
+    )
     return {"job_id": job_id, "symbol": symbol}
 
 
@@ -343,6 +353,12 @@ def create_definition(
 
     metrics_json = [m.model_dump() for m in payload.metrics]
     definition = definitions_crud.create_definition(db, current_user.id, payload.name, metrics_json)
+    log_event(
+        db,
+        "custom_definition_saved",
+        user_id=current_user.id,
+        metadata={"metric_count": len(payload.metrics)},
+    )
     return definition
 
 
@@ -411,6 +427,13 @@ def run_definition(
     definition = definitions_crud.get_definition(db, current_user.id, definition_id)
     if not definition:
         raise HTTPException(status_code=404, detail="Definition not found")
+
+    # Active-Jobs-Check VOR dem Quota-Verbrauch (LAUNCH_AUDIT.md P2-3).
+    if (
+        job_manager.count_active_jobs(current_user.id)
+        >= job_manager.max_active_jobs_per_user
+    ):
+        raise HTTPException(status_code=429, detail=TOO_MANY_ACTIVE_JOBS_DETAIL)
 
     metrics = [MetricSelection(**entry) for entry in definition.metrics]
     require_analysis_access_for_units(db, current_user, units=len(metrics))
