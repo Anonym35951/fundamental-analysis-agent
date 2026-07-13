@@ -6,9 +6,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { startCustomAnalysis, getCustomAnalysisProgress, getCustomAnalysisResult } from "../api/customAnalysis";
 import { ApiError } from "../api/client";
 import type { MetricSelection } from "../types/customAnalysis";
+import { useToast } from "../components/ui/useToast";
 import { CompareContext, type CompanyResult, type CompareContextValue, type CompareFrequency } from "./compareContextValue";
 
 export type { CompanyResult, CompareFrequency } from "./compareContextValue";
@@ -70,6 +72,10 @@ export function CompareProvider({ children }: { children: ReactNode }) {
 
   const runningRef = useRef<Set<string>>(new Set());
   const intervalsRef = useRef<Map<string, number>>(new Map());
+  const lastStatusRef = useRef<Map<string, CompanyResult["status"]>>(new Map());
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { showToast } = useToast();
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ metrics, companies, frequency, hasStarted }));
@@ -82,6 +88,38 @@ export function CompareProvider({ children }: { children: ReactNode }) {
       intervals.clear();
     };
   }, []);
+
+  // Beim Mount aus dem (evtl. aus localStorage wiederhergestellten) Stand
+  // seeden, damit eine bereits "done"-Firma aus einer früheren Session nicht
+  // sofort eine Notification feuert.
+  useEffect(() => {
+    companies.forEach((c) => lastStatusRef.current.set(c.symbol, c.status));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Status-Übergangs-Watcher: "running" -> "done"/"error" während der Nutzer
+  // nicht auf /app/compare ist, löst einen Action-Toast ("Zum Ergebnis") aus
+  // — die Inline-Anzeige auf der Compare-Seite selbst reicht dort, kein
+  // zusätzliches Polling nötig, da rein auf dem bestehenden companies-State
+  // aufgesetzt wird.
+  useEffect(() => {
+    const onComparePage = location.pathname === "/app/compare";
+    companies.forEach((company) => {
+      const prev = lastStatusRef.current.get(company.symbol);
+      if (prev === "running" && company.status !== "running" && !onComparePage) {
+        showToast(
+          company.status === "done"
+            ? `Vergleich für ${company.symbol} ist fertig.`
+            : `Vergleich für ${company.symbol} fehlgeschlagen.`,
+          company.status === "done" ? "success" : "error",
+          company.status === "done"
+            ? { durationMs: 10000, action: { label: "Zum Ergebnis", onClick: () => navigate("/app/compare") } }
+            : undefined
+        );
+      }
+      lastStatusRef.current.set(company.symbol, company.status);
+    });
+  }, [companies, location.pathname, navigate, showToast]);
 
   const updateCompany = useCallback((symbol: string, patch: Partial<CompanyResult>) => {
     setCompanies((prev) => prev.map((c) => (c.symbol === symbol ? { ...c, ...patch } : c)));

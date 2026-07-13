@@ -2,21 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import AnalyzeStickyBar from "../../components/analysis/AnalyzeStickyBar";
 import AnalyzeWorkspace, { type AnalysisTab } from "../../components/analysis/AnalyzeWorkspace";
-import {
-  getProgress,
-  getResult,
-  getSingleProgress,
-  getSingleResult,
-  startFullAnalysis,
-  startSingleAnalysisJob,
-  type AnalysisMode,
-} from "../../api/analysis";
+import type { AnalysisMode } from "../../api/analysis";
 import { useSymbolSearch } from "../../hooks/useSymbolSearch";
 import { addFavorite, getFavorites, removeFavorite } from "../../api/favorites";
-import { getCustomAnalysisProgress, getCustomAnalysisResult, runDefinition, startCustomAnalysis } from "../../api/customAnalysis";
 import { ApiError } from "../../api/client";
-import type { CustomAnalysisDefinition, MetricSelection } from "../../types/customAnalysis";
-import type { FullResult, Progress } from "../../types/analysis";
+import type { CustomAnalysisDefinition, CustomAnalysisResult, MetricSelection } from "../../types/customAnalysis";
+import type { FullResult } from "../../types/analysis";
 import AnalyzeResultsDashboard from "../../components/analysis/AnalyzeResultsDashboard";
 import { theme } from "../../components/ui/theme";
 import { Button, Modal, useToast } from "../../components/ui";
@@ -27,7 +18,8 @@ import CustomAnalysisResultsList from "../../components/customAnalysis/CustomAna
 import LivePriceBadge from "../../components/shared/LivePriceBadge";
 import SourceBadge from "../../components/shared/SourceBadge";
 import { useCustomAnalysisDefinitions } from "../../hooks/useCustomAnalysisDefinitions";
-import { useJobPolling } from "../../hooks/useJobPolling";
+import { useAnalysisJobs } from "../../hooks/useAnalysisJobsContext";
+import type { AnalysisJobKind } from "../../hooks/analysisJobsContextValue";
 import { useFirstRunOnboarding } from "../../hooks/useFirstRunOnboarding";
 import { useTourStatus } from "../../hooks/useTourStatus";
 import { X } from "lucide-react";
@@ -43,6 +35,14 @@ export type RerunPayload = {
   frequency?: string | null;
   definitionId?: number | null;
   metrics?: MetricSelection[];
+};
+
+/** Passed via navigate(..., { state: { viewJob } }) from a job-finished Toast's
+ * "Zum Ergebnis" action — the job is already tracked by AnalysisJobsProvider,
+ * so this only needs to point at it, not carry its data. */
+export type ViewJobPayload = {
+  jobId: string;
+  kind: AnalysisJobKind;
 };
 
 const modeOptions: Array<{
@@ -100,6 +100,9 @@ function AnalyzePage() {
   const [pendingRerun, setPendingRerun] = useState<RerunPayload | null>(
     (location.state as { rerun?: RerunPayload } | null)?.rerun ?? null
   );
+  const [pendingViewJob, setPendingViewJob] = useState<ViewJobPayload | null>(
+    (location.state as { viewJob?: ViewJobPayload } | null)?.viewJob ?? null
+  );
   const [symbol, setSymbol] = useState("");
   const [selectedMode, setSelectedMode] = useState<AnalysisMode>("full");
   const [selectedFrequency, setSelectedFrequency] = useState<"annual" | "quarterly">("annual");
@@ -117,10 +120,18 @@ function AnalyzePage() {
     }
   }, [currentStepData, analysisTab]);
 
+  // Analyse-Job-Tracking lebt global (AnalysisJobsProvider), damit Polling
+  // beim Wegnavigieren weiterläuft und eine Fertig-Notification über die
+  // ganze App hinweg feuern kann — hier nur die Job-ID-Pointer + davon
+  // abgeleiteter Fortschritt/Ergebnis.
+  const { startFullOrSingleJob, startCustomJob, getJob } = useAnalysisJobs();
+
   // Standard-Analyse-Job-State
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [progress, setProgress] = useState<Progress | null>(null);
-  const [result, setResult] = useState<FullResult | null>(null);
+  const [currentStandardJobId, setCurrentStandardJobId] = useState<string | null>(null);
+  const standardJob = getJob(currentStandardJobId);
+  const progress = standardJob?.progress ?? null;
+  const result = (standardJob?.result as FullResult | null) ?? null;
+  const standardJobError = standardJob?.status === "error" ? standardJob.error : null;
 
   // Individuell: gespeicherte Definitionen + Katalog + CRUD
   const {
@@ -157,12 +168,11 @@ function AnalyzePage() {
   }
 
   // Individuell: Job-State (eigener Ad-hoc/Definition-Lauf statt Standard-Job)
-  const [customJobId, setCustomJobId] = useState<string | null>(null);
-  const { progress: customProgress, result: customResult, error: customJobError } = useJobPolling(
-    customJobId,
-    getCustomAnalysisProgress,
-    getCustomAnalysisResult
-  );
+  const [currentCustomJobId, setCurrentCustomJobId] = useState<string | null>(null);
+  const customJob = getJob(currentCustomJobId);
+  const customProgress = customJob?.progress ?? null;
+  const customResult = (customJob?.result as CustomAnalysisResult | null) ?? null;
+  const customJobError = customJob?.status === "error" ? customJob.error : null;
 
   const [isStartingAnalysis, setIsStartingAnalysis] = useState(false);
   const [pageErrorMessage, setPageErrorMessage] = useState("");
@@ -248,83 +258,21 @@ function AnalyzePage() {
     }
   }
 
-  // NUR dieser useEffect wurde korrigiert – alles andere ist unverändert
-
-useEffect(() => {
-  if (!jobId) return;
-
-  let isCancelled = false;
-
-  const interval = window.setInterval(async () => {
-    try {
-      let nextProgress: Progress;
-
-      if (selectedMode === "full") {
-        nextProgress = await getProgress(jobId);
-      } else {
-        nextProgress = await getSingleProgress(selectedMode, jobId);
-      }
-
-      if (isCancelled) return;
-
-      setProgress(nextProgress);
-
-      // ✅ WICHTIG: Ergebnis IMMER laden wenn done
-      if (nextProgress.status === "done") {
-        window.clearInterval(interval);
-
-        let nextResult: FullResult;
-
-        if (selectedMode === "full") {
-          nextResult = await getResult(jobId);
-        } else {
-          nextResult = await getSingleResult(selectedMode, jobId);
-        }
-
-        if (isCancelled) return;
-
-        setResult(nextResult);
-        setPageSuccessMessage("Analyse erfolgreich abgeschlossen.");
-      }
-
-      if (nextProgress.status === "error") {
-        window.clearInterval(interval);
-        setPageErrorMessage(
-          nextProgress.error || "Die Analyse konnte nicht abgeschlossen werden."
-        );
-      }
-    } catch (err) {
-      if (isCancelled) return;
-      window.clearInterval(interval);
-      if (err instanceof ApiError && err.status === 404) {
-        // Job-ID im JobManager unbekannt — typischerweise ein Server-
-        // Neustart/Deploy während die Analyse lief (in-memory Job-State).
-        // Progress/JobId zurücksetzen statt eine veraltete Fortschritts-
-        // anzeige stehen zu lassen; der Nutzer kann sofort neu starten.
-        setProgress(null);
-        setJobId(null);
-        setPageErrorMessage(
-          "Diese Analyse ist nicht mehr verfügbar (z. B. durch einen Server-Neustart unterbrochen). Bitte starte sie erneut."
-        );
-      } else {
-        setPageErrorMessage("Fehler beim Abrufen des Analysefortschritts.");
-      }
-    }
-  }, 1500);
-
-  return () => {
-    isCancelled = true;
-    window.clearInterval(interval);
-  };
-}, [
-  jobId,
-  selectedMode,
-  // ❌ progress.status entfernt (war der Bug)
-]);
-
-  // Spiegelt customJobError/customResult der useJobPolling-Hook auf die
+  // Spiegelt den vom AnalysisJobsProvider getrackten Job-Status auf die
   // gemeinsamen Banner-States, damit Standard- und Individuell-Läufe
   // dieselbe Fehler-/Erfolgs-Anzeige nutzen.
+  useEffect(() => {
+    if (standardJobError) {
+      setPageErrorMessage(standardJobError);
+    }
+  }, [standardJobError]);
+
+  useEffect(() => {
+    if (result) {
+      setPageSuccessMessage("Analyse erfolgreich abgeschlossen.");
+    }
+  }, [result]);
+
   useEffect(() => {
     if (customJobError) {
       setPageErrorMessage(customJobError);
@@ -346,14 +294,40 @@ useEffect(() => {
     }
   }, [result, customResult]);
 
-  // Drop the rerun payload from router state once read so a refresh or
-  // back-navigation to this page doesn't replay the same job again.
+  // Drop the rerun/viewJob payload from router state once read so a refresh
+  // or back-navigation to this page doesn't replay/re-jump again.
   useEffect(() => {
-    if (location.state && (location.state as { rerun?: RerunPayload }).rerun) {
+    const state = location.state as { rerun?: RerunPayload; viewJob?: ViewJobPayload } | null;
+    if (state && (state.rerun || state.viewJob)) {
       navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // "Zum Ergebnis" aus einer Job-fertig-Notification: der Job ist bereits im
+  // AnalysisJobsProvider getrackt, hier nur Tab + aktive Job-ID setzen, damit
+  // das Ergebnis sofort aus dem Cache gerendert wird (kein erneuter Request).
+  useEffect(() => {
+    if (!pendingViewJob) return;
+
+    const job = getJob(pendingViewJob.jobId);
+    if (!job) {
+      setPendingViewJob(null);
+      return;
+    }
+
+    setSymbol(job.symbol);
+    if (job.kind === "custom") {
+      setAnalysisTab("individuell");
+      setCurrentCustomJobId(job.id);
+    } else {
+      setAnalysisTab("standard");
+      if (job.mode) setSelectedMode(job.mode);
+      if (job.frequency) setSelectedFrequency(job.frequency);
+      setCurrentStandardJobId(job.id);
+    }
+    setPendingViewJob(null);
+  }, [pendingViewJob, getJob]);
 
   // "Nochmal analysieren" from the dashboard history: replay a past run via
   // the same start endpoints a manual click would use, once any data the
@@ -460,36 +434,17 @@ useEffect(() => {
 
     try {
       setIsStartingAnalysis(true);
-      setJobId(null);
-      setProgress(null);
-      setResult(null);
+      setCurrentStandardJobId(null);
 
-      const response =
-        modeToUse === "full"
-          ? await startFullAnalysis(cleanSymbol)
-          : await startSingleAnalysisJob(
-              cleanSymbol,
-              modeToUse as Exclude<AnalysisMode, "full">,
-              frequencyToUse
-            );
-
-      const nextJobId =
-        response?.job_id ?? response?.jobId ?? response?.id ?? null;
-
-      if (!nextJobId) {
-        throw new Error("Keine Job-ID erhalten.");
-      }
-
-      setJobId(nextJobId);
-      setProgress({
-        job_id: nextJobId,
+      const modeLabel = modeOptions.find((option) => option.value === modeToUse)?.label ?? "Analyse";
+      const nextJobId = await startFullOrSingleJob({
         symbol: cleanSymbol,
-        status: "running",
-        total: 1,
-        done: 0,
-        current: "Analyse wird gestartet...",
-        error: null,
+        mode: modeToUse,
+        frequency: frequencyToUse,
+        modeLabel,
       });
+
+      setCurrentStandardJobId(nextJobId);
       refreshUsage();
     } catch (error) {
       if (error instanceof ApiError && error.code === "QUOTA_EXCEEDED") {
@@ -533,11 +488,13 @@ useEffect(() => {
 
     try {
       setIsStartingAnalysis(true);
-      setCustomJobId(null);
+      setCurrentCustomJobId(null);
 
-      const response = options.definition
-        ? await runDefinition(options.definition.id, { symbol: cleanSymbol })
-        : await startCustomAnalysis({ symbol: cleanSymbol, metrics: options.metrics ?? [] });
+      const nextJobId = await startCustomJob({
+        symbol: cleanSymbol,
+        metrics: options.metrics,
+        definition: options.definition,
+      });
 
       setAnalysisTab("individuell");
       if (options.definition) {
@@ -550,7 +507,7 @@ useEffect(() => {
         setSelectedDefinition(null);
       }
 
-      setCustomJobId(response.job_id);
+      setCurrentCustomJobId(nextJobId);
       refreshUsage();
     } catch (error) {
       if (error instanceof ApiError && error.code === "QUOTA_EXCEEDED") {

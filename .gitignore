@@ -16,6 +16,7 @@ dist/
 # Interne Tracking-/Audit-Dokumente - bleiben lokal, nicht Teil des Repos
 LAUNCH.md
 RESPONSIVE.md
+NOTIFICATION.md
 
 # Claude Code worktree artifacts (nested git working copies, not source)
 .claude/worktrees/

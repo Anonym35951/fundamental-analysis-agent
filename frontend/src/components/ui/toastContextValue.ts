@@ -2,8 +2,12 @@ import { createContext } from "react";
 
 export type ToastTone = "success" | "error" | "info";
 
+export type ToastAction = { label: string; onClick: () => void };
+
+export type ToastOptions = { durationMs?: number; action?: ToastAction };
+
 export type ToastContextValue = {
-  showToast: (message: string, tone?: ToastTone) => void;
+  showToast: (message: string, tone?: ToastTone, options?: ToastOptions) => void;
 };
 
 // Eigene Datei ohne Komponenten-Export, damit weder Toast.tsx (Provider)

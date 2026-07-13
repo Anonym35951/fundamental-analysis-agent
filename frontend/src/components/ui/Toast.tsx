@@ -4,14 +4,17 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { X } from "lucide-react";
 import { theme } from "./theme";
 import { useIsMobile } from "../../hooks/useMediaQuery";
-import { ToastContext, type ToastTone } from "./toastContextValue";
+import { ToastContext, type ToastAction, type ToastTone } from "./toastContextValue";
 
 type ToastItem = {
   id: number;
   message: string;
   tone: ToastTone;
+  durationMs: number;
+  action?: ToastAction;
 };
 
 const toneStyles: Record<ToastTone, { background: string; border: string; color: string }> = {
@@ -44,10 +47,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (message: string, tone: ToastTone = "info") => {
+    (message: string, tone: ToastTone = "info", options?: { durationMs?: number; action?: ToastAction }) => {
       const id = nextId.current++;
-      setToasts((current) => [...current, { id, message, tone }]);
-      window.setTimeout(() => dismissToast(id), AUTO_DISMISS_MS);
+      const durationMs = options?.durationMs ?? AUTO_DISMISS_MS;
+      setToasts((current) => [...current, { id, message, tone, durationMs, action: options?.action }]);
+      window.setTimeout(() => dismissToast(id), durationMs);
     },
     [dismissToast]
   );
@@ -75,6 +79,84 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       >
         {toasts.map((toast) => {
           const style = toneStyles[toast.tone];
+
+          if (toast.action) {
+            return (
+              <div
+                key={toast.id}
+                style={{
+                  position: "relative",
+                  overflow: "hidden",
+                  padding: "18px 18px 14px",
+                  borderRadius: theme.radius.sm,
+                  background: style.background,
+                  border: `1px solid ${style.border}`,
+                  color: style.color,
+                  fontSize: "0.92rem",
+                  maxWidth: isMobile ? "none" : "400px",
+                  boxShadow: "0 10px 30px rgba(0, 0, 0, 0.5)",
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    height: "3px",
+                    width: "100%",
+                    transformOrigin: "left",
+                    background: theme.colors.chrome,
+                    animation: `toast-progress-fill ${toast.durationMs}ms linear forwards`,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    dismissToast(toast.id);
+                  }}
+                  aria-label="Benachrichtigung schließen"
+                  style={{
+                    position: "absolute",
+                    top: "10px",
+                    right: "10px",
+                    background: "none",
+                    border: "none",
+                    color: style.color,
+                    opacity: 0.7,
+                    cursor: "pointer",
+                    padding: "4px",
+                    display: "flex",
+                  }}
+                >
+                  <X size={16} />
+                </button>
+                <div style={{ paddingRight: "26px", lineHeight: 1.5 }}>{toast.message}</div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "12px" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toast.action?.onClick();
+                      dismissToast(toast.id);
+                    }}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: theme.radius.sm,
+                      background: "transparent",
+                      border: `1px solid ${style.border}`,
+                      color: style.color,
+                      fontSize: "0.86rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {toast.action.label}
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div
               key={toast.id}

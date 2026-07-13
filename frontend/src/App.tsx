@@ -43,12 +43,16 @@ import ProtectedRoute from "./routes/ProtectedRoute";
 import AdminRoute from "./routes/AdminRoute";
 import { ThemeModeProvider } from "./components/ui/ThemeModeContext";
 import CookieConsentBanner from "./components/consent/CookieConsentBanner";
+import { CompareProvider } from "./hooks/useCompare";
+import { AnalysisJobsProvider } from "./hooks/useAnalysisJobs";
 
 function App() {
   const token = localStorage.getItem("access_token");
 
   return (
     <BrowserRouter>
+      <CompareProvider>
+      <AnalysisJobsProvider>
       <ThemeModeProvider>
         <CookieConsentBanner />
         <Routes>
@@ -140,6 +144,8 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ThemeModeProvider>
+      </AnalysisJobsProvider>
+      </CompareProvider>
     </BrowserRouter>
   );
 }
