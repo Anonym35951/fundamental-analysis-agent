@@ -140,63 +140,64 @@ export default function InfoTooltip({ metricKey, size = 14, style }: InfoTooltip
         <Info size={size} aria-hidden="true" />
       </span>
 
-      {isOpen && coords
-        ? createPortal(
-            <AnimatePresence>
-              <motion.div
-                ref={popoverRef}
-                id={popoverId}
-                role="tooltip"
-                onMouseEnter={clearCloseTimer}
-                onMouseLeave={scheduleClose}
-                initial={{ opacity: 0, scale: 0.96, y: coords.placeAbove ? 4 : -4 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: coords.placeAbove ? 4 : -4 }}
-                transition={{ duration: 0.12, ease: [0.4, 0, 0.2, 1] }}
-                style={{
-                  position: "fixed",
-                  top: coords.placeAbove ? undefined : coords.top,
-                  bottom: coords.placeAbove ? window.innerHeight - coords.top : undefined,
-                  left: coords.left,
-                  width: `${POPOVER_WIDTH}px`,
-                  zIndex: 1100,
-                  padding: "12px 14px",
-                  borderRadius: theme.radius.md,
-                  background: theme.glass.subtle.background,
-                  backdropFilter: `blur(${theme.glass.subtle.blur})`,
-                  WebkitBackdropFilter: `blur(${theme.glass.subtle.blur})`,
-                  border: `1px solid ${theme.glass.subtle.border}`,
-                  boxShadow: "0 12px 30px rgba(0, 0, 0, 0.35)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "6px",
-                }}
-              >
-                <div style={{ color: theme.colors.textPrimary, fontSize: "0.86rem", fontWeight: 800 }}>{config.label}</div>
-                <p style={{ margin: 0, color: theme.colors.textSecondary, fontSize: "0.8rem", lineHeight: 1.5 }}>
-                  {config.description}
-                </p>
-                {config.formula ? (
-                  <div
-                    style={{
-                      marginTop: "2px",
-                      padding: "6px 8px",
-                      borderRadius: theme.radius.sm,
-                      background: theme.colors.panelAlt,
-                      color: theme.colors.textPrimary,
-                      fontSize: "0.76rem",
-                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {config.formula}
-                  </div>
-                ) : null}
-              </motion.div>
-            </AnimatePresence>,
-            document.body
-          )
-        : null}
+      {createPortal(
+        <AnimatePresence>
+          {isOpen && coords ? (
+            <motion.div
+              key="tooltip-popover"
+              ref={popoverRef}
+              id={popoverId}
+              role="tooltip"
+              onMouseEnter={clearCloseTimer}
+              onMouseLeave={scheduleClose}
+              initial={{ opacity: 0, scale: 0.96, y: coords.placeAbove ? 4 : -4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: coords.placeAbove ? 4 : -4 }}
+              transition={{ duration: 0.12, ease: [0.4, 0, 0.2, 1] }}
+              style={{
+                position: "fixed",
+                top: coords.placeAbove ? undefined : coords.top,
+                bottom: coords.placeAbove ? window.innerHeight - coords.top : undefined,
+                left: coords.left,
+                width: `${POPOVER_WIDTH}px`,
+                zIndex: 1100,
+                padding: "12px 14px",
+                borderRadius: theme.radius.md,
+                background: theme.glass.subtle.background,
+                backdropFilter: `blur(${theme.glass.subtle.blur})`,
+                WebkitBackdropFilter: `blur(${theme.glass.subtle.blur})`,
+                border: `1px solid ${theme.glass.subtle.border}`,
+                boxShadow: "0 12px 30px rgba(0, 0, 0, 0.35)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "6px",
+              }}
+            >
+              <div style={{ color: theme.colors.textPrimary, fontSize: "0.86rem", fontWeight: 800 }}>{config.label}</div>
+              <p style={{ margin: 0, color: theme.colors.textSecondary, fontSize: "0.8rem", lineHeight: 1.5 }}>
+                {config.description}
+              </p>
+              {config.formula ? (
+                <div
+                  style={{
+                    marginTop: "2px",
+                    padding: "6px 8px",
+                    borderRadius: theme.radius.sm,
+                    background: theme.colors.panelAlt,
+                    color: theme.colors.textPrimary,
+                    fontSize: "0.76rem",
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {config.formula}
+                </div>
+              ) : null}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>,
+        document.body
+      )}
     </>
   );
 }

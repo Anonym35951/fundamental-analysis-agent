@@ -18,10 +18,11 @@ import {
   LifeBuoy,
 } from "lucide-react";
 import { getCurrentUser } from "../../api/auth";
-import { getFavorites, type FavoriteEntry } from "../../api/favorites";
+import { useFavorites } from "../../hooks/useFavoritesContext";
 import { useIsMobile } from "../../hooks/useMediaQuery";
 import { theme } from "../ui/theme";
 import { useThemeMode } from "../ui/useThemeMode";
+import { useToast } from "../ui/useToast";
 import LivePriceBadge from "../shared/LivePriceBadge";
 
 type AppSidebarProps = {
@@ -51,7 +52,7 @@ function AppSidebar({
 }: AppSidebarProps) {
   const [currentPlan, setCurrentPlan] = useState("free");
   const [isLoadingUser, setIsLoadingUser] = useState(true);
-  const [favorites, setFavorites] = useState<FavoriteEntry[]>([]);
+  const { favorites } = useFavorites();
   const [searchQuery, setSearchQuery] = useState("");
   const isMobile = useIsMobile();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -75,12 +76,6 @@ function AppSidebar({
     }
 
     loadUser();
-  }, []);
-
-  useEffect(() => {
-    getFavorites()
-      .then(setFavorites)
-      .catch(() => setFavorites([]));
   }, []);
 
   // "/"-Tastenkürzel fokussiert die Sidebar-Suche, solange der Fokus nicht
@@ -517,6 +512,22 @@ function SidebarItem({ to, label, icon: Icon }: SidebarItemProps) {
 }
 
 function FavoriteItem({ symbol }: { symbol: string }) {
+  const { toggleFavorite } = useFavorites();
+  const { showToast } = useToast();
+
+  async function handleRemove(event: React.MouseEvent | React.KeyboardEvent) {
+    // Stern sitzt innerhalb des Link-Wrappers (Klick auf die Zeile navigiert
+    // zur Analyseseite) - stopPropagation/preventDefault verhindern, dass
+    // ein Klick auf den Stern zusätzlich navigiert.
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await toggleFavorite(symbol);
+    } catch {
+      showToast("Konnte nicht entfernt werden.", "error");
+    }
+  }
+
   return (
     <Link
       to={`/app/analyze?symbol=${encodeURIComponent(symbol)}`}
@@ -553,7 +564,27 @@ function FavoriteItem({ symbol }: { symbol: string }) {
       </span>
       <span>{symbol}</span>
       <LivePriceBadge symbol={symbol} size="sm" />
-      <Star size={13} style={{ marginLeft: "auto", flexShrink: 0 }} color={theme.colors.chrome} fill={theme.colors.chrome} />
+      {/* role="button" statt <button>, weil dies innerhalb des Link-Elements
+          sitzt - ein verschachteltes <button> in einem <a> ist ungültiges
+          HTML (gleiches Idiom wie InfoTooltip.tsx). */}
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label={`${symbol} aus Favoriten entfernen`}
+        onClick={handleRemove}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") handleRemove(event);
+        }}
+        style={{
+          marginLeft: "auto",
+          flexShrink: 0,
+          display: "flex",
+          padding: "4px",
+          cursor: "pointer",
+        }}
+      >
+        <Star size={13} color={theme.colors.chrome} fill={theme.colors.chrome} />
+      </span>
     </Link>
   );
 }

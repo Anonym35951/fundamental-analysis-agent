@@ -84,6 +84,22 @@ export function AnalysisJobsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Einziger State-Provider ohne app:logout-Listener (Fix): ohne das
+  // überlebt der jobs-Array (inkl. voller Analyseergebnisse) einen Logout,
+  // ein noch laufender Job könnte nach Login eines anderen Nutzers/einer
+  // anderen Nutzerin einen "Zum Ergebnis"-Toast mit fremdem Ergebnis
+  // auslösen. Mirrors useCompare.tsx's clearAll/handleLogoutEvent-Pattern.
+  const clearAllJobs = useCallback(() => {
+    intervalsRef.current.forEach((id) => window.clearInterval(id));
+    intervalsRef.current.clear();
+    setJobs([]);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("app:logout", clearAllJobs);
+    return () => window.removeEventListener("app:logout", clearAllJobs);
+  }, [clearAllJobs]);
+
   const runPoll = useCallback(
     (jobId: string, kind: AnalysisJobKind, mode?: AnalysisMode) => {
       const isFull = kind === "full" || mode === "full";

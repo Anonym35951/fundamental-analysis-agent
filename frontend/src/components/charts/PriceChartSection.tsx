@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, LineChart } from "lucide-react";
 import { theme } from "../ui/theme";
 import MultiLayerChart from "./MultiLayerChart";
@@ -17,15 +17,16 @@ type Props = {
 // nur 1 Datenpunkt).
 const DEFAULT_RANGE: TimeRange = "1y";
 
-/** Zuschaltbarer Kurschart (EVOLVING.md EV-061) - lädt bewusst NICHTS, bevor
- * der Nutzer den Abschnitt öffnet (kein API-Call ohne Interaktion). Range-
+/** Kurschart (EVOLVING.md EV-061), standardmäßig aufgeklappt - lädt beim
+ * Mount automatisch die Default-Range, danach nur noch bei Symbol- oder
+ * Range-Wechsel (Cache-Hits lösen keinen erneuten Request aus). Range-
  * Wechsel filtert serverseitig (EV-060) statt clientseitig wie bei den
  * Fundamental-Charts (EV-040/041), da die Rohserie hier täglich und über
  * Jahrzehnte potenziell groß ist. Einfacher In-Memory-Cache pro Symbol+Range
  * im Component-State, damit ein Zurückwechseln zu einer bereits geladenen
  * Range keinen erneuten Request auslöst. */
 export default function PriceChartSection({ symbol }: Props) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const [range, setRange] = useState<TimeRange>(DEFAULT_RANGE);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +34,7 @@ export default function PriceChartSection({ symbol }: Props) {
 
   const cacheRef = useRef<Map<string, PriceHistoryResponse>>(new Map());
   const loadedForRef = useRef<string | null>(null);
+  const requestIdRef = useRef(0);
 
   function load(nextSymbol: string, nextRange: TimeRange) {
     const cacheKey = `${nextSymbol}:${nextRange}`;
@@ -44,18 +46,27 @@ export default function PriceChartSection({ symbol }: Props) {
       return;
     }
 
+    // Guard gegen veraltete Antworten: ein schneller Symbolwechsel (z. B.
+    // AAPL -> MSFT) darf die MSFT-Anzeige nicht mit einer spät eintreffenden
+    // AAPL-Antwort überschreiben. Cache wird weiterhin unconditional
+    // befüllt, nur die sichtbaren States werden geschützt.
+    const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setError(null);
     getPriceHistory(nextSymbol, nextRange)
       .then((response) => {
         cacheRef.current.set(cacheKey, response);
+        if (requestIdRef.current !== requestId) return;
         loadedForRef.current = cacheKey;
         setData(response);
       })
       .catch(() => {
+        if (requestIdRef.current !== requestId) return;
         setError("Kursdaten konnten nicht geladen werden.");
       })
-      .finally(() => setIsLoading(false));
+      .finally(() => {
+        if (requestIdRef.current === requestId) setIsLoading(false);
+      });
   }
 
   function handleToggle() {
@@ -70,6 +81,15 @@ export default function PriceChartSection({ symbol }: Props) {
     setRange(nextRange);
     load(symbol, nextRange);
   }
+
+  // range absichtlich nicht in den Deps: ein Range-Wechsel lädt bereits über
+  // handleRangeChange, dieser Effekt deckt nur Mount + Symbol-Wechsel ab.
+  useEffect(() => {
+    if (isOpen && loadedForRef.current !== `${symbol}:${range}`) {
+      load(symbol, range);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, isOpen]);
 
   const layer = data
     ? {

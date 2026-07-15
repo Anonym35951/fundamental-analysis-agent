@@ -99,7 +99,10 @@ export function formatMetricValue(value: unknown, key?: string, currency?: strin
 
     const decimals = config?.decimals ?? 2;
     const scaledValue = value * (config?.scale ?? 1);
-    const formatted = scaledValue.toFixed(decimals).replace(/\.?0+$/, "");
+    let formatted = scaledValue.toFixed(decimals);
+    if (formatted.includes(".")) {
+      formatted = formatted.replace(/\.?0+$/, "");
+    }
 
     if (config?.unit === "%") {
       return `${formatted}%`;

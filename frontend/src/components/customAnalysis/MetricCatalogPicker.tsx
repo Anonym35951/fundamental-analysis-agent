@@ -263,7 +263,7 @@ export default function MetricCatalogPicker({
                             // instead of collapsing to one full-width column.
                             gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))",
                             gap: "10px",
-                            padding: "0 16px 16px",
+                            padding: "12px 16px 16px",
                           }}
                         >
                           {entries.map((entry) => (

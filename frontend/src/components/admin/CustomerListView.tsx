@@ -106,7 +106,16 @@ function CustomerListView({ onSelectCustomer }: CustomerListViewProps) {
                 <tr
                   key={customer.id}
                   style={trClickable}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Kunde ${customer.email} öffnen`}
                   onClick={() => onSelectCustomer(customer.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelectCustomer(customer.id);
+                    }
+                  }}
                 >
                   <td style={td}>{customer.email}</td>
                   <td style={td}>{formatName(customer)}</td>

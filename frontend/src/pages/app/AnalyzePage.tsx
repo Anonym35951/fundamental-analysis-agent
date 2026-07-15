@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import AnalyzeStickyBar from "../../components/analysis/AnalyzeStickyBar";
-import AnalyzeWorkspace, { type AnalysisTab } from "../../components/analysis/AnalyzeWorkspace";
+import AnalyzeWorkspace from "../../components/analysis/AnalyzeWorkspace";
 import type { AnalysisMode } from "../../api/analysis";
 import { useSymbolSearch } from "../../hooks/useSymbolSearch";
-import { addFavorite, getFavorites, removeFavorite } from "../../api/favorites";
+import { useFavorites } from "../../hooks/useFavoritesContext";
 import { ApiError } from "../../api/client";
 import type { CustomAnalysisDefinition, CustomAnalysisResult, MetricSelection } from "../../types/customAnalysis";
 import type { FullResult } from "../../types/analysis";
@@ -21,11 +21,14 @@ import SourceBadge from "../../components/shared/SourceBadge";
 import { useCustomAnalysisDefinitions } from "../../hooks/useCustomAnalysisDefinitions";
 import { useAnalysisJobs } from "../../hooks/useAnalysisJobsContext";
 import type { AnalysisJobKind } from "../../hooks/analysisJobsContextValue";
+import { useAnalyzeWorkspace } from "../../hooks/useAnalyzeWorkspaceContext";
 import { useFirstRunOnboarding } from "../../hooks/useFirstRunOnboarding";
 import { useTourStatus } from "../../hooks/useTourStatus";
 import { X } from "lucide-react";
 
 type BuilderModalMode = "create" | "edit" | "adhoc" | null;
+
+type BannerKind = "standard" | "individuell" | "generic";
 
 /** Passed via navigate(..., { state: { rerun } }) from the dashboard history
  * modal's "Nochmal analysieren" action, so AnalyzePage can replay a past run
@@ -107,9 +110,23 @@ function AnalyzePage() {
   const [symbol, setSymbol] = useState("");
   const [selectedMode, setSelectedMode] = useState<AnalysisMode>("full");
   const [selectedFrequency, setSelectedFrequency] = useState<"annual" | "quarterly">("annual");
-  const [favoriteSymbols, setFavoriteSymbols] = useState<Set<string>>(new Set());
+  const { isFavorite, toggleFavorite } = useFavorites();
 
-  const [analysisTab, setAnalysisTab] = useState<AnalysisTab>("standard");
+  // Tab, Job-ID-Pointer und "welches Ergebnis zuletzt gezeigt wurde" leben im
+  // AnalyzeWorkspaceProvider (oberhalb des Routers, wie AnalysisJobsProvider)
+  // statt in lokalem State, damit sie einen Seitenwechsel (Account, Support,
+  // Dashboard, ...) und zurück zu /app/analyze überleben (KORREKTUREN.md
+  // Punkt 2).
+  const {
+    analysisTab,
+    setAnalysisTab,
+    currentStandardJobId,
+    setCurrentStandardJobId,
+    currentCustomJobId,
+    setCurrentCustomJobId,
+    lastResultKind,
+    setLastResultKind,
+  } = useAnalyzeWorkspace();
 
   // Onboarding-Tour: der "Eigene Analyse erstellen"-Schritt zielt auf ein
   // Element, das nur im "Individuell"-Tab existiert - erzwingt den
@@ -128,7 +145,6 @@ function AnalyzePage() {
   const { startFullOrSingleJob, startCustomJob, getJob } = useAnalysisJobs();
 
   // Standard-Analyse-Job-State
-  const [currentStandardJobId, setCurrentStandardJobId] = useState<string | null>(null);
   const standardJob = getJob(currentStandardJobId);
   const progress = standardJob?.progress ?? null;
   const result = (standardJob?.result as FullResult | null) ?? null;
@@ -169,7 +185,6 @@ function AnalyzePage() {
   }
 
   // Individuell: Job-State (eigener Ad-hoc/Definition-Lauf statt Standard-Job)
-  const [currentCustomJobId, setCurrentCustomJobId] = useState<string | null>(null);
   const customJob = getJob(currentCustomJobId);
   const customProgress = customJob?.progress ?? null;
   const customResult = (customJob?.result as CustomAnalysisResult | null) ?? null;
@@ -178,16 +193,17 @@ function AnalyzePage() {
   const [isStartingAnalysis, setIsStartingAnalysis] = useState(false);
   const [pageErrorMessage, setPageErrorMessage] = useState("");
   const [pageSuccessMessage, setPageSuccessMessage] = useState("");
+  // Trackt, welche Analyse-Art eine Banner-Nachricht ausgelöst hat, damit
+  // Standard- und Individuell-Läufe sich nicht gegenseitig mit
+  // widersprüchlichen Meldungen überschreiben. "generic" deckt Fälle ab, die
+  // an keine Job-Art gebunden sind (Validierung, Quota, Save-Handler) - die
+  // werden unabhängig vom angezeigten Ergebnis immer gezeigt.
+  const [pageErrorKind, setPageErrorKind] = useState<BannerKind>("generic");
+  const [pageSuccessKind, setPageSuccessKind] = useState<BannerKind>("generic");
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
   const { isFirstRun, dismissOnboarding } = useFirstRunOnboarding();
   const blurTimeoutRef = useRef<number | null>(null);
   const resultsSectionRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    getFavorites()
-      .then((favs) => setFavoriteSymbols(new Set(favs.map((fav) => fav.symbol))))
-      .catch(() => setFavoriteSymbols(new Set()));
-  }, []);
 
   // Lets a sidebar favorite click land here with the symbol pre-filled.
   useEffect(() => {
@@ -251,6 +267,7 @@ function AnalyzePage() {
       await saveDefinition(name, metrics, editingId);
       closeBuilderModal();
     } catch (error) {
+      setPageErrorKind("generic");
       setPageErrorMessage(
         error instanceof Error ? error.message : "Analyse konnte nicht gespeichert werden."
       );
@@ -264,24 +281,28 @@ function AnalyzePage() {
   // dieselbe Fehler-/Erfolgs-Anzeige nutzen.
   useEffect(() => {
     if (standardJobError) {
+      setPageErrorKind("standard");
       setPageErrorMessage(standardJobError);
     }
   }, [standardJobError]);
 
   useEffect(() => {
     if (result) {
+      setPageSuccessKind("standard");
       setPageSuccessMessage("Analyse erfolgreich abgeschlossen.");
     }
   }, [result]);
 
   useEffect(() => {
     if (customJobError) {
+      setPageErrorKind("individuell");
       setPageErrorMessage(customJobError);
     }
   }, [customJobError]);
 
   useEffect(() => {
     if (customResult) {
+      setPageSuccessKind("individuell");
       setPageSuccessMessage("Analyse erfolgreich abgeschlossen.");
     }
   }, [customResult]);
@@ -321,14 +342,16 @@ function AnalyzePage() {
     if (job.kind === "custom") {
       setAnalysisTab("individuell");
       setCurrentCustomJobId(job.id);
+      setLastResultKind("individuell");
     } else {
       setAnalysisTab("standard");
       if (job.mode) setSelectedMode(job.mode);
       if (job.frequency) setSelectedFrequency(job.frequency);
       setCurrentStandardJobId(job.id);
+      setLastResultKind("standard");
     }
     setPendingViewJob(null);
-  }, [pendingViewJob, getJob]);
+  }, [pendingViewJob, getJob, setAnalysisTab, setCurrentCustomJobId, setCurrentStandardJobId, setLastResultKind]);
 
   // "Nochmal analysieren" from the dashboard history: replay a past run via
   // the same start endpoints a manual click would use, once any data the
@@ -360,6 +383,7 @@ function AnalyzePage() {
         setAdHocMetrics(null);
         void runCustomAnalysis({ definition, symbol: cleanSymbol });
       } else {
+        setPageErrorKind("generic");
         setPageErrorMessage("Die ursprüngliche Analyse-Definition existiert nicht mehr.");
       }
       return;
@@ -383,31 +407,14 @@ function AnalyzePage() {
     isDegraded: isSymbolSearchDegraded,
   } = useSymbolSearch(normalizedSymbol);
 
-  const isFavorited = favoriteSymbols.has(normalizedSymbol);
+  const isFavorited = isFavorite(normalizedSymbol);
 
   async function handleToggleFavorite() {
     if (!normalizedSymbol) return;
-    const previous = favoriteSymbols;
-    const next = new Set(previous);
-
-    if (isFavorited) {
-      next.delete(normalizedSymbol);
-      setFavoriteSymbols(next);
-      try {
-        await removeFavorite(normalizedSymbol);
-      } catch {
-        setFavoriteSymbols(previous);
-        showToast("Konnte nicht gespeichert werden.", "error");
-      }
-    } else {
-      next.add(normalizedSymbol);
-      setFavoriteSymbols(next);
-      try {
-        await addFavorite(normalizedSymbol);
-      } catch {
-        setFavoriteSymbols(previous);
-        showToast("Konnte nicht gespeichert werden.", "error");
-      }
+    try {
+      await toggleFavorite(normalizedSymbol);
+    } catch {
+      showToast("Konnte nicht gespeichert werden.", "error");
     }
   }
 
@@ -432,6 +439,7 @@ function AnalyzePage() {
     const frequencyToUse = overrides?.frequency ?? selectedFrequency;
 
     if (!cleanSymbol) {
+      setPageErrorKind("generic");
       setPageErrorMessage("Bitte gib ein Symbol ein.");
       return;
     }
@@ -449,13 +457,16 @@ function AnalyzePage() {
       });
 
       setCurrentStandardJobId(nextJobId);
+      setLastResultKind("standard");
       refreshUsage();
     } catch (error) {
       if (error instanceof ApiError && error.code === "QUOTA_EXCEEDED") {
         openQuotaModal(typeof error.data?.reset_date === "string" ? error.data.reset_date : null);
       } else if (error instanceof Error) {
+        setPageErrorKind("generic");
         setPageErrorMessage(error.message);
       } else {
+        setPageErrorKind("generic");
         setPageErrorMessage("Analyse konnte nicht gestartet werden.");
       }
     } finally {
@@ -486,6 +497,7 @@ function AnalyzePage() {
     const cleanSymbol = options.symbol ?? normalizedSymbol;
 
     if (!cleanSymbol) {
+      setPageErrorKind("generic");
       setPageErrorMessage("Bitte gib ein Symbol ein.");
       return;
     }
@@ -512,11 +524,13 @@ function AnalyzePage() {
       }
 
       setCurrentCustomJobId(nextJobId);
+      setLastResultKind("individuell");
       refreshUsage();
     } catch (error) {
       if (error instanceof ApiError && error.code === "QUOTA_EXCEEDED") {
         openQuotaModal(typeof error.data?.reset_date === "string" ? error.data.reset_date : null);
       } else {
+        setPageErrorKind("generic");
         setPageErrorMessage(
           error instanceof Error ? error.message : "Analyse konnte nicht gestartet werden."
         );
@@ -528,6 +542,7 @@ function AnalyzePage() {
 
   function handleStartCustomAnalysis() {
     if (!selectedDefinition && !adHocMetrics) {
+      setPageErrorKind("generic");
       setPageErrorMessage(
         "Bitte wähle eine eigene Analyse aus oder erstelle eine einmalige Analyse."
       );
@@ -560,6 +575,24 @@ function AnalyzePage() {
   }
 
   const canStartCustom = Boolean(selectedDefinition || adHocMetrics);
+  // Welches Ergebnis in der Ergebnis-Box/Sticky-Bar/Badges angezeigt wird -
+  // unabhängig vom aktuell gewählten Analysemodus-Tab (der nur bestimmt, was
+  // "Analyse starten" als Nächstes ausführt). Solange noch nie eine Analyse
+  // gelaufen ist (lastResultKind === null), orientiert sich die Leerzustand-
+  // Nachricht am aktiven Tab (KORREKTUREN.md Punkt 2).
+  const displayKind = lastResultKind ?? analysisTab;
+  // Badge neben "Analyseausgabe" soll das Symbol des angezeigten Ergebnisses
+  // zeigen, nicht das gerade getippte (normalizedSymbol lebt in Echtzeit im
+  // Eingabefeld). Fällt nur auf normalizedSymbol zurück, solange (noch) kein
+  // Ergebnis existiert - handleStartAnalysis/runCustomAnalysis setzen die
+  // Job-ID-Pointer synchron auf null bevor der neue Job awaited wird, result/
+  // customResult sind beim Klick auf "Analyse starten" also sofort null.
+  const resultsBadgeSymbol =
+    displayKind === "standard" && result
+      ? result.symbol
+      : displayKind === "individuell" && customResult
+        ? customResult.symbol
+        : normalizedSymbol;
   const builderModalTitle =
     builderModalMode === "adhoc"
       ? "Einmalige Analyse"
@@ -578,11 +611,11 @@ function AnalyzePage() {
     >
       <AnalyzeStickyBar
         symbol={normalizedSymbol}
-        progress={analysisTab === "standard" ? progress : customProgress}
-        result={analysisTab === "standard" ? result : null}
+        progress={lastResultKind === "individuell" ? customProgress : progress}
+        result={lastResultKind === "individuell" ? null : result}
       />
 
-      {pageErrorMessage ? (
+      {pageErrorMessage && (pageErrorKind === "generic" || pageErrorKind === displayKind) ? (
         <div
           style={{
             padding: "14px 16px",
@@ -598,7 +631,7 @@ function AnalyzePage() {
         </div>
       ) : null}
 
-      {pageSuccessMessage ? (
+      {pageSuccessMessage && (pageSuccessKind === "generic" || pageSuccessKind === displayKind) ? (
         <div
           style={{
             padding: "14px 16px",
@@ -742,20 +775,20 @@ function AnalyzePage() {
         <div style={sectionEyebrow}>Ergebnis</div>
         <div style={{ display: "flex", alignItems: "baseline", gap: "16px", flexWrap: "wrap" }}>
           <h2 style={resultsTitle}>Analyseausgabe</h2>
-          {normalizedSymbol ? <span style={resultsSymbolBadge}>{normalizedSymbol}</span> : null}
-          {analysisTab === "individuell" && customResult ? (
+          {resultsBadgeSymbol ? <span style={resultsSymbolBadge}>{resultsBadgeSymbol}</span> : null}
+          {displayKind === "individuell" && customResult ? (
             <LivePriceBadge symbol={customResult.symbol} size="md" />
           ) : null}
-          {analysisTab === "standard" && result ? (
+          {displayKind === "standard" && result ? (
             <SourceBadge symbol={result.symbol} frequency={selectedFrequency} />
           ) : null}
-          {analysisTab === "individuell" && customResult ? (
+          {displayKind === "individuell" && customResult ? (
             <SourceBadge symbol={customResult.symbol} />
           ) : null}
         </div>
 
         {isFirstRun &&
-        ((analysisTab === "standard" && result) || (analysisTab === "individuell" && customResult)) ? (
+        ((displayKind === "standard" && result) || (displayKind === "individuell" && customResult)) ? (
           <div
             style={{
               display: "flex",
@@ -795,11 +828,11 @@ function AnalyzePage() {
         ) : null}
 
         <div style={resultBox}>
-          {analysisTab === "standard" ? (
+          {displayKind === "standard" ? (
             result ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-                <AnalyzeResultsDashboard data={result} />
                 <PriceChartSection symbol={result.symbol} />
+                <AnalyzeResultsDashboard data={result} />
               </div>
             ) : progress ? (
               <div style={resultPlaceholder}>
@@ -811,8 +844,8 @@ function AnalyzePage() {
             )
           ) : customResult ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-              <CustomAnalysisResultsList catalog={catalog} result={customResult} />
               <PriceChartSection symbol={customResult.symbol} />
+              <CustomAnalysisResultsList catalog={catalog} result={customResult} />
             </div>
           ) : customProgress ? (
             <div style={resultPlaceholder}>

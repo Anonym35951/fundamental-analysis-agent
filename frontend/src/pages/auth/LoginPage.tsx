@@ -87,6 +87,11 @@ function LoginPage() {
 
       localStorage.setItem("access_token", result.access_token);
       localStorage.setItem("token_type", result.token_type);
+      // Eigenes Event statt Zentralisierung in api/client.ts (wie bei
+      // app:logout) - es gibt nur diesen einen frischen Login-Pfad, eine
+      // zentrale Stelle wäre verfrühte Abstraktion. Wird von FavoritesProvider
+      // (#3) und Header (#11) konsumiert.
+      window.dispatchEvent(new Event("app:login"));
 
       sessionStorage.setItem("show_intro", "1");
       navigate("/app/dashboard");

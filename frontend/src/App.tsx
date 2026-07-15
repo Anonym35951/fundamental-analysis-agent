@@ -45,6 +45,8 @@ import { ThemeModeProvider } from "./components/ui/ThemeModeContext";
 import CookieConsentBanner from "./components/consent/CookieConsentBanner";
 import { CompareProvider } from "./hooks/useCompare";
 import { AnalysisJobsProvider } from "./hooks/useAnalysisJobs";
+import { AnalyzeWorkspaceProvider } from "./hooks/useAnalyzeWorkspace";
+import { FavoritesProvider } from "./hooks/useFavorites";
 
 function App() {
   const token = localStorage.getItem("access_token");
@@ -53,6 +55,8 @@ function App() {
     <BrowserRouter>
       <CompareProvider>
       <AnalysisJobsProvider>
+      <AnalyzeWorkspaceProvider>
+      <FavoritesProvider>
       <ThemeModeProvider>
         <CookieConsentBanner />
         <Routes>
@@ -144,6 +148,8 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ThemeModeProvider>
+      </FavoritesProvider>
+      </AnalyzeWorkspaceProvider>
       </AnalysisJobsProvider>
       </CompareProvider>
     </BrowserRouter>

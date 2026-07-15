@@ -5,7 +5,7 @@ import LivePriceBadge from "../shared/LivePriceBadge";
 import Sparkline from "../charts/Sparkline";
 import PercentChangeBadge from "../charts/PercentChangeBadge";
 import { computePercentChange } from "../charts/chartUtils";
-import { getFavorites, type FavoriteEntry } from "../../api/favorites";
+import { useFavorites } from "../../hooks/useFavoritesContext";
 import { getPriceHistoryBatch, type PriceHistoryBatchEntry } from "../../api/marketData";
 
 // EVOLVING.md EV-071: erste 10 Favoriten in einem Batch-Call, Rest erst
@@ -20,28 +20,14 @@ type BatchState = Record<string, PriceHistoryBatchEntry>;
  * Favoritenliste, ersetzt sie nicht - beide bleiben unabhängig
  * nebeneinander bestehen. */
 export default function DashboardFavoritesSection() {
-  const [favorites, setFavorites] = useState<FavoriteEntry[] | null>(null);
+  const { favorites, isLoading } = useFavorites();
   const [batchData, setBatchData] = useState<BatchState>({});
   const [batchError, setBatchError] = useState(false);
   const [isLoadingBatch, setIsLoadingBatch] = useState(false);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
   useEffect(() => {
-    let isMounted = true;
-    getFavorites()
-      .then((data) => {
-        if (isMounted) setFavorites(data);
-      })
-      .catch(() => {
-        if (isMounted) setFavorites([]);
-      });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!favorites || favorites.length === 0) return;
+    if (favorites.length === 0) return;
 
     const symbols = favorites.slice(0, INITIAL_VISIBLE_COUNT).map((f) => f.symbol);
     const alreadyLoaded = symbols.every((symbol) => symbol in batchData);
@@ -70,7 +56,6 @@ export default function DashboardFavoritesSection() {
   }, [favorites]);
 
   function handleShowMore() {
-    if (!favorites) return;
     const nextVisible = favorites.length;
     const symbols = favorites.slice(visibleCount, nextVisible).map((f) => f.symbol);
     setVisibleCount(nextVisible);
@@ -89,7 +74,7 @@ export default function DashboardFavoritesSection() {
       .finally(() => setIsLoadingBatch(false));
   }
 
-  if (favorites === null) {
+  if (isLoading) {
     return (
       <div style={panel}>
         <div style={panelTitle}>Favoriten</div>

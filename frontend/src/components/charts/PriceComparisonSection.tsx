@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, LineChart } from "lucide-react";
 import { theme } from "../ui/theme";
 import MultiLayerChart, { type ChartLayer } from "./MultiLayerChart";
@@ -36,6 +36,7 @@ export default function PriceComparisonSection({ symbols }: Props) {
 
   const cacheRef = useRef<Map<string, PriceHistoryResponse>>(new Map());
   const loadedForRef = useRef<string | null>(null);
+  const requestIdRef = useRef(0);
 
   function buildLayersFromCache(currentSymbols: string[], currentRange: TimeRange): ChartLayer[] {
     const rawLayers: ChartLayer[] = [];
@@ -60,6 +61,11 @@ export default function PriceComparisonSection({ symbols }: Props) {
   }
 
   function load(currentSymbols: string[], currentRange: TimeRange) {
+    // Guard gegen veraltete Antworten (gleiches Muster wie
+    // PriceChartSection#4): ein Firmenwechsel während eines laufenden
+    // Fetches darf das Ergebnis eines späteren Fetches nicht überschreiben,
+    // trotz Promise.allSettled.
+    const requestId = ++requestIdRef.current;
     setIsLoading(true);
 
     const toFetch = currentSymbols.filter((symbol) => !cacheRef.current.has(`${symbol}:${currentRange}`));
@@ -74,6 +80,8 @@ export default function PriceComparisonSection({ symbols }: Props) {
           failed.push(symbol);
         }
       });
+
+      if (requestIdRef.current !== requestId) return;
 
       const stillMissing = currentSymbols.filter(
         (symbol) => !cacheRef.current.has(`${symbol}:${currentRange}`)
@@ -98,6 +106,21 @@ export default function PriceComparisonSection({ symbols }: Props) {
     setRange(nextRange);
     load(symbols, nextRange);
   }
+
+  const symbolsKey = symbols.join(",");
+
+  // Fügt man auf der Compare-Seite eine Firma hinzu, während "Kursvergleich"
+  // bereits offen ist, sollen deren Daten automatisch nachgeladen werden
+  // (bisher nur handleToggle/handleRangeChange). ComparePage.tsx übergibt bei
+  // jedem Render ein neues Array-Objekt - Dependency ist deshalb bewusst der
+  // String symbolsKey statt des Arrays, damit der 1,5s-Poll-Tick von
+  // CompareProvider nicht bei jedem Tick erneut feuert.
+  useEffect(() => {
+    if (isOpen && loadedForRef.current !== `${symbolsKey}:${range}`) {
+      load(symbols, range);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbolsKey, isOpen]);
 
   if (symbols.length === 0) return null;
 

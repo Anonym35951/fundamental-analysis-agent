@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { theme } from "../ui/theme";
 
@@ -6,7 +7,22 @@ type HeaderProps = {
 };
 
 function Header({ variant = "public" }: HeaderProps) {
-  const hasToken = Boolean(localStorage.getItem("access_token"));
+  // Login/Logout im selben Tab crossen immer eine Layout-Grenze (Remount von
+  // Header), daher wird ein einmaliges Lesen hier nur cross-tab relevant
+  // (Tab A auf öffentlicher Seite, Tab B loggt sich ein/aus). Fix: auf
+  // app:login/app:logout/storage hören statt nur einmal beim Render zu lesen.
+  const [hasToken, setHasToken] = useState(() => Boolean(localStorage.getItem("access_token")));
+  useEffect(() => {
+    const sync = () => setHasToken(Boolean(localStorage.getItem("access_token")));
+    window.addEventListener("app:login", sync);
+    window.addEventListener("app:logout", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("app:login", sync);
+      window.removeEventListener("app:logout", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
 
   return (
     <header
