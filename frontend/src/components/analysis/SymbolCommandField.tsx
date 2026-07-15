@@ -12,6 +12,7 @@ type Props = {
   isSuggestionsOpen: boolean;
   isLoadingSymbols: boolean;
   filteredSuggestions: SymbolMeta[];
+  isSymbolSearchDegraded?: boolean;
   onSelectSuggestion: (symbol: string) => void;
   isFavorited: boolean;
   onToggleFavorite: () => void;
@@ -25,6 +26,7 @@ export default function SymbolCommandField({
   isSuggestionsOpen,
   isLoadingSymbols,
   filteredSuggestions,
+  isSymbolSearchDegraded = false,
   onSelectSuggestion,
   isFavorited,
   onToggleFavorite,
@@ -81,6 +83,11 @@ export default function SymbolCommandField({
             transition={{ duration: 0.15 }}
             style={suggestionDropdown}
           >
+            {isSymbolSearchDegraded ? (
+              <div style={suggestionDegradedHint}>
+                Suche derzeit eingeschränkt – zeige eine begrenzte Auswahl. Bitte erneut versuchen.
+              </div>
+            ) : null}
             {isLoadingSymbols ? (
               <div style={suggestionEmptyText}>Symbole werden geladen...</div>
             ) : filteredSuggestions.length > 0 ? (
@@ -208,4 +215,13 @@ const suggestionEmptyText = {
   fontSize: "0.9rem",
   lineHeight: 1.6,
   padding: "8px 10px",
+};
+
+const suggestionDegradedHint = {
+  color: theme.colors.dangerText,
+  fontSize: "0.82rem",
+  lineHeight: 1.5,
+  padding: "8px 10px",
+  borderBottom: `1px solid ${theme.colors.chromeBorder}`,
+  marginBottom: "4px",
 };

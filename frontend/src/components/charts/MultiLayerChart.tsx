@@ -11,38 +11,20 @@ import {
 } from "recharts";
 import { theme, useChartTokens } from "../ui/theme";
 import { useIsMobile } from "../../hooks/useMediaQuery";
-import { formatCompactNumber, type ChartLayer } from "./chartUtils";
+import { formatCompactNumber, layersCurrencyState, mergeLayers, type BucketMode, type ChartLayer } from "./chartUtils";
+import ChartTooltip from "./ChartTooltip";
 
 export type { ChartLayer } from "./chartUtils";
 
 type Props = {
   layers: ChartLayer[];
   height?: number;
+  /** Wie die X-Achse Zeitpunkte über mehrere Firmen-Layer hinweg
+   * zusammenfasst (EVOLVING.md EV-030) - Default "date" (kein Bucketing,
+   * bisheriges Verhalten) ist für Einzelfirmen-Charts korrekt; Compare-
+   * Charts geben je nach Annual/Quarterly-Auswahl "year"/"quarter" durch. */
+  bucketMode?: BucketMode;
 };
-
-/** Backend timestamps come through as e.g. "2007-12-31 00:00:00" — every
- * metric in this app is daily-or-coarser, so the time component is always
- * midnight and never carries information; strip it for axis ticks and the
- * tooltip label so dates aren't twice as long as they need to be. */
-function formatDateLabel(value: unknown): string {
-  return String(value ?? "").split(/[ T]/)[0];
-}
-
-function mergeLayers(layers: ChartLayer[]): Array<Record<string, string | number>> {
-  const byDate = new Map<string, Record<string, string | number>>();
-
-  for (const layer of layers) {
-    for (const point of layer.data) {
-      const row = byDate.get(point.date) ?? { date: point.date };
-      row[layer.id] = point.value;
-      byDate.set(point.date, row);
-    }
-  }
-
-  return Array.from(byDate.values()).sort((a, b) =>
-    String(a.date).localeCompare(String(b.date))
-  );
-}
 
 /** Data-driven [min, max] for one axis's layers, compressed/stretched by
  * `zoom` around its center — zoom > 1 narrows the visible range (zoom in),
@@ -75,11 +57,16 @@ type DragState = { axis: "left" | "right"; startY: number; startZoom: number };
  * Each axis has a draggable handle (left edge / right edge) so a user can
  * stretch or compress that axis's scale by hand, TradingView-style, instead
  * of being stuck with whatever range the data happens to span. */
-export default function MultiLayerChart({ layers, height = 320 }: Props) {
+export default function MultiLayerChart({ layers, height = 320, bucketMode = "date" }: Props) {
   const chartTokens = useChartTokens();
   const isMobile = useIsMobile();
-  const merged = useMemo(() => mergeLayers(layers), [layers]);
+  const merged = useMemo(() => mergeLayers(layers, bucketMode), [layers, bucketMode]);
   const hasRightAxis = layers.some((layer) => layer.axis === "right");
+  // EVOLVING.md EV-023: einheitliche Währung -> dezente Unterzeile (einzige
+  // sichtbare Änderung im Standardfall); gemischte Originalwährungen ->
+  // Hinweis-Badge + Currency-Code je Tooltip-Zeile; keine bekannte Währung
+  // (z. B. Ratio-/Margen-Charts) -> unverändertes bisheriges Verhalten.
+  const currencyState = useMemo(() => layersCurrencyState(layers), [layers]);
   // Schmalere Y-Achsen-Spalte auf Mobile: 64px pro Achse (128px bei zwei
   // Achsen) lässt auf 375px kaum noch Zeichenfläche übrig
   // (RESPONSIVE.md R-P1-6).
@@ -140,7 +127,15 @@ export default function MultiLayerChart({ layers, height = 320 }: Props) {
   const rightDomain = computeDomain(layers, "right", zoom.right);
 
   return (
-    <div style={{ position: "relative", width: "100%", height }}>
+    <div style={{ position: "relative", width: "100%" }}>
+      {"uniform" in currencyState ? (
+        <div style={currencySubtitleStyle}>Werte in {currencyState.uniform}</div>
+      ) : "mixed" in currencyState ? (
+        <div style={currencyMixedBadgeStyle}>
+          Originalwährungen: {currencyState.mixed.join(", ")} – Werte nicht direkt vergleichbar
+        </div>
+      ) : null}
+      <div style={{ position: "relative", width: "100%", height }}>
       {/* Zieh-Griffe sind reine Mouse-Event-Handler (mousemove/mouseup) ohne
        * Touch-Äquivalent — auf Touch-Geräten überlagerten sie bisher nur
        * nutzlos den Chart-Rand, ohne je auf einen Tap/Drag zu reagieren
@@ -170,11 +165,10 @@ export default function MultiLayerChart({ layers, height = 320 }: Props) {
         <LineChart data={merged} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
           <CartesianGrid stroke={chartTokens.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis
-            dataKey="date"
+            dataKey="label"
             stroke={chartTokens.axis}
             tick={{ fontSize: isMobile ? 10 : 12 }}
             tickLine={false}
-            tickFormatter={formatDateLabel}
             minTickGap={isMobile ? 24 : 8}
             interval="preserveStartEnd"
           />
@@ -203,19 +197,14 @@ export default function MultiLayerChart({ layers, height = 320 }: Props) {
               width={axisWidth}
             />
           ) : null}
+          {/* EV-031: eigener Tooltip statt Recharts-Standard - der listet nur
+             Serien mit definiertem Wert an der gehoverten Position (Root
+             Cause des "nur 1-2 Firmen im Tooltip"-Bugs); ChartTooltip
+             iteriert stattdessen über `layers` und zeigt "–" für Lücken. */}
           <Tooltip
-            contentStyle={{
-              background: theme.colors.panel,
-              border: `1px solid ${theme.colors.border}`,
-              borderRadius: theme.radius.sm,
-              color: theme.colors.textPrimary,
-            }}
-            labelStyle={{ color: theme.colors.textMuted }}
-            labelFormatter={formatDateLabel}
-            formatter={(value, name) => [
-              typeof value === "number" ? formatCompactNumber(value) : String(value ?? ""),
-              name,
-            ]}
+            content={(props) => (
+              <ChartTooltip {...props} layers={layers} showCurrencyPerRow={"mixed" in currencyState} />
+            )}
           />
           <Legend wrapperStyle={{ fontSize: "0.8rem" }} />
           {layers.map((layer) => (
@@ -234,9 +223,27 @@ export default function MultiLayerChart({ layers, height = 320 }: Props) {
           ))}
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 }
+
+const currencySubtitleStyle: React.CSSProperties = {
+  marginBottom: "6px",
+  color: theme.colors.textMuted,
+  fontSize: "0.78rem",
+};
+
+const currencyMixedBadgeStyle: React.CSSProperties = {
+  marginBottom: "8px",
+  padding: "6px 10px",
+  borderRadius: theme.radius.sm,
+  background: theme.colors.dangerSoft,
+  border: `1px solid ${theme.colors.dangerBorder}`,
+  color: theme.colors.dangerText,
+  fontSize: "0.8rem",
+  lineHeight: 1.5,
+};
 
 function axisHandle(axis: "left" | "right"): React.CSSProperties {
   return {

@@ -101,6 +101,13 @@ class JobManager:
                 "finished_at": None,
                 "error": None,
                 "results": {},
+                # EVOLVING.md EV-021: additiv, vom Worker-Thread per
+                # set_reporting_currency() befüllt (SEC-Abfrage kann einen
+                # Netzwerk-Roundtrip kosten - bewusst NICHT hier synchron im
+                # Request-Handler, sonst würde jeder Analyse-Start spürbar
+                # langsamer). None, solange der Worker sie noch nicht
+                # ermittelt hat oder falls sie unbestimmbar bleibt.
+                "reporting_currency": None,
                 "user_id": user_id,
             }
         return job_id
@@ -115,6 +122,11 @@ class JobManager:
             if job_id in self._jobs:
                 self._jobs[job_id]["results"][key] = sanitize_for_json(result)
                 self._jobs[job_id]["done"] += 1
+
+    def set_reporting_currency(self, job_id: str, currency: str | None) -> None:
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id]["reporting_currency"] = currency
 
     def set_done(self, job_id: str) -> None:
         with self._lock:
@@ -165,6 +177,7 @@ class JobManager:
                 "done": job["done"],
                 "error": job["error"],
                 "results": job["results"],
+                "reporting_currency": job.get("reporting_currency"),
             }
 
 

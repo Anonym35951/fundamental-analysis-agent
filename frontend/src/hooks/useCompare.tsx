@@ -158,6 +158,7 @@ export function CompareProvider({ children }: { children: ReactNode }) {
                   metricParams,
                   frequency: freq,
                   error: null,
+                  reporting_currency: result.reporting_currency,
                 });
               } else if (progress.status === "error") {
                 finish();

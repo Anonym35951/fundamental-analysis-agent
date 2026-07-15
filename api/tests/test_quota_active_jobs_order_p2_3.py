@@ -15,6 +15,7 @@ from starlette.requests import Request
 
 from api.models.base import Base
 from api.models.custom_analysis_definition import CustomAnalysisDefinition
+from api.models.symbol import Symbol
 from api.models.user import User
 import api.routes.analyze as analyze_module
 import api.routes.custom_analysis as custom_analysis_module
@@ -31,7 +32,12 @@ from api.schemas.custom_analysis_definition import CustomAnalysisDefinitionRunRe
 
 @pytest.fixture
 def db_full(db):
-    Base.metadata.create_all(db.get_bind(), tables=[CustomAnalysisDefinition.__table__])
+    # Symbol.__table__ seit EVOLVING.md EV-014 noetig: alle vier Start-
+    # Routen pruefen das Symbol jetzt per ensure_known_symbol gegen die
+    # symbols-Tabelle, bevor der 429-Check bzw. Quota-Verbrauch greift.
+    Base.metadata.create_all(
+        db.get_bind(), tables=[CustomAnalysisDefinition.__table__, Symbol.__table__]
+    )
     return db
 
 
@@ -65,7 +71,8 @@ def _forbid_quota_call(name):
     return _fail
 
 
-def test_single_analysis_429_before_quota(db, monkeypatch):
+def test_single_analysis_429_before_quota(db_full, monkeypatch):
+    db = db_full
     user = _make_user(db)
     monkeypatch.setattr(
         analyze_module.job_manager, "count_active_jobs", lambda user_id: 999
@@ -86,7 +93,8 @@ def test_single_analysis_429_before_quota(db, monkeypatch):
     assert exc.value.status_code == 429
 
 
-def test_full_analysis_429_before_quota(db, monkeypatch):
+def test_full_analysis_429_before_quota(db_full, monkeypatch):
+    db = db_full
     user = _make_user(db)
     monkeypatch.setattr(
         full_analysis_module.jobs, "count_active_jobs", lambda user_id: 999
@@ -102,7 +110,8 @@ def test_full_analysis_429_before_quota(db, monkeypatch):
     assert exc.value.status_code == 429
 
 
-def test_custom_analysis_start_429_before_quota(db, monkeypatch):
+def test_custom_analysis_start_429_before_quota(db_full, monkeypatch):
+    db = db_full
     user = _make_user(db)
     monkeypatch.setattr(
         custom_analysis_module.job_manager, "count_active_jobs", lambda user_id: 999

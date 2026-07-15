@@ -38,6 +38,35 @@ export function formatCompactNumber(value: number): string {
   return value.toFixed(2).replace(/\.?0+$/, "");
 }
 
+/** ISO-Code → Symbol für die vier vom Feedback konkret genannten Währungen
+ * (EVOLVING.md EV-022). Unbekannte Codes werden als Suffix angehängt statt
+ * geraten - lieber "1,2 Mrd. CNY" als ein falsches Symbol. */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+};
+
+/** Zentrale Geldbetrag-Formatierung (EVOLVING.md EV-022) - ersetzt das
+ * vorher hartcodierte `$`. Ohne `isoCode` (unbekannte/nicht ermittelte
+ * Berichtswährung) bleibt das bisherige Verhalten exakt erhalten: `$` als
+ * Präfix, keine sichtbare Änderung für bestehende Analysen. */
+export function formatMonetary(value: number, isoCode?: string | null): string {
+  const compact = formatCompactNumber(value);
+
+  if (!isoCode) {
+    return `$${compact}`;
+  }
+
+  const symbol = CURRENCY_SYMBOLS[isoCode];
+  if (symbol) {
+    return `${symbol}${compact}`;
+  }
+
+  return `${compact} ${isoCode}`;
+}
+
 function isDollarKey(key: string): boolean {
   // Ratio/multiple metrics (price_to_ebit, cash_to_market_cap, ev_to_sales,
   // debt_to_equity, ...) are unitless and never a currency amount, even
@@ -59,7 +88,7 @@ function isDollarKey(key: string): boolean {
   );
 }
 
-export function formatMetricValue(value: unknown, key?: string): string {
+export function formatMetricValue(value: unknown, key?: string, currency?: string | null): string {
   if (value === null || value === undefined) return "—";
 
   const normalizedKey = key ? normalizeMetricKey(key) : "";
@@ -76,7 +105,7 @@ export function formatMetricValue(value: unknown, key?: string): string {
       return `${formatted}%`;
     }
     if (config?.unit === "currency" || isDollarKey(normalizedKey)) {
-      return `$${formatCompactNumber(value)}`;
+      return formatMonetary(value, currency);
     }
 
     return formatted;
@@ -87,12 +116,12 @@ export function formatMetricValue(value: unknown, key?: string): string {
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => formatMetricValue(item, key)).join(", ");
+    return value.map((item) => formatMetricValue(item, key, currency)).join(", ");
   }
 
   if (typeof value === "object") {
     return Object.entries(value as Record<string, unknown>)
-      .map(([objectKey, objectValue]) => `${formatLabel(objectKey)}: ${formatMetricValue(objectValue, objectKey)}`)
+      .map(([objectKey, objectValue]) => `${formatLabel(objectKey)}: ${formatMetricValue(objectValue, objectKey, currency)}`)
       .join(" · ");
   }
 

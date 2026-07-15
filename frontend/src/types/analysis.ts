@@ -58,4 +58,7 @@ export type FullResult = {
   done: number;
   error?: string | null;
   results: Record<string, CategoryResult>;
+  /** ISO-Berichtswährung der Fundamentaldaten (EVOLVING.md EV-021/022) -
+   * `null`/fehlend, wenn unbestimmbar. */
+  reporting_currency?: string | null;
 };

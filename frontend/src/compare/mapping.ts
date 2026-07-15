@@ -23,7 +23,8 @@ export function mapCompanyMetricsToLayers(
   symbol: string,
   metrics: Record<string, CustomMetricResult>,
   catalog: MetricCatalogEntry[],
-  color: string
+  color: string,
+  reportingCurrency?: string | null
 ): CompareLayer[] {
   const catalogByKey = new Map(catalog.map((entry) => [entry.key, entry]));
 
@@ -44,6 +45,7 @@ export function mapCompanyMetricsToLayers(
       value: metric.value,
       error: metric.error ?? null,
       meetsCriterion: metric.meets_criterion,
+      currency: reportingCurrency,
     };
   });
 }

@@ -19,6 +19,7 @@ from api.crud.analysis_history import create_history_entry, update_history_statu
 from api.services.event_service import log_event
 from api.routes.analyze import get_action
 from api.utils.json_sanitize import make_json_safe
+from api.utils.symbol_validation import ensure_known_symbol
 
 router = APIRouter(prefix="/full", tags=["full-analysis"])
 
@@ -83,6 +84,7 @@ def run_full_analysis_job(job_id: str, symbol: str):
     history_db = SessionLocal()
     try:
         plan = build_analysis_plan()
+        jobs.set_reporting_currency(job_id, resolve_reporting_currency(get_action(), symbol))
 
         for key, analysis_name, freq, func in plan:
             jobs.set_current(job_id, f"{analysis_name} ({freq})")
@@ -118,6 +120,9 @@ def start_full_analysis(
     db: Session = Depends(get_db),
 ):
     symbol = symbol.strip().upper()
+    # Symbol-Check VOR dem Quota-Verbrauch (gleiche Begründung wie der
+    # Active-Jobs-Check direkt darunter, LAUNCH_AUDIT.md P2-3).
+    symbol = ensure_known_symbol(db, symbol)
 
     # Active-Jobs-Check VOR dem Quota-Verbrauch (LAUNCH_AUDIT.md P2-3) - vorher
     # verbrauchte Depends(require_analysis_access) das Kontingent schon, bevor

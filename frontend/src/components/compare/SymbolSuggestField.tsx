@@ -22,7 +22,11 @@ export default function SymbolSuggestField({ value, onChange, onCommit, placehol
   const blurTimeoutRef = useRef<number | null>(null);
 
   const normalized = value.trim().toUpperCase();
-  const { suggestions: filteredSuggestions, isLoadingSuggestions: isLoadingSymbols } = useSymbolSearch(normalized);
+  const {
+    suggestions: filteredSuggestions,
+    isLoadingSuggestions: isLoadingSymbols,
+    isDegraded: isSymbolSearchDegraded,
+  } = useSymbolSearch(normalized);
 
   function handleFocus() {
     if (blurTimeoutRef.current) {
@@ -75,6 +79,11 @@ export default function SymbolSuggestField({ value, onChange, onCommit, placehol
             transition={{ duration: 0.12 }}
             style={dropdownStyle}
           >
+            {isSymbolSearchDegraded ? (
+              <div style={degradedHintStyle}>
+                Suche derzeit eingeschränkt – zeige eine begrenzte Auswahl. Bitte erneut versuchen.
+              </div>
+            ) : null}
             {isLoadingSymbols ? (
               <div style={emptyTextStyle}>Symbole werden geladen...</div>
             ) : filteredSuggestions.length > 0 ? (
@@ -164,4 +173,13 @@ const emptyTextStyle: React.CSSProperties = {
   color: theme.colors.textMuted,
   fontSize: "0.85rem",
   padding: "8px 10px",
+};
+
+const degradedHintStyle: React.CSSProperties = {
+  color: theme.colors.dangerText,
+  fontSize: "0.78rem",
+  lineHeight: 1.5,
+  padding: "6px 10px",
+  borderBottom: `1px solid ${theme.colors.chromeBorder}`,
+  marginBottom: "4px",
 };

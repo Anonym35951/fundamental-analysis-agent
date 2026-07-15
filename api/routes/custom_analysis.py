@@ -15,6 +15,8 @@ from api.services.metric_catalog import get_catalog_entries, call_metric
 from api.services.custom_analysis_limit import check_can_save_definition
 from api.services.event_service import log_event
 from api.utils.json_sanitize import make_json_safe
+from api.utils.symbol_validation import ensure_known_symbol
+from api.utils.reporting_currency import resolve_reporting_currency
 from api.core.dependencies import (
     get_current_user,
     require_analysis_access,
@@ -161,7 +163,17 @@ def _wrap_metric_result(raw, criterion: dict | None, metric_key: str = "") -> di
     if hasattr(raw, "to_dict") and hasattr(raw, "columns"):
         value_column = raw.columns[0] if len(raw.columns) > 0 else None
         series = [
-            {"date": str(idx), "value": row[value_column]}
+            # EVOLVING.md EV-030: datetime-artige Indizes als reines
+            # "YYYY-MM-DD" serialisieren statt str(idx) (das bei einem
+            # DatetimeIndex den vollen Timestamp inkl. "00:00:00" liefert) -
+            # Root Cause des Tooltip-Bugs: unterschiedliche Firmen mit
+            # abweichenden Fiskal-Stichtagen erzeugten dadurch nie
+            # kollidierende Merge-Schluessel im Frontend. Nicht-datetime
+            # Indizes (selten, aber moeglich) behalten str(idx) als Fallback.
+            {
+                "date": idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx),
+                "value": row[value_column],
+            }
             for idx, row in raw.iterrows()
         ] if value_column is not None else []
         return {"value": None, "series": make_json_safe(series)}
@@ -227,6 +239,7 @@ def _launch_custom_job(
         try:
             action = get_action()
             job_manager.set_current(job_id, "Starte eigene Analyse…")
+            job_manager.set_reporting_currency(job_id, resolve_reporting_currency(action, symbol))
 
             for selection in metrics:
                 params = dict(selection.params or {})
@@ -292,6 +305,11 @@ def start_custom_analysis(
     if unknown:
         raise HTTPException(status_code=400, detail=f"Unbekannte Metriken: {', '.join(unknown)}")
 
+    symbol = _norm_symbol(payload.symbol)
+    # Symbol-Check VOR dem Quota-Verbrauch (gleiche Begründung wie der
+    # Active-Jobs-Check direkt darunter, LAUNCH_AUDIT.md P2-3).
+    symbol = ensure_known_symbol(db, symbol)
+
     # Active-Jobs-Check VOR dem Quota-Verbrauch (LAUNCH_AUDIT.md P2-3) - der
     # Check lag vorher in _launch_custom_job, NACH dem Quota-Verbrauch hier.
     if (
@@ -302,7 +320,6 @@ def start_custom_analysis(
 
     require_analysis_access_for_units(db, current_user, units=len(payload.metrics))
 
-    symbol = _norm_symbol(payload.symbol)
     job_id = _launch_custom_job(
         db, current_user, symbol, payload.frequency, payload.metrics, None, source=payload.source
     )
@@ -332,6 +349,7 @@ def get_custom_result(job_id: str, current_user: User = Depends(get_current_user
         "symbol": r["symbol"],
         "status": r["status"],
         "metrics": r["results"],
+        "reporting_currency": r.get("reporting_currency"),
     }
 
 
@@ -428,6 +446,11 @@ def run_definition(
     if not definition:
         raise HTTPException(status_code=404, detail="Definition not found")
 
+    symbol = _norm_symbol(payload.symbol)
+    # Symbol-Check VOR dem Quota-Verbrauch (gleiche Begründung wie der
+    # Active-Jobs-Check direkt darunter, LAUNCH_AUDIT.md P2-3).
+    symbol = ensure_known_symbol(db, symbol)
+
     # Active-Jobs-Check VOR dem Quota-Verbrauch (LAUNCH_AUDIT.md P2-3).
     if (
         job_manager.count_active_jobs(current_user.id)
@@ -437,8 +460,6 @@ def run_definition(
 
     metrics = [MetricSelection(**entry) for entry in definition.metrics]
     require_analysis_access_for_units(db, current_user, units=len(metrics))
-
-    symbol = _norm_symbol(payload.symbol)
 
     job_id = _launch_custom_job(db, current_user, symbol, payload.frequency, metrics, definition.id)
     definitions_crud.mark_definition_run(db, definition)

@@ -2,8 +2,10 @@ import logging
 import time
 from datetime import datetime, timezone
 
+from dateutil.relativedelta import relativedelta
 from fastapi import APIRouter, HTTPException, Depends, Request
 from api.utils.json_sanitize import make_json_safe
+from api.utils.reporting_currency import resolve_reporting_currency
 from api.core.rate_limit import limiter
 from api.routes.analyze import get_action
 from api.core.dependencies import get_current_user, require_analysis_access
@@ -69,6 +71,12 @@ def current_price(
         payload = {
             "symbol": symbol,
             "price": float(price),
+            # EVOLVING.md EV-021: das Symbol-Universum ist auf NYSE+NASDAQ
+            # beschränkt (siehe scripts/import_symbols.py) - Kurse dort
+            # notieren immer in USD, unabhängig von der Berichtswährung der
+            # Fundamentaldaten (reporting_currency), die z. B. bei Foreign-
+            # Private-Issuer-Filern abweichen kann.
+            "currency": "USD",
             "fetched_at": datetime.now(timezone.utc).isoformat(),
         }
         _PRICE_CACHE[symbol] = {"fetched_at": now, "payload": payload}
@@ -104,6 +112,172 @@ def data_source_summary(
     except Exception:
         logger.exception("Data source summary failed for symbol=%s", symbol)
         return {"symbol": symbol, "error": _GENERIC_METRIC_ERROR}
+
+
+# EVOLVING.md EV-060: eigener, gröberer Cache als `_PRICE_CACHE` (12s TTL,
+# einzelner Live-Kurs) - eine ganze Kursreihe pro Symbol+Range ist teurer zu
+# berechnen (Downsampling) und ändert sich innerhalb weniger Minuten nicht
+# sichtbar, daher 15 Minuten TTL.
+_PRICE_HISTORY_CACHE: dict[str, dict] = {}
+_PRICE_HISTORY_CACHE_TTL_SECONDS = 15 * 60
+
+_PRICE_HISTORY_RANGE_MONTHS = {"1m": 1, "2m": 2, "3m": 3, "6m": 6, "1y": 12, "2y": 24, "5y": 60}
+_PRICE_HISTORY_VALID_RANGES = frozenset(_PRICE_HISTORY_RANGE_MONTHS) | {"max"}
+# Ab diesen Ranges ist die Rohserie (taeglich) zu groß fuer eine schlanke
+# Chart-Payload - wöchentliche Downsampling-Stufe (EVOLVING.md EV-060/8.5).
+_PRICE_HISTORY_WEEKLY_DOWNSAMPLE_RANGES = frozenset({"2y", "5y"})
+# "max" wird nur downgesampelt, wenn die Rohserie tatsächlich groß ist (junge
+# Symbole mit kurzer Historie sollen taeglich aufgeloest bleiben).
+_PRICE_HISTORY_MAX_POINTS_BEFORE_MONTHLY_DOWNSAMPLE = 1500
+
+
+def _fetch_price_history_payload(action, symbol: str, range: str) -> dict:
+    """Gemeinsame Kern-Logik für `price_history()` und `price_history_batch()`
+    (EVOLVING.md EV-060/070): Cache-Check, Laden, Range-Zuschnitt,
+    Downsampling. Wirft `HTTPException` (404/502) bei Fehlern -
+    `price_history()` lässt das direkt durchreichen, `price_history_batch()`
+    fängt es je Symbol ab und baut daraus einen `{symbol, error}`-Eintrag,
+    statt den gesamten Batch an einem einzelnen kaputten Symbol scheitern zu
+    lassen."""
+    cache_key = f"{symbol}:{range}"
+    cached = _PRICE_HISTORY_CACHE.get(cache_key)
+    now = time.time()
+    if cached and now - cached["fetched_at"] < _PRICE_HISTORY_CACHE_TTL_SECONDS:
+        return cached["payload"]
+
+    try:
+        # interval="1d": get_max_historical_stock_data() defaultet auf "1mo"
+        # (fuer die monatsweise Marktkapitalisierungs-Berechnung) - Kurscharts
+        # brauchen die taegliche Aufloesung als Rohbasis fuer die Range-/
+        # Downsampling-Logik unten.
+        df = action.model.dataloader.get_max_historical_stock_data(symbol, use_cache=True, interval="1d")
+    except Exception:
+        logger.exception("Price-history fetch failed for symbol=%s", symbol)
+        raise HTTPException(status_code=502, detail=_GENERIC_METRIC_ERROR)
+
+    if df is None or df.empty or "Close" not in df.columns:
+        raise HTTPException(status_code=404, detail=f"Keine Kursdaten für Symbol {symbol} verfügbar.")
+
+    closes = df["Close"].dropna()
+    if closes.empty:
+        raise HTTPException(status_code=404, detail=f"Keine Kursdaten für Symbol {symbol} verfügbar.")
+
+    if range != "max":
+        # Anker = neuester verfuegbarer Handelstag (nicht "heute" - vermeidet
+        # eine leere/verkürzte Serie bei Wochenenden/Feiertagen oder
+        # Datenverzug), analog zur Frontend-Utility filterSeriesByRange (EV-040).
+        anchor = closes.index.max()
+        cutoff = anchor - relativedelta(months=_PRICE_HISTORY_RANGE_MONTHS[range])
+        closes = closes[closes.index >= cutoff]
+
+    if closes.empty:
+        raise HTTPException(status_code=404, detail=f"Keine Kursdaten für Symbol {symbol} im gewählten Zeitraum.")
+
+    if range in _PRICE_HISTORY_WEEKLY_DOWNSAMPLE_RANGES:
+        closes = closes.resample("W").last().dropna()
+    elif range == "max" and len(closes) > _PRICE_HISTORY_MAX_POINTS_BEFORE_MONTHLY_DOWNSAMPLE:
+        closes = closes.resample("ME").last().dropna()
+
+    payload = make_json_safe({
+        "symbol": symbol,
+        # Kursbasiert, immer USD (NYSE/NASDAQ-Universum) - unabhängig von der
+        # Berichtswährung der Fundamentaldaten (EVOLVING.md EV-022).
+        "currency": "USD",
+        "range": range,
+        "rows": [{"date": idx.strftime("%Y-%m-%d"), "close": float(value)} for idx, value in closes.items()],
+    })
+
+    _PRICE_HISTORY_CACHE[cache_key] = {"fetched_at": now, "payload": payload}
+    return payload
+
+
+@router.get("/price-history/{symbol}")
+@limiter.limit("30/minute")
+def price_history(
+    request: Request,
+    symbol: str,
+    range: str = "1y",
+    current_user: User = Depends(get_current_user),  # 🔐 PROTECTION, kein Quota-Verbrauch (analog current-price)
+):
+    """Tägliche (bzw. bei langen Ranges herunterge­samplete) Adjusted-Close-
+    Kursreihe für Kurscharts (EVOLVING.md EV-060/061/062). Adjusted Close
+    kommt automatisch aus `get_max_historical_stock_data` -> `yfinance`s
+    `auto_adjust=True`-Standard (D5) - keine separate Bereinigung nötig."""
+    symbol = _norm_symbol(symbol)
+
+    if range not in _PRICE_HISTORY_VALID_RANGES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Ungültiger range-Parameter: {range}. Erlaubt: {', '.join(sorted(_PRICE_HISTORY_VALID_RANGES))}.",
+        )
+
+    action = get_action()
+    return _fetch_price_history_payload(action, symbol, range)
+
+
+# EVOLVING.md EV-070: Dashboard-Sparklines brauchen nur kurze Ranges (Payload-
+# Schutz - ein Batch aus bis zu 20 Symbolen × mehrjähriger Historie wäre
+# unnötig groß für eine reine Mini-Trend-Anzeige).
+_PRICE_HISTORY_BATCH_VALID_RANGES = frozenset({"1m", "3m"})
+_PRICE_HISTORY_BATCH_MAX_SYMBOLS = 20
+# Delay NUR zwischen tatsächlichen (nicht gecachten) yfinance-Abrufen -
+# schont die Datenquelle bei einem Batch mit vielen Cache-Misses, ohne
+# bereits gecachte Symbole künstlich zu verlangsamen.
+_PRICE_HISTORY_BATCH_THROTTLE_SECONDS = 0.2
+
+
+@router.get("/price-history-batch")
+@limiter.limit("10/minute")
+def price_history_batch(
+    request: Request,
+    symbols: str,
+    range: str = "1m",
+    current_user: User = Depends(get_current_user),  # 🔐 PROTECTION, kein Quota-Verbrauch (analog current-price)
+):
+    """Preis-Historien für mehrere Symbole in einem Request (EVOLVING.md
+    EV-070) - für die Dashboard-Favoriten-Sparklines (EV-071), damit N
+    Favoriten nicht N Einzel-Requests auslösen. Teilfehler pro Symbol landen
+    als `{symbol, error}`-Eintrag im Ergebnis statt den gesamten Batch mit
+    einem 4xx/5xx scheitern zu lassen."""
+    if range not in _PRICE_HISTORY_BATCH_VALID_RANGES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Ungültiger range-Parameter: {range}. Erlaubt: {', '.join(sorted(_PRICE_HISTORY_BATCH_VALID_RANGES))}.",
+        )
+
+    symbol_list = [_norm_symbol(s) for s in symbols.split(",") if s.strip()]
+    if not symbol_list:
+        raise HTTPException(status_code=422, detail="Mindestens ein Symbol erforderlich.")
+    if len(symbol_list) > _PRICE_HISTORY_BATCH_MAX_SYMBOLS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Maximal {_PRICE_HISTORY_BATCH_MAX_SYMBOLS} Symbole pro Anfrage (erhalten: {len(symbol_list)}).",
+        )
+
+    action = get_action()
+    results = []
+    did_uncached_fetch = False
+
+    for symbol in symbol_list:
+        cache_key = f"{symbol}:{range}"
+        cached = _PRICE_HISTORY_CACHE.get(cache_key)
+        is_cached = bool(cached) and time.time() - cached["fetched_at"] < _PRICE_HISTORY_CACHE_TTL_SECONDS
+
+        if not is_cached and did_uncached_fetch:
+            time.sleep(_PRICE_HISTORY_BATCH_THROTTLE_SECONDS)
+
+        try:
+            results.append(_fetch_price_history_payload(action, symbol, range))
+        except HTTPException as exc:
+            results.append({"symbol": symbol, "error": exc.detail})
+        except Exception:
+            logger.exception("Batch price-history fetch failed for symbol=%s", symbol)
+            results.append({"symbol": symbol, "error": _GENERIC_METRIC_ERROR})
+        finally:
+            if not is_cached:
+                did_uncached_fetch = True
+
+    return {"results": results}
 
 
 # =============================
@@ -643,6 +817,9 @@ def historical_market_cap(
 
         result = {
             "symbol": symbol,
+            # Marktkapitalisierung = Kurs (immer USD, NYSE/NASDAQ-Universum)
+            # × Aktienanzahl - kein SEC-Reporting-Currency-Lookup nötig.
+            "currency": "USD",
             "rows": [
                 {
                     "date": idx.strftime("%Y-%m-%d"),
@@ -684,6 +861,7 @@ def historical_enterprise_value(
 
         result = {
             "symbol": symbol,
+            "reporting_currency": resolve_reporting_currency(action, symbol),
             "rows": [
                 {
                     "date": idx.strftime("%Y-%m-%d"),
@@ -723,6 +901,7 @@ def historical_sales(
 
         result = {
             "symbol": symbol,
+            "reporting_currency": resolve_reporting_currency(action, symbol),
             "rows": [
                 {
                     "date": idx.strftime("%Y-%m-%d"),
@@ -762,6 +941,7 @@ def historical_ebit(
 
         result = {
             "symbol": symbol,
+            "reporting_currency": resolve_reporting_currency(action, symbol),
             "rows": [
                 {
                     "date": idx.strftime("%Y-%m-%d"),
@@ -801,6 +981,7 @@ def historical_ebitda(
 
         result = {
             "symbol": symbol,
+            "reporting_currency": resolve_reporting_currency(action, symbol),
             "rows": [
                 {
                     "date": idx.strftime("%Y-%m-%d"),
@@ -842,6 +1023,7 @@ def historical_net_current_assets(
 
         result = {
             "symbol": symbol,
+            "reporting_currency": resolve_reporting_currency(action, symbol),
             "rows": [
                 {
                     "date": idx.strftime("%Y-%m-%d"),
@@ -881,6 +1063,7 @@ def historical_operating_cashflow(
 
         result = {
             "symbol": symbol,
+            "reporting_currency": resolve_reporting_currency(action, symbol),
             "rows": [
                 {
                     "date": idx.strftime("%Y-%m-%d"),
@@ -920,6 +1103,7 @@ def historical_free_cashflow(
 
         result = {
             "symbol": symbol,
+            "reporting_currency": resolve_reporting_currency(action, symbol),
             "rows": [
                 {
                     "date": idx.strftime("%Y-%m-%d"),
@@ -961,6 +1145,7 @@ def historical_tangible_book_value(
 
         result = {
             "symbol": symbol,
+            "reporting_currency": resolve_reporting_currency(action, symbol),
             "rows": [
                 {
                     "date": idx.strftime("%Y-%m-%d"),

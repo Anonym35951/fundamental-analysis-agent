@@ -49,6 +49,24 @@ export default function ComparePivotTable({ layers, groups }: Props) {
     return map;
   }, [layers]);
 
+  // EVOLVING.md EV-023: Spaltenkopf je Firma um den ISO-Code ergänzen, wenn
+  // er von USD abweicht ODER die Firmen in dieser Tabelle unterschiedliche
+  // Berichtswährungen haben (dann ist der Hinweis auch bei USD-Firmen
+  // hilfreich, um die Abweichung sichtbar zu machen) - im reinen
+  // "alle Firmen berichten in USD"-Standardfall bleibt der Spaltenkopf
+  // unverändert (keine sichtbare Änderung).
+  const companyCurrencies = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const layer of layers) {
+      if (layer.currency && !map.has(layer.groupId)) {
+        map.set(layer.groupId, layer.currency);
+      }
+    }
+    return map;
+  }, [layers]);
+  const distinctCompanyCurrencies = new Set(companyCurrencies.values());
+  const hasMixedCompanyCurrencies = distinctCompanyCurrencies.size > 1;
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -96,11 +114,16 @@ export default function ComparePivotTable({ layers, groups }: Props) {
         <thead>
           <tr>
             <th style={{ ...headerCellStyle, ...stickyColumnStyle, textAlign: "left" }}>Kennzahl</th>
-            {groups.map((group) => (
-              <th key={group.groupId} style={headerCellStyle}>
-                {group.groupLabel}
-              </th>
-            ))}
+            {groups.map((group) => {
+              const currency = companyCurrencies.get(group.groupId);
+              const showCurrency = currency && (currency !== "USD" || hasMixedCompanyCurrencies);
+              return (
+                <th key={group.groupId} style={headerCellStyle}>
+                  {group.groupLabel}
+                  {showCurrency ? <span style={headerCurrencyStyle}> ({currency})</span> : null}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
@@ -196,12 +219,12 @@ function Cell({ layer }: { layer: CompareLayer | undefined }) {
     // annual_inflation_rate's "%" unit, keyed by the catalog metric rather
     // than the dict's internal field name, still apply.
     const formatKey = getMetricConfig(pickedKey) ? pickedKey : layer.metricKey;
-    const compact = formatMetricValue(primaryValue, formatKey);
-    const fullBreakdown = formatMetricValue(layer.value, layer.metricKey);
+    const compact = formatMetricValue(primaryValue, formatKey, layer.currency);
+    const fullBreakdown = formatMetricValue(layer.value, layer.metricKey, layer.currency);
     return withCriterionBadge(<span title={fullBreakdown}>{compact}</span>, layer.meetsCriterion);
   }
 
-  const formatted = formatMetricValue(layer.value, layer.metricKey);
+  const formatted = formatMetricValue(layer.value, layer.metricKey, layer.currency);
 
   if (typeof layer.value === "string" && layer.value.length > 40) {
     return withCriterionBadge(<span title={layer.value}>{layer.value.slice(0, 40)}…</span>, layer.meetsCriterion);
@@ -218,6 +241,11 @@ const headerCellStyle: React.CSSProperties = {
   fontSize: "0.8rem",
   borderBottom: `1px solid ${theme.colors.border}`,
   whiteSpace: "nowrap",
+};
+
+const headerCurrencyStyle: React.CSSProperties = {
+  color: theme.colors.textMuted,
+  fontWeight: 500,
 };
 
 const bodyCellStyle: React.CSSProperties = {

@@ -18,6 +18,7 @@ type Props = {
   isSuggestionsOpen: boolean;
   isLoadingSymbols: boolean;
   filteredSuggestions: SymbolMeta[];
+  isSymbolSearchDegraded?: boolean;
   onSelectSuggestion: (symbol: string) => void;
   isFavorited: boolean;
   onToggleFavorite: () => void;
@@ -40,6 +41,7 @@ export default function AdHocAnalysisPanel({
   isSuggestionsOpen,
   isLoadingSymbols,
   filteredSuggestions,
+  isSymbolSearchDegraded,
   onSelectSuggestion,
   isFavorited,
   onToggleFavorite,
@@ -61,6 +63,7 @@ export default function AdHocAnalysisPanel({
         isSuggestionsOpen={isSuggestionsOpen}
         isLoadingSymbols={isLoadingSymbols}
         filteredSuggestions={filteredSuggestions}
+        isSymbolSearchDegraded={isSymbolSearchDegraded}
         onSelectSuggestion={onSelectSuggestion}
         isFavorited={isFavorited}
         onToggleFavorite={onToggleFavorite}

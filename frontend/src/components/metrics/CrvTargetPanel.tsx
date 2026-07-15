@@ -74,7 +74,11 @@ function Row({ label, value, formatKey }: { label: string; value: unknown; forma
         {formatKey ? <InfoTooltip metricKey={formatKey} /> : null}
       </span>
       <span style={{ color: theme.colors.textPrimary, fontSize: "0.8rem", fontWeight: 700 }}>
-        {formatMetricValue(value, formatKey)}
+        {/* CRV-/Kursziel-Werte sind ausnahmslos kursbasiert (WC/BUY/FV/SELL,
+           aktueller Kurs) - Kurse im NYSE/NASDAQ-Universum notieren immer in
+           USD, unabhängig von der Berichtswährung der Fundamentaldaten
+           (EVOLVING.md EV-022). */}
+        {formatMetricValue(value, formatKey, "USD")}
       </span>
     </div>
   );

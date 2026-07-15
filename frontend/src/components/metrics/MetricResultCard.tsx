@@ -19,6 +19,9 @@ export type MetricResultCardProps = {
   message?: string | null;
   query?: string;
   style?: CSSProperties;
+  /** ISO-Währungscode der Berichtswährung (EVOLVING.md EV-022) - fehlt/null
+   * ⇒ formatMetricValue fällt auf das bisherige `$`-Verhalten zurück. */
+  currency?: string | null;
 };
 
 /** Canonical "metric key -> value (+ optional series, + optional pass/fail
@@ -33,6 +36,7 @@ export default function MetricResultCard({
   message,
   query,
   style,
+  currency,
 }: MetricResultCardProps) {
   const resolvedMeets = meetsCriterion !== undefined ? meetsCriterion : isPassFail(criterion, value);
 
@@ -60,7 +64,7 @@ export default function MetricResultCard({
             <Badge tone={resolvedMeets ? "success" : "danger"}>{resolvedMeets ? "Erfüllt" : "Kritisch"}</Badge>
           ) : null}
           <span style={{ color: theme.colors.textSecondary, fontSize: "0.88rem", fontWeight: 700, whiteSpace: "nowrap" }}>
-            {error ? "—" : formatMetricValue(value, metricKey)}
+            {error ? "—" : formatMetricValue(value, metricKey, currency)}
           </span>
         </div>
       </div>

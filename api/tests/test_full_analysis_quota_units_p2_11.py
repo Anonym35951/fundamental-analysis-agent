@@ -16,13 +16,18 @@ from starlette.requests import Request
 import api.routes.full_analysis as full_analysis_module
 from api.models.analysis_history import AnalysisHistory
 from api.models.base import Base
+from api.models.symbol import Symbol
 from api.models.user import User
 from api.routes.full_analysis import build_analysis_plan, start_full_analysis
 
 
 @pytest.fixture
 def db_full(db):
-    Base.metadata.create_all(db.get_bind(), tables=[AnalysisHistory.__table__])
+    # Symbol.__table__ wird seit EVOLVING.md EV-014 gebraucht: start_full_
+    # analysis prüft das Symbol jetzt per ensure_known_symbol gegen die
+    # symbols-Tabelle (leere Tabelle blockiert nichts, s. dortigen Test) -
+    # ohne die Tabelle selbst würde die Query mit "no such table" abbrechen.
+    Base.metadata.create_all(db.get_bind(), tables=[AnalysisHistory.__table__, Symbol.__table__])
     return db
 
 

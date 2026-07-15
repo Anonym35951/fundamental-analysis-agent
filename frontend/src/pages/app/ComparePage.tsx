@@ -5,6 +5,10 @@ import { theme } from "../../components/ui/theme";
 import FrequencyToggle from "../../components/analysis/FrequencyToggle";
 import MetricCatalogPicker from "../../components/customAnalysis/MetricCatalogPicker";
 import MultiLayerChart, { type ChartLayer } from "../../components/charts/MultiLayerChart";
+import TimeRangeFilter from "../../components/charts/TimeRangeFilter";
+import PercentChangeBadge from "../../components/charts/PercentChangeBadge";
+import PriceComparisonSection from "../../components/charts/PriceComparisonSection";
+import { computePercentChange, filterChartLayers, isPercentChangeEligibleUnit, mergeLayers, type TimeRange } from "../../components/charts/chartUtils";
 import ComparePivotTable from "../../components/compare/ComparePivotTable";
 import SymbolSuggestField from "../../components/compare/SymbolSuggestField";
 import { useCompare } from "../../hooks/useCompareContext";
@@ -14,6 +18,13 @@ import CrvTargetPanel from "../../components/metrics/CrvTargetPanel";
 import { getCustomMetricsCatalog } from "../../api/customAnalysis";
 import type { MetricCatalogEntry } from "../../types/customAnalysis";
 import type { CompareGroupMeta, CompareLayer } from "../../types/compare";
+import { getMetricConfig } from "../../config/metricsConfig";
+
+// EVOLVING.md EV-041: Fundamentaldaten sind jährlich/quartalsweise - 1M-6M
+// waeren dort fachlich sinnlos (keine Datenpunkte in diesem Fenster), daher
+// nur die groben Ranges anbieten. Default bleibt "max" (D6) = heutiges
+// Verhalten ohne Nutzerinteraktion.
+const FUNDAMENTAL_RANGE_OPTIONS: TimeRange[] = ["1y", "2y", "5y", "max"];
 
 type DraftRow = { id: number; value: string };
 
@@ -51,6 +62,11 @@ function ComparePage() {
   const [catalogError, setCatalogError] = useState(false);
   const [catalogRetryKey, setCatalogRetryKey] = useState(0);
   const [livePrices, setLivePrices] = useState<Record<string, LivePriceResult>>({});
+  // Zeitraum je Chart-Sektion (Schlüssel = metricKey) - React-State pro
+  // Chart, keine URL-Persistenz (D7). Default "max" wird nicht hier,
+  // sondern beim Lesen (`timeRanges[key] ?? "max"`) angewendet, damit ein
+  // fehlender Eintrag exakt dem Ist-Zustand vor EV-041 entspricht.
+  const [timeRanges, setTimeRanges] = useState<Record<string, TimeRange>>({});
 
   const handlePriceUpdate = useCallback((symbol: string, result: LivePriceResult) => {
     setLivePrices((prev) => {
@@ -154,7 +170,13 @@ function ComparePage() {
       const filteredMetrics = Object.fromEntries(
         Object.entries(company.metrics).filter(([key]) => selectedKeys.has(key))
       );
-      const newLayers = mapCompanyMetricsToLayers(company.symbol, filteredMetrics, catalog, getCompanyColor(index));
+      const newLayers = mapCompanyMetricsToLayers(
+        company.symbol,
+        filteredMetrics,
+        catalog,
+        getCompanyColor(index),
+        company.reporting_currency
+      );
       allLayers = [...allLayers, ...newLayers];
     });
 
@@ -181,6 +203,9 @@ function ComparePage() {
           chartEligible: false,
           value: live?.price ?? null,
           error: live?.error ?? null,
+          // Kursbasiert, immer USD (NYSE/NASDAQ-Universum) - unabhängig von
+          // der Berichtswährung der Fundamentaldaten (EVOLVING.md EV-022).
+          currency: "USD",
         };
       }),
     [doneCompanies, livePrices]
@@ -204,12 +229,19 @@ function ComparePage() {
         byMetric.set(layer.metricKey, { metricKey: layer.metricKey, label: layer.label, layers: [] });
         order.push(layer.metricKey);
       }
+      // EVOLVING.md EV-023: Currency nur für unit==="currency"-Kennzahlen
+      // durchreichen - Ratio-/Margen-Charts (z. B. EV/EBIT) bekommen nie
+      // eine Währungskennzeichnung, auch wenn layer.currency (aus EV-022,
+      // dort unbedingt für die Pivot-Tabellenformatierung gesetzt) technisch
+      // vorhanden ist.
+      const isCurrencyMetric = getMetricConfig(layer.metricKey)?.unit === "currency";
       byMetric.get(layer.metricKey)!.layers.push({
         id: layer.id,
         label: layer.groupLabel,
         data: layer.data,
         axis: "left",
         color: layer.color,
+        currency: isCurrencyMetric ? layer.currency : undefined,
       });
     }
 
@@ -377,12 +409,43 @@ function ComparePage() {
 
       {tableLayers.length > 0 || complexGroups.length > 0 ? (
         <>
-          {chartGroups.map((group) => (
-            <section key={group.metricKey} style={resultsSection}>
-              <div style={sectionEyebrow}>{group.label}</div>
-              <MultiLayerChart layers={group.layers} height={300} />
-            </section>
-          ))}
+          <PriceComparisonSection symbols={doneCompanies.map((company) => company.symbol)} />
+
+          {chartGroups.map((group) => {
+            const range = timeRanges[group.metricKey] ?? "max";
+            const bucketMode = frequency === "quarterly" ? "quarter" : "year";
+            const filteredLayers = filterChartLayers(group.layers, range);
+            const hasEnoughData = mergeLayers(filteredLayers, bucketMode).length >= 2;
+            // EVOLVING.md EV-051: dieselbe Bedingung wie die Currency-
+            // Kennzeichnung aus EV-023 - Ratio-/Margen-Charts bekommen nie
+            // eine %-Badge.
+            const showPercentBadges = isPercentChangeEligibleUnit(getMetricConfig(group.metricKey)?.unit);
+
+            return (
+              <section key={group.metricKey} style={resultsSection}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px", marginBottom: "18px" }}>
+                  <div style={{ ...sectionEyebrow, marginBottom: 0 }}>{group.label}</div>
+                  <TimeRangeFilter
+                    value={range}
+                    onChange={(next) => setTimeRanges((prev) => ({ ...prev, [group.metricKey]: next }))}
+                    options={FUNDAMENTAL_RANGE_OPTIONS}
+                  />
+                </div>
+                {showPercentBadges ? (
+                  <div style={percentBadgeRowStyle}>
+                    {filteredLayers.map((layer) => (
+                      <PercentChangeBadge key={layer.id} result={computePercentChange(layer.data)} color={layer.color} />
+                    ))}
+                  </div>
+                ) : null}
+                {hasEnoughData ? (
+                  <MultiLayerChart layers={filteredLayers} height={300} bucketMode={bucketMode} />
+                ) : (
+                  <div style={emptyRangeStyle}>Für diesen Zeitraum liegen zu wenige Datenpunkte vor – Zeitraum vergrößern.</div>
+                )}
+              </section>
+            );
+          })}
 
           {complexGroups.map((group) => (
             <section key={group.metricKey} style={resultsSection}>
@@ -473,6 +536,24 @@ const resultsSection: React.CSSProperties = {
   padding: "28px 30px",
   border: `1px solid ${theme.colors.border}`,
   boxShadow: "0 20px 50px rgba(0, 0, 0, 0.35)",
+};
+
+const emptyRangeStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  height: "160px",
+  color: theme.colors.textMuted,
+  fontSize: "0.92rem",
+  border: `1px dashed ${theme.colors.borderSubtle}`,
+  borderRadius: theme.radius.md,
+};
+
+const percentBadgeRowStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "8px",
+  marginBottom: "14px",
 };
 
 const sectionEyebrow: React.CSSProperties = {

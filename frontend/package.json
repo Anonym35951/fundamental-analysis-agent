@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build && npm run build:glossary",
     "build:glossary": "tsx scripts/generate-glossary.ts",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@react-three/fiber": "^9.6.1",
@@ -36,6 +37,7 @@
     "tsx": "^4.22.5",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^4.1.10"
   }
 }

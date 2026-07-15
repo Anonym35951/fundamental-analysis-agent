@@ -73,12 +73,21 @@ function filterLocalSymbols(query: string, limit: number): SymbolMeta[] {
   ).slice(0, limit);
 }
 
-export async function searchSymbolsSafe(query: string, limit = 20): Promise<SymbolMeta[]> {
+export type SymbolSearchResult = {
+  entries: SymbolMeta[];
+  /** true, wenn die Backend-Suche fehlgeschlagen ist (Netzwerkfehler,
+   * Rate-Limit, 5xx) und stattdessen auf die statische 23-Symbol-Liste
+   * zurückgefallen wurde (EVOLVING.md EV-013) - Aufrufer sollen das nicht
+   * mehr still verschlucken, sondern dem Nutzer sichtbar machen. */
+  degraded: boolean;
+};
+
+export async function searchSymbolsSafe(query: string, limit = 20): Promise<SymbolSearchResult> {
   try {
-    return await searchSymbols(query, limit);
+    return { entries: await searchSymbols(query, limit), degraded: false };
   } catch {
     console.warn("Backend symbol search unavailable – using local fallback");
-    return filterLocalSymbols(query, limit);
+    return { entries: filterLocalSymbols(query, limit), degraded: true };
   }
 }
 

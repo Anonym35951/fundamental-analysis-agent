@@ -34,10 +34,15 @@ const navItems = [
   { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/app/analyze", label: "Analyse", icon: LineChart },
   { to: "/app/compare", label: "Vergleich", icon: GitCompare },
-  { to: "/app/billing", label: "Abrechnung", icon: CreditCard },
   { to: "/app/account", label: "Konto", icon: UserCircle },
   { to: "/app/support", label: "Support", icon: LifeBuoy },
 ];
+
+// EVOLVING.md EV-080: nur für Free-Nutzer in effectiveNavItems eingefügt -
+// Pro/Friends/Admin verwalten ihr Abo über den AccountPage-Portal-Button
+// (deckt auch past_due/canceling ab, da diese Zustände weiterhin
+// plan==="pro" sind).
+const billingNavItem = { to: "/app/billing", label: "Abrechnung", icon: CreditCard };
 
 function AppSidebar({
   onLogout,
@@ -100,13 +105,19 @@ function AppSidebar({
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
-  const effectiveNavItems = useMemo(
-    () =>
-      isAdmin
-        ? [...navItems, { to: "/app/admin", label: "Admin", icon: ShieldCheck }]
-        : navItems,
-    [isAdmin]
-  );
+  const effectiveNavItems = useMemo(() => {
+    const items = [...navItems];
+    // Während des Ladens bleibt der Eintrag ausgeblendet (wie der Admin-
+    // Eintrag darunter) - ein kurzes Erscheinen-und-Verschwinden bei Pro/
+    // Friends/Admin wäre störender als eine kurze Verzögerung bei Free.
+    if (!isLoadingUser && isFreePlan) {
+      items.splice(3, 0, billingNavItem);
+    }
+    if (isAdmin) {
+      items.push({ to: "/app/admin", label: "Admin", icon: ShieldCheck });
+    }
+    return items;
+  }, [isLoadingUser, isFreePlan, isAdmin]);
 
   const filteredNavItems = useMemo(
     () => effectiveNavItems.filter((item) => item.label.toLowerCase().includes(normalizedQuery)),

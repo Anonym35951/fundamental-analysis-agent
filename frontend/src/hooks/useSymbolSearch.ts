@@ -12,6 +12,10 @@ const DEBOUNCE_MS = 250;
 export function useSymbolSearch(query: string, limit = 8) {
   const [suggestions, setSuggestions] = useState<SymbolMeta[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true);
+  // EV-013: statt den Backend-Fehler still hinter dem 23-Symbol-Fallback zu
+  // verstecken, machen wir ihn hier sichtbar - Aufrufer zeigen dann einen
+  // Hinweis über der (weiterhin nutzbaren) Fallback-Liste.
+  const [isDegraded, setIsDegraded] = useState(false);
 
   useEffect(() => {
     let isCancelled = false;
@@ -24,11 +28,15 @@ export function useSymbolSearch(query: string, limit = 8) {
 
     const timeoutId = window.setTimeout(() => {
       searchSymbolsSafe(query, limit)
-        .then((result) => {
-          if (!isCancelled) setSuggestions(result);
+        .then(({ entries, degraded }) => {
+          if (isCancelled) return;
+          setSuggestions(entries);
+          setIsDegraded(degraded);
         })
         .catch(() => {
-          if (!isCancelled) setSuggestions([]);
+          if (isCancelled) return;
+          setSuggestions([]);
+          setIsDegraded(true);
         })
         .finally(() => {
           if (!isCancelled) setIsLoadingSuggestions(false);
@@ -41,5 +49,5 @@ export function useSymbolSearch(query: string, limit = 8) {
     };
   }, [query, limit]);
 
-  return { suggestions, isLoadingSuggestions };
+  return { suggestions, isLoadingSuggestions, isDegraded };
 }

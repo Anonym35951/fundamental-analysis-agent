@@ -19,6 +19,7 @@ from api.routes.billing import router as billing_router
 from api.routes.stripe_webhook import router as stripe_webhook_router
 from api.routes.admin_stats import router as admin_stats_router
 from api.routes.admin_customers import router as admin_customers_router
+from api.routes.admin_symbols import router as admin_symbols_router
 from api.routes.status import router as status_router
 from api.routes.support import router as support_router
 
@@ -26,6 +27,7 @@ from api.core.config import settings
 from api.core.database import SessionLocal
 from api.core.logging_config import setup_logging
 from api.services.filing_alert_service import check_new_filings
+from api.services.symbol_sync_service import sync_symbols_on_startup, symbol_sync_worker
 from api.services.user_service import downgrade_expired_past_due_users
 from api.services.watchlist_digest_service import send_weekly_digests
 
@@ -166,6 +168,14 @@ async def start_background_tasks():
     asyncio.create_task(downgrade_worker())
     asyncio.create_task(filing_alert_worker())
     asyncio.create_task(watchlist_digest_worker())
+    # EV-010: einmaliger Fire-and-Forget-Check, ob die symbols-Tabelle noch
+    # den 23-Zeilen-Migrations-Seed hat (statt des vollen NYSE+NASDAQ-
+    # Universums) - läuft im Hintergrund, blockiert den Serverstart nicht.
+    asyncio.create_task(sync_symbols_on_startup(SessionLocal))
+    # EV-011: wöchentlicher Sync, läuft UNABHÄNGIG vom Schwellwert oben,
+    # damit neue Listings/Delistings auch nach dem ersten erfolgreichen
+    # Import weiterhin erkannt werden.
+    asyncio.create_task(symbol_sync_worker(SessionLocal))
 
 
 # 🔹 Router einbinden
@@ -182,5 +192,6 @@ app.include_router(billing_router)
 app.include_router(stripe_webhook_router)
 app.include_router(admin_stats_router)
 app.include_router(admin_customers_router)
+app.include_router(admin_symbols_router)
 app.include_router(status_router)
 app.include_router(support_router)

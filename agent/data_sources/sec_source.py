@@ -749,6 +749,77 @@ class SecSource:
 
         return data
 
+    # Repräsentative Bilanz-/GuV-Tags, in Prioritätsreihenfolge - reicht, um
+    # die tatsächlich verwendete Berichtswährung eines Filers zu bestimmen,
+    # ohne jede einzelne Kennzahlberechnung anzufassen (EVOLVING.md EV-020).
+    _CURRENCY_PROBE_TAGS = (
+        "Assets",
+        "Revenues",
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "StockholdersEquity",
+    )
+
+    def get_reporting_currency(self, symbol: str, use_cache: bool = True) -> Optional[str]:
+        """Ermittelt die ISO-Währung, in der ein Filer seine XBRL-Fakten
+        berichtet (EVOLVING.md EV-020), OHNE die bestehende Kennzahlen-
+        Berechnung (_merge_available_series & Co., alle mit fest codiertem
+        `unit_preference=["USD", ...]`) anzufassen - das wäre ein deutlich
+        riskanterer Eingriff in eine 3000+-Zeilen-Datei, die exakt
+        reproduzierbare Werte für alle bestehenden USD-Analysen liefern muss.
+
+        WICHTIG (Vorab-Verifikation, siehe EVOLVING.md EV-020 "Noch zu
+        verifizieren"): Die gesamte Kennzahlen-Pipeline liest ausschließlich
+        die "us-gaap"-Taxonomie (`facts.get("facts", {}).get("us-gaap", {})`,
+        an >15 Stellen in dieser Datei). Reale SEC-Daten zeigen:
+        - US-gelistete Foreign Private Issuers, die NUR "ifrs-full" statt
+          "us-gaap" nutzen (z. B. SAP, Novo Nordisk), liefern über diese
+          Pipeline HEUTE SCHON gar keine Kennzahlen - nicht falsch
+          beschriftete, sondern grundsätzlich keine Daten. Diese Methode gibt
+          für solche Filer bewusst `None` zurück (kein Rateversuch), statt
+          eine ifrs-full-Auswertung vorzutäuschen, die der Rest der Pipeline
+          nicht leistet.
+        - US-GAAP-Filer mit chinesischem Bezug (z. B. Alibaba, JD.com)
+          taggen ihre Fakten mit ZWEI Units (z. B. sowohl "CNY" als auch
+          "USD") - der bestehende `unit_preference`, der USD immer zuerst
+          probiert, wählt für diese also schon heute korrekt USD. Für sie
+          liefert diese Methode ebenfalls "USD", was den tatsächlichen
+          IST-Zustand der bestehenden Berechnungen exakt widerspiegelt.
+
+        Damit gilt praktisch: jedes Unternehmen, für das die bestehende
+        Pipeline heute überhaupt Kennzahlen berechnet, bekommt "USD" als
+        Berichtswährung - das ist keine Tautologie, sondern der ehrliche
+        Status quo. Der Wert wird trotzdem explizit ermittelt (nicht
+        hartcodiert), damit ein späteres ifrs-full-Update (außerhalb dieses
+        Aufgabenumfangs) hier ohne API-Bruch andere Codes zurückgeben kann."""
+        facts = self.get_company_facts(symbol, use_cache=use_cache)
+        if isinstance(facts, dict) and "error" in facts:
+            return None
+
+        us_gaap = facts.get("facts", {}).get("us-gaap", {})
+        if not us_gaap:
+            return None
+
+        for tag in self._CURRENCY_PROBE_TAGS:
+            fact = us_gaap.get(tag)
+            if not fact:
+                continue
+
+            units = fact.get("units", {})
+            if not units:
+                continue
+
+            if "USD" in units:
+                return "USD"
+
+            # Kein USD-Unit für diesen Tag - erster reine-Währungscode
+            # (3 Großbuchstaben, keine zusammengesetzten Einheiten wie
+            # "shares"/"pure"/"USD-per-shares").
+            for unit_code in units:
+                if len(unit_code) == 3 and unit_code.isalpha() and unit_code.isupper():
+                    return unit_code
+
+        return None
+
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(2), retry=retry_if_exception_type(Exception))
     def get_cik(self, symbol: str):
         """Gleiches P2-12-Muster wie get_company_facts: der echte

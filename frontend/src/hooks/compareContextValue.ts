@@ -15,6 +15,9 @@ export type CompanyResult = {
    * as stale even though the key itself didn't change. */
   metricParams?: Record<string, Record<string, unknown>>;
   frequency?: CompareFrequency;
+  /** ISO-Berichtswährung der Fundamentaldaten (EVOLVING.md EV-021/022) -
+   * `null`/fehlend, wenn unbestimmbar oder noch nicht geladen. */
+  reporting_currency?: string | null;
 };
 
 export type CompareContextValue = {

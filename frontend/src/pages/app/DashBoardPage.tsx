@@ -22,6 +22,7 @@ import LivePriceBadge from "../../components/shared/LivePriceBadge";
 import DataSourceStatusWidget from "../../components/shared/DataSourceStatusWidget";
 import AnalyzeResultsDashboard from "../../components/analysis/AnalyzeResultsDashboard";
 import CustomAnalysisResultsList from "../../components/customAnalysis/CustomAnalysisResultsList";
+import DashboardFavoritesSection from "../../components/dashboard/DashboardFavoritesSection";
 
 const HISTORY_PREVIEW_COUNT = 5;
 
@@ -385,6 +386,11 @@ function DashboardPage() {
           alignItems: "stretch",
         }}
       >
+        {/* FAVORITES */}
+        <motion.div variants={fadeUp} transition={{ duration: 0.4 }}>
+          <DashboardFavoritesSection />
+        </motion.div>
+
         {/* ANALYSIS HISTORY */}
         <motion.div variants={fadeUp} transition={{ duration: 0.4 }} style={panel} data-tour="dashboard-analysis-history">
           <div style={panelTitle}>Letzte Analysen</div>

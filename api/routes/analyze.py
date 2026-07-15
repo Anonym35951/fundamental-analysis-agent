@@ -15,6 +15,8 @@ from api.services.job_manager import (
     TOO_MANY_ACTIVE_JOBS_DETAIL,
 )
 from api.utils.json_sanitize import make_json_safe
+from api.utils.symbol_validation import ensure_known_symbol
+from api.utils.reporting_currency import resolve_reporting_currency
 from api.core.dependencies import get_current_user, require_analysis_access, get_db
 from api.core.database import SessionLocal
 from api.models.symbol import Symbol
@@ -248,6 +250,12 @@ def start_single_analysis(
     if mode not in registry:
         raise HTTPException(status_code=404, detail="Unknown analysis mode")
 
+    symbol = _norm_symbol(symbol)
+    # Symbol-Check VOR dem Quota-Verbrauch (gleiche Begründung wie der
+    # Active-Jobs-Check direkt darunter, LAUNCH_AUDIT.md P2-3): ein
+    # unbekanntes/delistetes Symbol soll keine Analyse-Einheit kosten.
+    symbol = ensure_known_symbol(db, symbol)
+
     # Active-Jobs-Check VOR dem Quota-Verbrauch (LAUNCH_AUDIT.md P2-3) - vorher
     # verbrauchte Depends(require_analysis_access) das Kontingent schon, bevor
     # dieser 429-Check überhaupt lief (ebenso beim unbekannten-Modus-404 oben).
@@ -259,7 +267,6 @@ def start_single_analysis(
 
     require_analysis_access(db, current_user)
 
-    symbol = _norm_symbol(symbol)
     pretty_name = DISPLAY_NAME.get(mode, mode)
     key = f"{pretty_name}|{frequency}"
 
@@ -276,6 +283,7 @@ def start_single_analysis(
         history_db = SessionLocal()
         try:
             job_manager.set_current(job_id, "Starte Analyse…")
+            job_manager.set_reporting_currency(job_id, resolve_reporting_currency(get_action(), symbol))
 
             fn = registry[mode]
             sig = inspect.signature(fn)

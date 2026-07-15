@@ -15,6 +15,7 @@ import QuotaExceededModal from "../../components/analysis/QuotaExceededModal";
 import DefinitionBuilder from "../../components/customAnalysis/DefinitionBuilder";
 import AdHocAnalysisPanel from "../../components/customAnalysis/AdHocAnalysisPanel";
 import CustomAnalysisResultsList from "../../components/customAnalysis/CustomAnalysisResultsList";
+import PriceChartSection from "../../components/charts/PriceChartSection";
 import LivePriceBadge from "../../components/shared/LivePriceBadge";
 import SourceBadge from "../../components/shared/SourceBadge";
 import { useCustomAnalysisDefinitions } from "../../hooks/useCustomAnalysisDefinitions";
@@ -376,8 +377,11 @@ function AnalyzePage() {
 
   const normalizedSymbol = symbol.trim().toUpperCase();
 
-  const { suggestions: filteredSuggestions, isLoadingSuggestions: isLoadingSymbols } =
-    useSymbolSearch(normalizedSymbol);
+  const {
+    suggestions: filteredSuggestions,
+    isLoadingSuggestions: isLoadingSymbols,
+    isDegraded: isSymbolSearchDegraded,
+  } = useSymbolSearch(normalizedSymbol);
 
   const isFavorited = favoriteSymbols.has(normalizedSymbol);
 
@@ -694,6 +698,7 @@ function AnalyzePage() {
         isSuggestionsOpen={isSuggestionsOpen}
         isLoadingSymbols={isLoadingSymbols}
         filteredSuggestions={filteredSuggestions}
+        isSymbolSearchDegraded={isSymbolSearchDegraded}
         onSelectSuggestion={handleSelectSuggestion}
         isFavorited={isFavorited}
         onToggleFavorite={handleToggleFavorite}
@@ -792,7 +797,10 @@ function AnalyzePage() {
         <div style={resultBox}>
           {analysisTab === "standard" ? (
             result ? (
-              <AnalyzeResultsDashboard data={result} />
+              <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                <AnalyzeResultsDashboard data={result} />
+                <PriceChartSection symbol={result.symbol} />
+              </div>
             ) : progress ? (
               <div style={resultPlaceholder}>
                 Analyse läuft — den Fortschritt siehst du oben in der Leiste.
@@ -802,7 +810,10 @@ function AnalyzePage() {
               <div style={resultPlaceholder}>Noch keine Analyse gestartet.</div>
             )
           ) : customResult ? (
-            <CustomAnalysisResultsList catalog={catalog} result={customResult} />
+            <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+              <CustomAnalysisResultsList catalog={catalog} result={customResult} />
+              <PriceChartSection symbol={customResult.symbol} />
+            </div>
           ) : customProgress ? (
             <div style={resultPlaceholder}>
               Analyse läuft — den Fortschritt siehst du oben in der Leiste.
@@ -829,6 +840,7 @@ function AnalyzePage() {
             isSuggestionsOpen={isSuggestionsOpen}
             isLoadingSymbols={isLoadingSymbols}
             filteredSuggestions={filteredSuggestions}
+            isSymbolSearchDegraded={isSymbolSearchDegraded}
             onSelectSuggestion={handleSelectSuggestion}
             isFavorited={isFavorited}
             onToggleFavorite={handleToggleFavorite}

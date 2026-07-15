@@ -60,6 +60,10 @@ export type CustomAnalysisResult = {
   symbol: string;
   status: "running" | "done" | "error";
   metrics: Record<string, CustomMetricResult>;
+  /** ISO-Berichtswährung der Fundamentaldaten (EVOLVING.md EV-021/022) -
+   * `null`/fehlend, wenn unbestimmbar (Formatierung fällt dann auf USD
+   * zurück). */
+  reporting_currency?: string | null;
 };
 
 export type CustomAnalysisDefinition = {
