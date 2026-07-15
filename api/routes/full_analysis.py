@@ -20,6 +20,7 @@ from api.services.event_service import log_event
 from api.routes.analyze import get_action
 from api.utils.json_sanitize import make_json_safe
 from api.utils.symbol_validation import ensure_known_symbol
+from api.utils.reporting_currency import resolve_reporting_currency
 
 router = APIRouter(prefix="/full", tags=["full-analysis"])
 

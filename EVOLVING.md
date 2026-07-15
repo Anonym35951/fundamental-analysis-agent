@@ -850,8 +850,35 @@ POST /analyze/custom/start {"symbol":"AAPL","metrics":[{"key":"calculate_KGV","p
 ```
 Ende-zu-Ende bestätigt: ein echter Custom-Analysis-Job liefert `reporting_currency` korrekt im Endergebnis, alle bestehenden Felder (`metrics`, `status`, `symbol`, `job_id`) unverändert vorhanden.
 
+---
+
+#### 🔴 Nachträglich gefundener und behobener kritischer Produktions-Bug (2026-07-15)
+
+**Meldung durch den Betreiber:** Nach dem Deploy dieser Änderungen schlug JEDE „Vollanalyse" (Standard-Modus, Preset „Vollanalyse" — z. B. Symbol `COIN`) im echten Live-Betrieb sofort mit `error • 0%` fehl („Analyse fehlgeschlagen — Datenquelle vorübergehend nicht verfügbar oder Daten unvollständig"), während eine gespeicherte „Individuelle Analyse" für dasselbe Symbol normal durchlief.
+
+**Ursache:** `api/routes/full_analysis.py::run_full_analysis_job()` rief `resolve_reporting_currency(...)` auf (Zeile 87, s. o.), OHNE die Funktion zu importieren — ein `NameError`, der bei JEDEM Aufruf sofort auf der allerersten Zeile der Job-Pipeline auftrat, noch bevor irgendeine echte Analyse-Berechnung startete. Der breite `except Exception:`-Block direkt darunter fing diesen `NameError` ab und maskierte ihn als denselben generischen `GENERIC_JOB_ERROR`, den auch echte Datenquellen-Ausfälle zeigen — dadurch sah ein reiner Tippfehler-Bug aus wie ein SEC/yfinance-Problem.
+
+`api/routes/analyze.py` (Einzelkategorie-Presets wie „Wachstumswerte", `/​{mode}/start`) und `api/routes/custom_analysis.py` (Individuell, `/analyze/custom/*`) importieren `resolve_reporting_currency` beide korrekt (Zeile 19 in `analyze.py`, Zeile 19 in `custom_analysis.py`) — nur in `full_analysis.py` fehlte die Import-Zeile. Das erklärt, warum ausschließlich „Vollanalyse" betroffen war und warum die eigene Live-Verifikation dieser Session (EV-061 testete „Wachstumswerte" als Einzelkategorie-Preset, NICHT „Vollanalyse") den Fehler nicht aufdeckte.
+
+**Warum kein bestehender Test das gefangen hat:** Alle Tests, die `/full/start` ansteuern (`test_analysis_start_symbol_validation.py`, `test_full_analysis_quota_units_p2_11.py`), mocken `job_manager.submit` weg — sie prüfen nur den synchronen Request-Handler (Validierung, Quota, 200/202/422), nie den eigentlichen Job-Körper `run_full_analysis_job()`, der im Hintergrund-Thread läuft und wo der Bug tatsächlich saß.
+
+**Fix:** Eine Zeile in `api/routes/full_analysis.py`: `from api.utils.reporting_currency import resolve_reporting_currency` ergänzt (identisch zum bereits korrekten Import in den anderen beiden Routen-Dateien).
+
+**Neuer Regressionstest** `api/tests/test_run_full_analysis_job_regression.py` (3 Tests) — ruft `run_full_analysis_job()` erstmals direkt (synchron, mit gemocktem `get_action`/`SessionLocal`) auf, statt wie bisher nur den vorgelagerten Request-Handler zu prüfen:
+1. `resolve_reporting_currency` ist im Modul-Namespace vorhanden (direkter Ursache-Nachweis).
+2. Ein vollständiger Jobdurchlauf endet mit `status="done"`, korrektem `reporting_currency` und allen erwarteten Ergebnis-Keys.
+3. Gegenprobe: ein ECHTER Fehler in der Analyse-Pipeline (z. B. SEC nicht erreichbar) muss weiterhin korrekt als `status="error"` mit `GENERIC_JOB_ERROR` markiert werden — der breite `except`-Block bleibt ein sinnvolles Sicherheitsnetz, nur die stille Fehlklassifikation durch den Bug war das Problem.
+
+**Verifiziert, dass der Test den Bug tatsächlich gefangen hätte:** `git stash` auf `full_analysis.py` (Import wieder entfernt) → alle 3 neuen Tests schlagen fehl (`AttributeError: ... has no attribute 'resolve_reporting_currency'`), exakt wie im Live-Betrieb beobachtet. `git stash pop` (Fix wiederhergestellt) → alle 3 Tests grün.
+
+Kompletter Backend-Lauf nach dem Fix: `pytest api/tests agent/tests` → **284 passed** (281 + 3 neue), keine Regression.
+
+**Live-Nachweis der Behebung (lokaler Server, echte SEC-/yfinance-Daten, exakte Reproduktion des Betreiber-Szenarios):** Symbol `COIN`, Standard-Modus, Preset „Vollanalyse", „Analyse starten" geklickt. Fortschritt lief korrekt durch (`0% → 20% „Dividendenwerte (annual)" → … → 100%`), Job endete mit `status="done"` statt sofortigem `error`. Vollständiges Dossier gerendert (Executive Summary, 7 Kategorien mit 29 erfüllten/13 kritischen/5 neutralen Einzelkriterien, CRV-Panel mit korrekt behandeltem „Unternehmen aktuell unprofitabel"-Sonderfall für COIN) — keine Fehlermeldung.
+
+**Einordnung:** Dieser Bug war in JEDER Umgebung reproduzierbar (100 % der Vollanalyse-Aufrufe, lokal wie in Produktion) — kein Umgebungsunterschied, sondern ein reiner Programmierfehler (fehlender Import), der durch eine Lücke in der Testabdeckung (Job-Body nie end-to-end getestet) unentdeckt blieb. Behoben, regressionsgetestet und live gegen das exakte Fehlerszenario des Betreibers verifiziert.
+
 #### Rollback-Strategie
-`resolve_reporting_currency(...)`-Aufrufe aus den drei Job-Workern und den 8 `historical-*`-Routen entfernen, `"currency": "USD"` an den 2 fest-USD-Stellen entfernen, `set_reporting_currency`-Aufrufe entfernen; `JobManager`-Feld kann gefahrlos mit `None` bestehen bleiben (additiv, kein bestehender Aufrufer liest es voraussetzend).
+`resolve_reporting_currency(...)`-Aufrufe aus den drei Job-Workern und den 8 `historical-*`-Routen entfernen, `"currency": "USD"` an den 2 fest-USD-Stellen entfernen, `set_reporting_currency`-Aufrufe entfernen; `JobManager`-Feld kann gefahrlos mit `None` bestehen bleiben (additiv, kein bestehender Aufrufer liest es voraussetzend). Der nachträgliche Import-Fix in `full_analysis.py` ist Teil der ursprünglichen EV-021-Änderung und würde bei einem Rollback mit zurückgenommen.
 
 #### Offene Fragen
 Keine.
