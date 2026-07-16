@@ -1,4 +1,6 @@
-export type CustomAnalysisFrequency = "annual" | "quarterly";
+import type { Frequency } from "./frequency";
+
+export type CustomAnalysisFrequency = Frequency;
 
 export type MetricParamType = "string" | "number" | "date" | "enum";
 
@@ -19,6 +21,9 @@ export type MetricCatalogEntry = {
   requires_symbol: boolean;
   result_shape: MetricResultShape;
   params: MetricParamSpec[];
+  /** EV-133/134: ob diese Metrik "ttm" als frequency-Wert akzeptiert
+   * (agent/frequency.py::TTM_CAPABLE_METRICS ist die Quelle der Wahrheit). */
+  supports_ttm: boolean;
 };
 
 export type CriterionOperator = ">" | "<" | ">=" | "<=";

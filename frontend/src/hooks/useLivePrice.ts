@@ -1,75 +1,33 @@
-import { useEffect, useState } from "react";
-import { getCurrentPrice } from "../api/marketData";
+import { useCallback, useSyncExternalStore } from "react";
+import { getPriceSnapshot, subscribePrice, type PriceState } from "./priceStore";
 
-const DEFAULT_POLL_INTERVAL_MS = 20000;
+const EMPTY_STATE: PriceState = { price: null, error: null, isLoading: false };
 
-/** Polls the live-price endpoint for a single symbol, pausing while the tab
- * is hidden so backgrounded dashboards/sidebars don't keep hammering the
- * (rate-limited, yfinance-backed) endpoint. Used by LivePriceBadge wherever
- * a symbol is shown — sidebar favorites, dashboard history, analyze results. */
-export function useLivePrice(symbol: string | null | undefined, intervalMs = DEFAULT_POLL_INTERVAL_MS) {
-  const [price, setPrice] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(Boolean(symbol));
+function noopSubscribe(): () => void {
+  return () => {};
+}
 
-  useEffect(() => {
-    const normalizedSymbol = symbol?.trim().toUpperCase();
+/** Liest den Live-Preis eines Symbols aus dem geteilten `priceStore`
+ * (EV-113) statt selbst zu pollen — mehrere gleichzeitige Aufrufer desselben
+ * Symbols (z. B. Sidebar-Favorit + Dashboard-Kachel) teilen sich einen
+ * einzigen 20s-Tick statt je einen eigenen `setInterval` zu starten. Rückgabe-
+ * Signatur unveraendert gegenueber der vorherigen Eigenimplementierung, damit
+ * LivePriceBadge und alle anderen Aufrufer unangetastet bleiben. */
+export function useLivePrice(symbol: string | null | undefined) {
+  const normalizedSymbol = symbol?.trim().toUpperCase() || null;
 
-    if (!normalizedSymbol) {
-      setPrice(null);
-      setError(null);
-      setIsLoading(false);
-      return;
-    }
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (!normalizedSymbol) return noopSubscribe();
+      return subscribePrice(normalizedSymbol, onStoreChange);
+    },
+    [normalizedSymbol]
+  );
 
-    const symbolToPoll: string = normalizedSymbol;
-    let isCancelled = false;
-    setIsLoading(true);
+  const getSnapshot = useCallback(() => {
+    if (!normalizedSymbol) return EMPTY_STATE;
+    return getPriceSnapshot(normalizedSymbol);
+  }, [normalizedSymbol]);
 
-    async function fetchPrice() {
-      try {
-        const response = await getCurrentPrice(symbolToPoll);
-        if (isCancelled) return;
-
-        if (response.error || response.price == null) {
-          setError(response.error ?? "Preis nicht verfügbar");
-        } else {
-          setPrice(response.price);
-          setError(null);
-        }
-      } catch {
-        if (!isCancelled) {
-          setError("Preis nicht verfügbar");
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    fetchPrice();
-
-    function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        fetchPrice();
-      }
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        fetchPrice();
-      }
-    }, intervalMs);
-
-    return () => {
-      isCancelled = true;
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [symbol, intervalMs]);
-
-  return { price, error, isLoading };
+  return useSyncExternalStore(subscribe, getSnapshot);
 }

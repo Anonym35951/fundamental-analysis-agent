@@ -6,6 +6,7 @@ from scipy.stats import false_discovery_control
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 from agent.DataLoader import DataLoader
 from agent.Model import Model
+from agent.frequency import MODE_ALLOWED_FREQUENCIES, resolve_ttm_alias
 from agent.industry_multiples import resolve_multiples
 import logging
 
@@ -526,11 +527,18 @@ class AgentAction:
                       "error": "Fehlerbeschreibung"
                   }
         """
+        # EV-135: "ttm" delegiert auch hier auf den bestehenden Annual-Pfad -
+        # VOR dem Guard übersetzt, damit sämtliche interne
+        # `if frequency == "annual"`-Verzweigungen (AAGR vs. AQGR, Bruttomarge-
+        # Zeitraum-Label etc.) exakt denselben Zweig wie ein echter
+        # Annual-Request nehmen. Kein "frequency"-Feld im Rückgabe-Dict dieser
+        # Methode, daher keine Relabel-Notwendigkeit wie in Model.py.
+        frequency = resolve_ttm_alias(frequency)
         try:
             # Validierung der Eingaben
             if not isinstance(symbol, str) or not symbol or not symbol.strip():
                 return {"symbol": symbol, "error": "Symbol muss ein nicht-leerer String sein."}
-            if frequency.lower() not in ["annual", "quarterly"]:
+            if frequency.lower() not in MODE_ALLOWED_FREQUENCIES:
                 return {"symbol": symbol,
                         "error": f"Ungültige Frequenz '{frequency}'. Erlaubt sind 'annual' oder 'quarterly'."}
             if not isinstance(use_cache, bool):

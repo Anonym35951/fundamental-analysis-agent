@@ -1,0 +1,11 @@
+{
+  "dataloader_get_stock_financials_explicit_guard": {
+    "error": "Ungültige Frequenz: invalid. Verwende 'annual' oder 'quarterly'.",
+    "symbol": "AAPL"
+  },
+  "model_calculate_kuv_no_guard": {
+    "KUV": 26.89,
+    "frequency": "invalid",
+    "symbol": "AAPL"
+  }
+}

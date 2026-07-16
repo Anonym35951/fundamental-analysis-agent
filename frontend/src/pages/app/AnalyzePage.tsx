@@ -8,6 +8,7 @@ import { useFavorites } from "../../hooks/useFavoritesContext";
 import { ApiError } from "../../api/client";
 import type { CustomAnalysisDefinition, CustomAnalysisResult, MetricSelection } from "../../types/customAnalysis";
 import type { FullResult } from "../../types/analysis";
+import type { Frequency } from "../../types/frequency";
 import AnalyzeResultsDashboard from "../../components/analysis/AnalyzeResultsDashboard";
 import { theme } from "../../components/ui/theme";
 import { Button, Modal, useToast } from "../../components/ui";
@@ -109,7 +110,10 @@ function AnalyzePage() {
   );
   const [symbol, setSymbol] = useState("");
   const [selectedMode, setSelectedMode] = useState<AnalysisMode>("full");
-  const [selectedFrequency, setSelectedFrequency] = useState<"annual" | "quarterly">("annual");
+  // EV-135: TTM ist der neue Frontend-Default (Betreiber-Entscheidung
+  // 2026-07-16) - numerisch identisch zum bisherigen "annual"-Pfad
+  // (agent/frequency.py resolve_ttm_alias), nur das Label ändert sich.
+  const [selectedFrequency, setSelectedFrequency] = useState<Frequency>("ttm");
   const { isFavorite, toggleFavorite } = useFavorites();
 
   // Tab, Job-ID-Pointer und "welches Ergebnis zuletzt gezeigt wurde" leben im
@@ -364,7 +368,7 @@ function AnalyzePage() {
 
     if (pendingRerun.mode !== "custom") {
       const mode = pendingRerun.mode as AnalysisMode;
-      const frequency = (pendingRerun.frequency as "annual" | "quarterly" | null) ?? "annual";
+      const frequency = (pendingRerun.frequency as Frequency | null) ?? "annual";
       setAnalysisTab("standard");
       setSelectedMode(mode);
       setSelectedFrequency(frequency);
@@ -421,7 +425,7 @@ function AnalyzePage() {
   async function handleStartAnalysis(overrides?: {
     symbol?: string;
     mode?: AnalysisMode;
-    frequency?: "annual" | "quarterly";
+    frequency?: Frequency;
   }) {
     if (isStartingAnalysis) {
       return;

@@ -1,0 +1,8 @@
+{
+  "calculate_annual_inflation_rate": {
+    "error": "Inflationsdaten von der FRED-API aktuell nicht verfügbar. Bitte versuche es später erneut."
+  },
+  "calculate_total_inflation_for_period": {
+    "error": "Inflationsdaten von der FRED-API aktuell nicht verfügbar. Bitte versuche es später erneut."
+  }
+}

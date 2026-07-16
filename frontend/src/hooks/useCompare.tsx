@@ -25,19 +25,31 @@ type PersistedState = {
   hasStarted: boolean;
 };
 
+// EV-134: Whitelist statt eines binären "quarterly"-Vergleichs, damit ein
+// gültig gespeichertes "ttm" nicht auf "annual" zurückfällt - UND als
+// Rollback-Schutz in die andere Richtung: liest ein älterer Build (ohne
+// "ttm"-Unterstützung) diesen Wert, würde sein eigener alter Vergleich
+// "annual" liefern, was das Backend unverändert akzeptiert (kein Absturz).
+const VALID_FREQUENCIES: readonly CompareFrequency[] = ["annual", "quarterly", "ttm"];
+
 function loadFromStorage(): PersistedState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { metrics: [], companies: [], frequency: "annual", hasStarted: false };
+    // EV-135: TTM ist der Default fuer einen frischen Zustand (kein
+    // localStorage-Eintrag) - ein bereits gespeicherter Zustand (auch mit
+    // "annual") wird unverändert respektiert, siehe VALID_FREQUENCIES-Zweig
+    // unten.
+    if (!raw) return { metrics: [], companies: [], frequency: "ttm", hasStarted: false };
     const parsed = JSON.parse(raw);
+    const storedFrequency = parsed?.frequency;
     return {
       metrics: Array.isArray(parsed?.metrics) ? parsed.metrics : [],
       companies: Array.isArray(parsed?.companies) ? parsed.companies : [],
-      frequency: parsed?.frequency === "quarterly" ? "quarterly" : "annual",
+      frequency: VALID_FREQUENCIES.includes(storedFrequency) ? storedFrequency : "annual",
       hasStarted: Boolean(parsed?.hasStarted),
     };
   } catch {
-    return { metrics: [], companies: [], frequency: "annual", hasStarted: false };
+    return { metrics: [], companies: [], frequency: "ttm", hasStarted: false };
   }
 }
 

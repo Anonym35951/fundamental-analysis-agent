@@ -186,8 +186,8 @@ function LandingPage() {
                 transition={theme.motion.spring}
                 style={{ display: "inline-block" }}
               >
-                <Link to="/register" style={primaryCta}>
-                  Kostenlos starten — 50 Analysen/Monat inklusive
+                <Link to="/register?src=hero" style={primaryCta}>
+                  Kostenlos starten — 50 Analyse-Einheiten/Monat inklusive
                   <ArrowRight size={18} />
                 </Link>
               </motion.div>
@@ -212,7 +212,7 @@ function LandingPage() {
 
             <div style={checklistRow}>
               <span style={checklistItem}>
-                <CheckCircle2 size={16} color={theme.colors.success} style={checklistIcon} /> Direkt aus SEC-Filings — nicht aus Dritt-Aggregatoren
+                <CheckCircle2 size={16} color={theme.colors.success} style={checklistIcon} /> Fundamentaldaten direkt aus SEC-Filings, Kursdaten von etablierten Marktdatenanbietern
               </span>
               <span style={checklistItem}>
                 <CheckCircle2 size={16} color={theme.colors.success} style={checklistIcon} /> Jede Formel offen einsehbar
@@ -262,7 +262,7 @@ function LandingPage() {
                 <FloatingLabelCard
                   icon={<Database size={16} />}
                   title="Kennzahlen-Engine"
-                  description="Automatisierte Auswertung von Fundamentaldaten in Sekunden."
+                  description="Automatisierte Auswertung von Fundamentaldaten statt manueller Tabellenarbeit."
                   secondaryDescription="Parst SEC-Filings und Marktdaten automatisch in strukturierte Kennzahlen."
                   style={isTablet || isMobile ? { ...duoCard, maxWidth: "100%" } : duoCard}
                 />
@@ -282,7 +282,7 @@ function LandingPage() {
           <div style={footerStatsRow}>
             <div style={dataSourcesStrip}>
               <span style={dataSourcesLabel}>Datenbasis</span>
-              {["SEC Filings", "Eigene Kennzahlen-Engine"].map((source) => (
+              {["SEC Filings", "Marktdaten", "Eigene Kennzahlen-Engine"].map((source) => (
                 <span key={source} style={dataSourcePill}>
                   {source}
                 </span>
@@ -292,7 +292,7 @@ function LandingPage() {
             <div style={statReadoutRow}>
               <StatReadout label="Methoden" value="8 vordefiniert" />
               <StatReadout label="Builder" value="Eigene Logik inklusive" />
-              <StatReadout label="Plattform" value="Account & Billing integriert" />
+              <StatReadout label="Vergleich" value="Mehrere Unternehmen parallel" />
             </div>
           </div>
         </div>
@@ -319,8 +319,8 @@ function LandingPage() {
           />
           <FeatureCard
             icon={<ShieldCheck size={20} />}
-            title="Produktiv von Tag eins"
-            text="Account-Verwaltung, Abo-Stufen und Stripe-Billing sind bereits integriert — kein Prototyp, sondern ein nutzbares Produkt."
+            title="Vergleich statt Tabellen-Jonglage"
+            text="Mehrere Unternehmen nebeneinander vergleichen und Kennzahlen über historische Zeiträume einordnen — ohne zwischen Tools zu wechseln."
           />
         </StaggerGroup>
       </section>
@@ -339,10 +339,10 @@ function LandingPage() {
             <div aria-hidden="true" style={stepConnectorLine} />
             <StaggerGroup>
               {[
-                "Produkt und Methoden verstehen",
-                "Account registrieren oder einloggen",
-                "Analyse starten oder eigene Logik bauen",
-                "Ergebnisse auswerten und Abo verwalten",
+                "Unternehmen oder Symbol suchen",
+                "Analysemethode wählen oder eigene Logik bauen",
+                "Ergebnis mit Quelle und Rechenweg prüfen",
+                "Mit anderen Unternehmen vergleichen oder speichern",
               ].map((step, index) => (
                 <StepCard key={step} index={index} text={step} />
               ))}
@@ -365,9 +365,9 @@ function LandingPage() {
           <h2 style={finalCtaTitle}>Bereit für deine erste strukturierte Analyse?</h2>
 
           <p style={finalCtaText}>
-            Registriere dich, teste die Engine selbst und erlebe, wie
-            strukturierte Fundamentalanalyse in einer modernen Oberfläche
-            aussehen kann.
+            Registriere dich und starte deine erste Analyse mit 50
+            Analyse-Einheiten kostenlos — jede Kennzahl mit Quelle und
+            Rechenweg.
           </p>
 
           <div style={isMobile ? finalCtaButtonRowMobile : finalCtaButtonRow}>
@@ -378,7 +378,7 @@ function LandingPage() {
               style={isMobile ? { display: "block", width: "100%" } : { display: "inline-block" }}
             >
               <Link
-                to="/register"
+                to="/register?src=final"
                 style={isMobile ? { ...finalCtaPrimary, display: "block", width: "100%", boxSizing: "border-box" } : finalCtaPrimary}
               >
                 Kostenlos registrieren

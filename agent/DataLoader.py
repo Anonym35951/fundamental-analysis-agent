@@ -14,6 +14,7 @@ from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_t
 from dotenv import load_dotenv
 from agent.cache_object_storage import ObjectStorageCacheSync
 from agent.data_sources.sec_source import SecSource
+from agent.frequency import ALLOWED_FREQUENCIES
 from agent.growth_math import compute_net_income_cagr
 
 load_dotenv()
@@ -165,7 +166,7 @@ class DataLoader:
         Ruft GuV-/Income-Statement-Daten über SEC ab.
         Yahoo-kompatible Rückgabe: pandas DataFrame mit Kennzahlen als Index und Perioden als Spalten.
         """
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {
                 "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                 "symbol": symbol
@@ -292,7 +293,7 @@ class DataLoader:
                       "symbol": symbol
                   }
         """
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
 
         data_type = f"invested_capital_{frequency}"
@@ -476,7 +477,7 @@ class DataLoader:
             self.logger.error("Ungültiger Ticker-Symbol.")
             return {"error": "Ticker muss ein gültiger String sein.", "symbol": symbol}
 
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             self.logger.error(f"Ungültige Frequenz: {frequency}")
             return {"error": "Ungültige Frequenz", "symbol": symbol}
 
@@ -1337,7 +1338,7 @@ class DataLoader:
             oder bei Fehler:
                 {"error": "...", "symbol": symbol}
         """
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
 
         cache_key = f"cash_and_equivalents_{frequency}"
@@ -1630,7 +1631,7 @@ class DataLoader:
             }
         """
 
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {
                 "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                 "symbol": symbol
@@ -2102,7 +2103,7 @@ class DataLoader:
                       "symbol": symbol
                   }
         """
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {
                 "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                 "symbol": symbol
@@ -2276,7 +2277,7 @@ class DataLoader:
                       "symbol": symbol
                   }
         """
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {
                 "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                 "symbol": symbol
@@ -2379,7 +2380,7 @@ class DataLoader:
                       "symbol": symbol
                   }
         """
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {
                 "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                 "symbol": symbol
@@ -2474,7 +2475,7 @@ class DataLoader:
                       "symbol": symbol
                   }
         """
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {
                 "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                 "symbol": symbol
@@ -2717,7 +2718,7 @@ class DataLoader:
                       "symbol": symbol
                   }
         """
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
 
         # Cache-Daten-Typ für den Schlüssel
@@ -2970,7 +2971,7 @@ class DataLoader:
             EV = Market Cap + Net Debt
         """
 
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {
                 "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                 "symbol": symbol
@@ -3070,7 +3071,7 @@ class DataLoader:
         Rückgabe: {"minority_interest": float, "symbol": ..., "frequency": ..., "date": "..."}
         Fallback: 0.0 mit 'warning', wenn kein passendes Label gefunden wird.
         """
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
 
         cache_key = f"minority_interest_{frequency}"
@@ -3137,7 +3138,7 @@ class DataLoader:
         Rückgabe: {"preferred_stock": float, "symbol": ..., "frequency": ..., "date": "..."}
         Fallback: 0.0 mit 'warning', wenn kein passendes Label gefunden wird.
         """
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
 
         cache_key = f"preferred_stock_{frequency}"

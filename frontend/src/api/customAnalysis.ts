@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import type { Progress } from "../types/analysis";
+import type { Frequency } from "../types/frequency";
 import type {
   CustomAnalysisStartRequest,
   CustomAnalysisStartResponse,
@@ -20,7 +21,7 @@ export async function getCustomMetricsCatalog(): Promise<MetricCatalogEntry[]> {
 export type MetricHistoryRequest = {
   key: string;
   symbol: string;
-  frequency?: "annual" | "quarterly" | null;
+  frequency?: Frequency | null;
   start_date?: string | null;
   end_date?: string | null;
 };

@@ -230,6 +230,15 @@ body {
   }
 }
 
+@keyframes live-price-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 @keyframes scan-line-fall {
   0% {
     transform: translateY(-20%);

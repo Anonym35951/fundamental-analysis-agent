@@ -2,6 +2,7 @@ import { createContext } from "react";
 import type { AnalysisMode } from "../api/analysis";
 import type { CustomAnalysisDefinition, CustomAnalysisResult, MetricSelection } from "../types/customAnalysis";
 import type { FullResult, Progress } from "../types/analysis";
+import type { Frequency } from "../types/frequency";
 
 export type AnalysisJobKind = "single" | "full" | "custom";
 
@@ -10,7 +11,7 @@ export type AnalyzeJobRecord = {
   kind: AnalysisJobKind;
   symbol: string;
   mode?: AnalysisMode;
-  frequency?: "annual" | "quarterly";
+  frequency?: Frequency;
   /** Für den Notification-Text, z.B. "Vollanalyse" oder der Name einer
    * gespeicherten eigenen Analyse. */
   modeLabel?: string;
@@ -32,7 +33,7 @@ export type AnalysisJobsContextValue = {
   startFullOrSingleJob: (params: {
     symbol: string;
     mode: AnalysisMode;
-    frequency: "annual" | "quarterly";
+    frequency: Frequency;
     modeLabel: string;
   }) => Promise<string>;
   startCustomJob: (params: {

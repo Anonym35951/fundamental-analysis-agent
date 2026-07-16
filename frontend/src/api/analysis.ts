@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import type { Progress, FullResult } from "../types/analysis";
+import type { Frequency } from "../types/frequency";
 
 type JobStartResponse = {
   job_id?: string;
@@ -97,7 +98,7 @@ export async function searchSymbolsSafe(query: string, limit = 20): Promise<Symb
 export async function startSingleAnalysisJob(
   symbol: string,
   mode: Exclude<AnalysisMode, "full">,
-  frequency: "annual" | "quarterly" = "annual"
+  frequency: Frequency = "annual"
 ) {
   return apiRequest<JobStartResponse>(
     `/analyze/${mode}/start?symbol=${encodeURIComponent(symbol)}&frequency=${frequency}`,

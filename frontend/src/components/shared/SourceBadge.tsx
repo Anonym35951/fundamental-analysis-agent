@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
 import { getDataSourceSummary, type DataSourceSummary } from "../../api/dataSource";
 import { theme } from "../ui/theme";
+import type { Frequency } from "../../types/frequency";
 
 type Props = {
   symbol: string;
-  frequency?: "annual" | "quarterly";
+  frequency?: Frequency;
 };
 
 function formatAsOf(asOf: string | null): string | null {
@@ -35,7 +36,13 @@ export default function SourceBadge({ symbol, frequency = "annual" }: Props) {
 
     if (!symbol) return undefined;
 
-    getDataSourceSummary(symbol, frequency)
+    // EV-134: /metrics/data-source kennt "ttm" nicht (kein Model.py-Metrik-
+    // Endpoint, sondern ein bespoke DataLoader-Aufruf ohne ttm-Delegation) -
+    // die Datenherkunft für ttm ist ohnehin identisch zur annual-Quelle
+    // (beide SEC/Quartalsdaten), daher hier auf "annual" abbilden statt den
+    // Badge für den neuen ttm-Default stillschweigend verschwinden zu lassen.
+    const sourceFrequency = frequency === "ttm" ? "annual" : frequency;
+    getDataSourceSummary(symbol, sourceFrequency)
       .then((result) => {
         if (isMounted && !("error" in result)) setSummary(result);
       })

@@ -1,17 +1,32 @@
 import { theme } from "../ui/theme";
+import type { Frequency } from "../../types/frequency";
 
 type Props = {
-  value: "annual" | "quarterly";
-  onChange: (value: "annual" | "quarterly") => void;
+  value: Frequency;
+  onChange: (value: Frequency) => void;
   disabled?: boolean;
+  /** EV-134: welche Optionen angezeigt werden - Default alle drei. Kontexte,
+   * in denen "ttm" fachlich nicht sinnvoll ist (z. B. eine einzelne
+   * Dividenden-Metrik, siehe agent/frequency.py::TTM_CAPABLE_METRICS),
+   * können hier gezielt einschränken, statt eine eigene Toggle-Variante zu
+   * bauen. */
+  availableFrequencies?: readonly Frequency[];
 };
 
-const options: Array<{ value: "annual" | "quarterly"; label: string }> = [
+const ALL_OPTIONS: Array<{ value: Frequency; label: string }> = [
   { value: "annual", label: "Annual" },
+  { value: "ttm", label: "TTM" },
   { value: "quarterly", label: "Quarterly" },
 ];
 
-export default function FrequencyToggle({ value, onChange, disabled = false }: Props) {
+export default function FrequencyToggle({
+  value,
+  onChange,
+  disabled = false,
+  availableFrequencies = ["annual", "ttm", "quarterly"],
+}: Props) {
+  const options = ALL_OPTIONS.filter((option) => availableFrequencies.includes(option.value));
+
   return (
     <div
       style={{
@@ -32,6 +47,7 @@ export default function FrequencyToggle({ value, onChange, disabled = false }: P
             type="button"
             disabled={disabled}
             onClick={() => onChange(option.value)}
+            title={option.value === "ttm" ? "TTM (letzte 12 Monate): Summe der letzten vier berichteten Quartale" : undefined}
             style={{
               padding: "8px 18px",
               borderRadius: theme.radius.pill,

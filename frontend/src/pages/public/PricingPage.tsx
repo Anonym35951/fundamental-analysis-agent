@@ -62,7 +62,7 @@ function PricingPage() {
             ))}
           </div>
 
-          <Link to="/register" style={freeCta}>
+          <Link to="/register?src=pricing" style={freeCta}>
             Kostenlos starten
           </Link>
         </div>
@@ -107,7 +107,7 @@ function PricingPage() {
             ))}
           </div>
 
-          <Link to="/register" style={proCta}>
+          <Link to="/register?src=pricing" style={proCta}>
             Kostenlos registrieren
           </Link>
         </div>

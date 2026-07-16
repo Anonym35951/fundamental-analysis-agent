@@ -1,7 +1,8 @@
 import { createContext } from "react";
 import type { CustomMetricResult, MetricSelection } from "../types/customAnalysis";
+import type { Frequency } from "../types/frequency";
 
-export type CompareFrequency = "annual" | "quarterly";
+export type CompareFrequency = Frequency;
 
 export type CompanyResult = {
   symbol: string;

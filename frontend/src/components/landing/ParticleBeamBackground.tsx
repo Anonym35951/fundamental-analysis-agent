@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useThemeMode } from "../ui/useThemeMode";
+import { useIsMobile } from "../../hooks/useMediaQuery";
 
 type Particle = {
   /** Normalized horizontal position within the beam (-1..1), independent of
@@ -55,6 +56,12 @@ export default function ParticleBeamBackground({ densityMultiplier = 1 }: Partic
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { mode } = useThemeMode();
+  // EV-110: on mobile, skip the continuous rAF canvas simulation entirely
+  // (bestätigter Performance-Befund, EVOLVING.md P2) and render a static
+  // gradient approximation instead — same "disable continuous animation on
+  // mobile" treatment AmbientBackground.tsx already applies. Desktop stays
+  // pixel-identical (no behavior change at all when isMobile is false).
+  const isMobile = useIsMobile();
   // Read via a ref inside the animation loop instead of depending on `mode`
   // in the main effect below — that effect owns the particle simulation
   // state and shouldn't restart (resetting positions) on every theme toggle.
@@ -65,6 +72,8 @@ export default function ParticleBeamBackground({ densityMultiplier = 1 }: Partic
   }, [mode]);
 
   useEffect(() => {
+    if (isMobile) return;
+
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
@@ -183,7 +192,27 @@ export default function ParticleBeamBackground({ densityMultiplier = 1 }: Partic
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
     };
-  }, [densityMultiplier]);
+  }, [densityMultiplier, isMobile]);
+
+  if (isMobile) {
+    // Static approximation of the beam's focal-point-to-ground-band shape:
+    // a bright vertical core fading outward, no canvas/rAF at all.
+    const rgb = mode === "light" ? "40, 40, 44" : "245, 245, 247";
+    return (
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+          pointerEvents: "none",
+          zIndex: 0,
+          background: `radial-gradient(ellipse 45% 55% at 50% 0%, rgba(${rgb}, 0.16), rgba(${rgb}, 0) 70%),
+            radial-gradient(ellipse 90% 30% at 50% 62%, rgba(${rgb}, 0.08), rgba(${rgb}, 0) 75%)`,
+        }}
+      />
+    );
+  }
 
   return (
     <div

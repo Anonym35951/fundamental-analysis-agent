@@ -124,7 +124,10 @@ def register(
     raw_token = _issue_email_verification_token(db, created)
     _send_verification_email(background_tasks, created, raw_token)
 
-    log_event(db, "user_registered", user_id=created.id)
+    log_event(
+        db, "user_registered", user_id=created.id,
+        metadata={"src": user.src} if user.src else None,
+    )
 
     return _REGISTER_GENERIC_RESPONSE
 

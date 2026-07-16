@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle } from "lucide-react";
 import { registerUser } from "../../api/auth";
@@ -15,6 +15,11 @@ const TODAY_ISO = new Date().toISOString().slice(0, 10);
 function RegisterPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  // EV-124: CTA-Attribution - welcher Landingpage-Abschnitt/welche Seite
+  // hierher verlinkt hat (?src=hero|value|final|pricing|header). Nur
+  // informativ, Backend validiert gegen eine Allowlist (api/schemas/user.py).
+  const [searchParams] = useSearchParams();
+  const registrationSource = searchParams.get("src") ?? undefined;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -105,6 +110,7 @@ function RegisterPage() {
         birth_date: birthDate,
         terms_accepted: termsAccepted,
         privacy_accepted: privacyAccepted,
+        src: registrationSource,
       });
 
       showToast(

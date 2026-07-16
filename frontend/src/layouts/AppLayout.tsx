@@ -10,7 +10,6 @@ import ErrorBoundary from "../components/common/ErrorBoundary";
 import AmbientBackground from "../components/ui/AmbientBackground";
 import type { OverlayPhase } from "../components/intro/IntroOverlay";
 import { FLY_OUT_DURATION } from "../components/intro/introTiming";
-import AppTour from "../components/onboarding/AppTour";
 
 // Lazy statt statisch importiert (P2-15, LAUNCH.md): IntroOverlay zieht
 // RingsScene (three.js/@react-three/fiber) nach - ohne Lazy-Loading wäre
@@ -18,6 +17,13 @@ import AppTour from "../components/onboarding/AppTour";
 // Seitenaufrufen (jede Navigation außer dem ersten Post-Login-Mount) false
 // ist und die Komponente nie gerendert wird.
 const IntroOverlay = lazy(() => import("../components/intro/IntroOverlay"));
+// EV-114: react-joyride (AppTour) war die letzte statisch importierte,
+// schwere Abhängigkeit in AppLayout und landete dadurch im Haupt-Bundle,
+// obwohl die geführte Tour nur für einen kleinen Teil der Sessions läuft.
+// Gleiches Lazy+Suspense(fallback=null)-Muster wie IntroOverlay direkt
+// darüber - AppTour rendert ohnehin nichts Sichtbares, solange keine Tour
+// aktiv ist, daher ist ein Suspense-Flackern hier ausgeschlossen.
+const AppTour = lazy(() => import("../components/onboarding/AppTour"));
 import { useIsMobile } from "../hooks/useMediaQuery";
 import { useScrollProgress } from "../hooks/useScrollProgress";
 import { TourStatusProvider } from "../hooks/TourStatusProvider";
@@ -158,7 +164,9 @@ function AppLayoutInner() {
         </Suspense>
       ) : null}
 
-      <AppTour introDone={introPhase === "done"} />
+      <Suspense fallback={null}>
+        <AppTour introDone={introPhase === "done"} />
+      </Suspense>
 
       <SessionTimeoutWatcher />
 

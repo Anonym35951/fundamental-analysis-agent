@@ -3,22 +3,29 @@ import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-r
 import PublicLayout from "./layouts/PublicLayout";
 import AuthLayout from "./layouts/AuthLayout";
 import AppLayout from "./layouts/AppLayout";
+import { lazyWithRetry, withSuspense } from "./routes/lazyWithRetry";
 
-import LandingPage from "./pages/public/LandingPage";
-import PricingPage from "./pages/public/PricingPage";
+// EV-114: alle 22 Seiten waren statisch importiert und landeten dadurch
+// zusammen mit recharts/framer-motion/react-joyride in einem einzigen
+// ~349-KB-gzip-Haupt-Bundle (EVOLVING.md P1) - jetzt pro Seite per
+// lazyWithRetry (React.lazy + Stale-Chunk-Reload-Guard), damit z. B. ein
+// Landingpage-Besuch nicht das komplette Dashboard/Analyze/Compare-Chart-
+// Bundle mitladen muss. Layouts/Guards/Provider bleiben bewusst statisch.
+const LandingPage = lazyWithRetry(() => import("./pages/public/LandingPage"));
+const PricingPage = lazyWithRetry(() => import("./pages/public/PricingPage"));
 
-import LoginPage from "./pages/auth/LoginPage";
-import RegisterPage from "./pages/auth/RegisterPage";
-import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage";
-import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
-import VerifyEmailPage from "./pages/auth/VerifyEmailPage";
+const LoginPage = lazyWithRetry(() => import("./pages/auth/LoginPage"));
+const RegisterPage = lazyWithRetry(() => import("./pages/auth/RegisterPage"));
+const ForgotPasswordPage = lazyWithRetry(() => import("./pages/auth/ForgotPasswordPage"));
+const ResetPasswordPage = lazyWithRetry(() => import("./pages/auth/ResetPasswordPage"));
+const VerifyEmailPage = lazyWithRetry(() => import("./pages/auth/VerifyEmailPage"));
 
-import DashboardPage from "./pages/app/DashBoardPage";
-import AnalyzePage from "./pages/app/AnalyzePage";
-import ComparePage from "./pages/app/ComparePage";
-import BillingPage from "./pages/app/BillingPage";
-import AccountPage from "./pages/app/AccountPage";
-import SupportPage from "./pages/app/SupportPage";
+const DashboardPage = lazyWithRetry(() => import("./pages/app/DashBoardPage"));
+const AnalyzePage = lazyWithRetry(() => import("./pages/app/AnalyzePage"));
+const ComparePage = lazyWithRetry(() => import("./pages/app/ComparePage"));
+const BillingPage = lazyWithRetry(() => import("./pages/app/BillingPage"));
+const AccountPage = lazyWithRetry(() => import("./pages/app/AccountPage"));
+const SupportPage = lazyWithRetry(() => import("./pages/app/SupportPage"));
 
 /** The "eigene Analyse" workflow now lives inside AnalyzePage's
  * "Individuell" tab — this keeps old /app/custom-analysis(?run=<id>)
@@ -29,15 +36,15 @@ function CustomAnalysisRedirect() {
   return <Navigate to={runId ? `/app/analyze?run=${runId}` : "/app/analyze"} replace />;
 }
 
-import BillingSuccessPage from "./pages/billing/SuccessPage";
-import BillingCancelPage from "./pages/billing/CancelPage";
-import AdminDashboardPage from "./pages/app/AdminDashboardPage";
+const BillingSuccessPage = lazyWithRetry(() => import("./pages/billing/SuccessPage"));
+const BillingCancelPage = lazyWithRetry(() => import("./pages/billing/CancelPage"));
+const AdminDashboardPage = lazyWithRetry(() => import("./pages/app/AdminDashboardPage"));
 
-import PrivacyPage from "./pages/legal/PrivacyPage";
-import TermsPage from "./pages/legal/TermsPage";
-import ImprintPage from "./pages/legal/ImprintPage";
-import ContactPage from "./pages/legal/ContactPage";
-import CookiesPage from "./pages/legal/CookiesPage";
+const PrivacyPage = lazyWithRetry(() => import("./pages/legal/PrivacyPage"));
+const TermsPage = lazyWithRetry(() => import("./pages/legal/TermsPage"));
+const ImprintPage = lazyWithRetry(() => import("./pages/legal/ImprintPage"));
+const ContactPage = lazyWithRetry(() => import("./pages/legal/ContactPage"));
+const CookiesPage = lazyWithRetry(() => import("./pages/legal/CookiesPage"));
 
 import ProtectedRoute from "./routes/ProtectedRoute";
 import AdminRoute from "./routes/AdminRoute";
@@ -65,27 +72,27 @@ function App() {
             <Route
               path="/"
               element={
-                token ? <Navigate to="/app/dashboard" replace /> : <LandingPage />
+                token ? <Navigate to="/app/dashboard" replace /> : withSuspense(<LandingPage />)
               }
             />
 
-            <Route path="/landing" element={<LandingPage />} />
-            <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/landing" element={withSuspense(<LandingPage />)} />
+            <Route path="/pricing" element={withSuspense(<PricingPage />)} />
 
-            <Route path="/legal/privacy" element={<PrivacyPage />} />
-            <Route path="/legal/terms" element={<TermsPage />} />
-            <Route path="/legal/imprint" element={<ImprintPage />} />
-            <Route path="/legal/contact" element={<ContactPage />} />
-            <Route path="/legal/cookies" element={<CookiesPage />} />
+            <Route path="/legal/privacy" element={withSuspense(<PrivacyPage />)} />
+            <Route path="/legal/terms" element={withSuspense(<TermsPage />)} />
+            <Route path="/legal/imprint" element={withSuspense(<ImprintPage />)} />
+            <Route path="/legal/contact" element={withSuspense(<ContactPage />)} />
+            <Route path="/legal/cookies" element={withSuspense(<CookiesPage />)} />
           </Route>
 
           {/* AUTH AREA */}
           <Route element={<AuthLayout />}>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password" element={<ResetPasswordPage />} />
-            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/login" element={withSuspense(<LoginPage />)} />
+            <Route path="/register" element={withSuspense(<RegisterPage />)} />
+            <Route path="/forgot-password" element={withSuspense(<ForgotPasswordPage />)} />
+            <Route path="/reset-password" element={withSuspense(<ResetPasswordPage />)} />
+            <Route path="/verify-email" element={withSuspense(<VerifyEmailPage />)} />
           </Route>
 
           {/* PROTECTED APP AREA */}
@@ -96,27 +103,27 @@ function App() {
                 element={<Navigate to="/app/dashboard" replace />}
               />
 
-              <Route path="/app/dashboard" element={<DashboardPage />} />
-              <Route path="/app/analyze" element={<AnalyzePage />} />
+              <Route path="/app/dashboard" element={withSuspense(<DashboardPage />)} />
+              <Route path="/app/analyze" element={withSuspense(<AnalyzePage />)} />
               <Route
                 path="/app/custom-analysis"
                 element={<CustomAnalysisRedirect />}
               />
-              <Route path="/app/compare" element={<ComparePage />} />
-              <Route path="/app/billing" element={<BillingPage />} />
-              <Route path="/app/account" element={<AccountPage />} />
-              <Route path="/app/support" element={<SupportPage />} />
+              <Route path="/app/compare" element={withSuspense(<ComparePage />)} />
+              <Route path="/app/billing" element={withSuspense(<BillingPage />)} />
+              <Route path="/app/account" element={withSuspense(<AccountPage />)} />
+              <Route path="/app/support" element={withSuspense(<SupportPage />)} />
 
               {/* Billing Result Pages jetzt im App-Layout */}
               <Route
                 path="/app/billing/success"
-                element={<BillingSuccessPage />}
+                element={withSuspense(<BillingSuccessPage />)}
               />
-              <Route path="/app/billing/cancel" element={<BillingCancelPage />} />
+              <Route path="/app/billing/cancel" element={withSuspense(<BillingCancelPage />)} />
 
               {/* Privates Admin-Dashboard — nur für plan=="admin" sichtbar */}
               <Route element={<AdminRoute />}>
-                <Route path="/app/admin" element={<AdminDashboardPage />} />
+                <Route path="/app/admin" element={withSuspense(<AdminDashboardPage />)} />
               </Route>
             </Route>
           </Route>

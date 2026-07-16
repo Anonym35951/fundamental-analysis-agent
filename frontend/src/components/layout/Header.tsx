@@ -96,7 +96,7 @@ function Header({ variant = "public" }: HeaderProps) {
                 Login
               </Link>
 
-              <Link to="/register" style={pillCta}>
+              <Link to="/register?src=header" style={pillCta}>
                 Registrieren
               </Link>
             </>

@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Optional
 
 from agent.AgentAction import AgentAction
+from agent.frequency import TTM_CAPABLE_METRICS
 
 ParamType = Literal["string", "number", "date", "enum"]
 ResultShape = Literal["scalar", "dict", "timeseries", "complex"]
@@ -62,11 +63,19 @@ class MetricSpec:
             "requires_symbol": self.requires_symbol,
             "result_shape": self.result_shape,
             "params": [p.to_dict() for p in self.params],
+            # EV-133/134: Frontend-Hinweis, ob diese Metrik "ttm" anbieten
+            # darf (agent/frequency.py::TTM_CAPABLE_METRICS ist die einzige
+            # Quelle der Wahrheit dafür - siehe EV-132-Delegation). Metriken
+            # ohne frequency-Param liefern hier konsistent False.
+            "supports_ttm": self.key in TTM_CAPABLE_METRICS,
         }
 
 
+# EV-133: "ttm" ergänzt (Variante B, Betreiber-Entscheidung 2026-07-16) -
+# Backend-Default bleibt bewusst "annual" (API-Vertrag für bestehende
+# Clients, EVOLVING.md §2); nur das Frontend wählt "ttm" aktiv aus (EV-135).
 FREQUENCY_PARAM = MetricParam(
-    name="frequency", type="enum", default="annual", enum_values=["annual", "quarterly"]
+    name="frequency", type="enum", default="annual", enum_values=["annual", "quarterly", "ttm"]
 )
 START_DATE_PARAM = MetricParam(name="start_date", type="date")
 END_DATE_PARAM = MetricParam(name="end_date", type="date")

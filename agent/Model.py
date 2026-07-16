@@ -8,6 +8,7 @@ from typing import Optional
 from dateutil.relativedelta import relativedelta
 from agent.DataLoader import DataLoader
 from agent.DataPreprocessor import DataPreprocessor
+from agent.frequency import ALLOWED_FREQUENCIES, resolve_ttm_alias
 from agent.growth_math import compute_net_income_cagr
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
@@ -131,6 +132,10 @@ class Model:
             float: Das Net Debt/EBITDA-Verhältnis, gerundet auf 2 Dezimalstellen.
             dict: Fehlerdetails, falls Daten nicht verfügbar sind.
         """
+        # EV-132: "ttm" delegiert auf den bestehenden Annual-Pfad (siehe
+        # agent/frequency.py resolve_ttm_alias) - kein "frequency"-Label im
+        # Rückgabewert dieser Methode, daher kein requested_frequency nötig.
+        frequency = resolve_ttm_alias(frequency)
         try:
             net_debt_data = self.dataloader.get_net_debt_data(symbol, frequency=frequency)
             ebitda_data = self.dataloader.get_ebitda_data(symbol, frequency=frequency)
@@ -472,6 +477,9 @@ class Model:
             dict: Enthält das KUV, gerundet auf 2 Dezimalstellen, oder Fehlerdetails.
                   Beispiel: {"KUV": 5.25, "symbol": "AAPL", "frequency": "annual"}
         """
+        # EV-132: "ttm" delegiert auf den bestehenden Annual-Pfad (agent/frequency.py).
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
         try:
             # Daten abrufen
             current_price = self.dataloader.get_current_price_per_share(symbol)
@@ -513,7 +521,7 @@ class Model:
             # KUV berechnen
             market_cap = current_price * shares
             kuv = market_cap / revenue
-            return {"KUV": round(kuv, 2), "symbol": symbol, "frequency": frequency}
+            return {"KUV": round(kuv, 2), "symbol": symbol, "frequency": requested_frequency}
         except Exception as e:
             return {"error": f"Fehler beim Berechnen des KUV für {symbol}: {str(e)}"}
 
@@ -535,6 +543,9 @@ class Model:
             dict: Enthält das ROE, gerundet auf 2 Dezimalstellen, oder Fehlerdetails.
                   Beispiel: {"ROE": 0.25, "symbol": "AAPL", "frequency": "annual"}
         """
+        # EV-132: "ttm" delegiert auf den bestehenden Annual-Pfad (agent/frequency.py).
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
         try:
             # Nettogewinn abrufen
             if frequency == "annual":
@@ -586,7 +597,7 @@ class Model:
 
             # ROE berechnen
             roe = net_income / equity
-            return {"ROE": round(roe, 2), "symbol": symbol, "frequency": frequency}
+            return {"ROE": round(roe, 2), "symbol": symbol, "frequency": requested_frequency}
         except Exception as e:
             return {"error": f"Fehler beim Berechnen des ROE für {symbol}: {str(e)}"}
 
@@ -607,6 +618,8 @@ class Model:
             dict: Enthält den Verschuldungsgrad, gerundet auf 2 Dezimalstellen, oder Fehlerdetails.
                   Beispiel: {"debt_to_equity": 1.5, "symbol": "AAPL", "frequency": "annual"}
         """
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
         try:
             # Bilanzdaten abrufen
             balance_sheet = self.dataloader.get_balance_sheet(symbol, frequency=frequency)
@@ -653,7 +666,7 @@ class Model:
 
             # Verschuldungsgrad berechnen
             debt_to_equity = total_liabilities / equity
-            return {"debt_to_equity": round(debt_to_equity, 2), "symbol": symbol, "frequency": frequency}
+            return {"debt_to_equity": round(debt_to_equity, 2), "symbol": symbol, "frequency": requested_frequency}
         except Exception as e:
             return {"error": f"Fehler beim Berechnen des Verschuldungsgrads für {symbol}: {str(e)}"}
 
@@ -753,6 +766,8 @@ class Model:
                       "symbol": "AAPL"
                   }
         """
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
         try:
             # Hole EBIT-Daten
             ebit_data = self.dataloader.get_ebit_data(symbol, frequency=frequency)
@@ -785,7 +800,7 @@ class Model:
             data = {
                 "interest_coverage_ratio": float(interest_coverage_ratio),
                 "symbol": symbol,
-                "frequency": frequency,
+                "frequency": requested_frequency,
                 "date": ebit_data["date"]
             }
 
@@ -821,7 +836,10 @@ class Model:
                       "symbol": symbol
                   }
         """
-        if frequency not in ["annual", "quarterly"]:
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
+
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
 
         try:
@@ -867,7 +885,7 @@ class Model:
             result = {
                 "cashflow_margin": float(cashflow_margin),
                 "symbol": symbol,
-                "frequency": frequency,
+                "frequency": requested_frequency,
                 "date": date
             }
 
@@ -901,7 +919,10 @@ class Model:
                       "symbol": symbol
                   }
         """
-        if frequency not in ["annual", "quarterly"]:
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
+
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
 
         try:
@@ -918,7 +939,7 @@ class Model:
                     return {
                         "inventory_to_revenue_ratio": 0.0,
                         "symbol": symbol,
-                        "frequency": frequency,
+                        "frequency": requested_frequency,
                         "date": no_inventory_revenue["date"],
                         "message": "Kein Lagerbestand vorhanden (vermutlich Dienstleister)."
                     }
@@ -960,7 +981,7 @@ class Model:
             result = {
                 "inventory_to_revenue_ratio": float(ratio),
                 "symbol": symbol,
-                "frequency": frequency,
+                "frequency": requested_frequency,
                 "date": date
             }
 
@@ -996,6 +1017,8 @@ class Model:
             oder bei Fehler:
                 {"error": "...", "symbol": symbol}
         """
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
         try:
             if self.dataloader.is_financial_sector(symbol):
                 return {
@@ -1040,7 +1063,7 @@ class Model:
                 "cash": float(cash_value),
                 "market_cap": float(market_cap),
                 "symbol": symbol,
-                "frequency": frequency,
+                "frequency": requested_frequency,
                 "date": cash_date
             }
 
@@ -1063,14 +1086,25 @@ class Model:
         Returns:
             dict: Enthält das EV/Sales Multiple, Symbol und Frequenz, oder Fehlerdetails.
         """
+        # EV-132: "ttm" delegiert auf den bestehenden Annual-Pfad (agent/frequency.py).
+        # Übersetzung VOR der Cache-Key-Berechnung, damit ein ttm-Request den
+        # bestehenden "..._annual"-Cache-Eintrag wiederverwendet statt einen
+        # neuen "..._ttm"-Namespace anzulegen. Jeder Rückgabepfad überschreibt
+        # das "frequency"-Feld danach mit dem tatsächlich angeforderten Wert -
+        # unabhängig davon, ob der Eintrag aus dem Cache kam (womöglich von
+        # einem echten "annual"-Request befüllt) oder frisch berechnet wurde.
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
         data_type = f"ev_to_sales_{frequency}"
         if use_cache:
             cached_data = self.dataloader._load_cached_data(symbol, data_type)
             if cached_data is not None:
+                if isinstance(cached_data, dict) and "frequency" in cached_data:
+                    return {**cached_data, "frequency": requested_frequency}
                 return cached_data
 
         try:
-            if frequency not in ["annual", "quarterly"]:
+            if frequency not in ALLOWED_FREQUENCIES:
                 return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                         "symbol": symbol}
 
@@ -1096,7 +1130,7 @@ class Model:
 
             if use_cache:
                 self.dataloader._cache_data(result, symbol, data_type)
-            return result
+            return {**result, "frequency": requested_frequency}
 
         except Exception as e:
             return {"error": f"Fehler bei der Berechnung des EV/Sales Multiples für {symbol}: {str(e)}",
@@ -1135,15 +1169,17 @@ class Model:
                       "symbol": "AAPL"
                   }
         """
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
         cache_key = f"{symbol}_price_to_freeCashflow_{frequency}"
         if use_cache:
             cached_data = self.dataloader._load_cached_data(symbol, cache_key)
             if cached_data is not None and "error" not in cached_data:
-                return cached_data
+                return {**cached_data, "frequency": requested_frequency} if "frequency" in cached_data else cached_data
 
         try:
             # Prüfen, ob Frequenz gültig ist
-            if frequency not in ["annual", "quarterly"]:
+            if frequency not in ALLOWED_FREQUENCIES:
                 return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                         "symbol": symbol}
 
@@ -1179,7 +1215,7 @@ class Model:
                 }
                 if use_cache:
                     self.dataloader._cache_data(data, symbol, cache_key)
-                return data
+                return {**data, "frequency": requested_frequency}
 
             # Price/FreeCashflow berechnen
             price_to_freeCashflow = round(current_price / freeCashflow_per_share, 2)
@@ -1191,7 +1227,7 @@ class Model:
             }
             if use_cache:
                 self.dataloader._cache_data(data, symbol, cache_key)
-            return data
+            return {**data, "frequency": requested_frequency}
 
         except Exception as e:
             return {"error": f"Fehler beim Berechnen von Price/FreeCashflow für {symbol} ({frequency}): {str(e)}",
@@ -1830,14 +1866,17 @@ class Model:
               }
             oder {"error": "...", "symbol": symbol}
         """
-        if frequency not in ["annual", "quarterly"]:
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
+
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.", "symbol": symbol}
 
         cache_key = f"{symbol}_net_current_assets_{frequency}"
         if use_cache:
             cached = self.dataloader._load_cached_data(symbol, cache_key)
             if cached is not None and isinstance(cached, dict) and "error" not in cached:
-                return cached
+                return {**cached, "frequency": requested_frequency} if "frequency" in cached else cached
 
         try:
             bs = self.dataloader.get_balance_sheet(symbol, frequency=frequency, use_cache=use_cache)
@@ -1910,7 +1949,7 @@ class Model:
             if use_cache:
                 self.dataloader._cache_data(out, symbol, cache_key)
 
-            return out
+            return {**out, "frequency": requested_frequency}
 
         except Exception as e:
             return {"error": f"Fehler bei NetCurrentAssets für {symbol} ({frequency}): {str(e)}", "symbol": symbol}
@@ -5066,15 +5105,20 @@ class Model:
                       "symbol": "AAPL"
                   }
         """
+        # EV-132: "ttm" delegiert auf den bestehenden Annual-Pfad (agent/frequency.py) -
+        # siehe calculate_ev_to_sales oben fuer die ausfuehrliche Begruendung
+        # des Cache-Key-vor-Uebersetzung/Relabel-vor-Rueckgabe-Musters.
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
         cache_key = f"{symbol}_ev_to_ebit_{frequency}"
         if use_cache:
             cached_data = self.dataloader._load_cached_data(symbol, cache_key)
             if cached_data is not None and "error" not in cached_data:
-                return cached_data
+                return {**cached_data, "frequency": requested_frequency} if "frequency" in cached_data else cached_data
 
         try:
             # Prüfen, ob Frequenz gültig ist
-            if frequency not in ["annual", "quarterly"]:
+            if frequency not in ALLOWED_FREQUENCIES:
                 return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                         "symbol": symbol}
 
@@ -5106,7 +5150,7 @@ class Model:
                 }
                 if use_cache:
                     self.dataloader._cache_data(data, symbol, cache_key)
-                return data
+                return {**data, "frequency": requested_frequency}
 
             # EV/EBIT berechnen
             ev_to_ebit = round(enterprise_value / ebit, 2)
@@ -5118,7 +5162,7 @@ class Model:
             }
             if use_cache:
                 self.dataloader._cache_data(data, symbol, cache_key)
-            return data
+            return {**data, "frequency": requested_frequency}
 
         except Exception as e:
             return {"error": f"Fehler beim Berechnen von EV/EBIT für {symbol} ({frequency}): {str(e)}",
@@ -5135,14 +5179,16 @@ class Model:
         Returns:
             dict: Enthält das EV/EBITDA-Verhältnis, Symbol, Frequenz, Datum und ggf. eine Nachricht.
         """
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
         cache_key = f"{symbol}_ev_to_ebitda_{frequency}"
         if use_cache:
             cached_data = self.dataloader._load_cached_data(symbol, cache_key)
             if cached_data is not None and "error" not in cached_data:
-                return cached_data
+                return {**cached_data, "frequency": requested_frequency} if "frequency" in cached_data else cached_data
 
         try:
-            if frequency not in ["annual", "quarterly"]:
+            if frequency not in ALLOWED_FREQUENCIES:
                 return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                         "symbol": symbol}
 
@@ -5181,7 +5227,7 @@ class Model:
                 }
                 if use_cache:
                     self.dataloader._cache_data(data, symbol, cache_key)
-                return data
+                return {**data, "frequency": requested_frequency}
 
             # EV/EBITDA berechnen
             ev_to_ebitda = round(enterprise_value / ebitda, 2)
@@ -5193,7 +5239,7 @@ class Model:
             }
             if use_cache:
                 self.dataloader._cache_data(data, symbol, cache_key)
-            return data
+            return {**data, "frequency": requested_frequency}
 
         except Exception as e:
             return {"error": f"Fehler beim Berechnen von EV/EBITDA für {symbol} ({frequency}): {str(e)}",
@@ -5231,14 +5277,16 @@ class Model:
                       "symbol": "AAPL"
                   }
         """
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
         cache_key = f"{symbol}_price_to_ebit_{frequency}"
         if use_cache:
             cached_data = self.dataloader._load_cached_data(symbol, cache_key)
             if cached_data is not None and "error" not in cached_data:
-                return cached_data
+                return {**cached_data, "frequency": requested_frequency} if "frequency" in cached_data else cached_data
         try:
             # Prüfen, ob Frequenz gültig ist
-            if frequency not in ["annual", "quarterly"]:
+            if frequency not in ALLOWED_FREQUENCIES:
                 return {"error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                         "symbol": symbol}
             # Aktuellen Preis pro Aktie abrufen
@@ -5271,7 +5319,7 @@ class Model:
                 }
                 if use_cache:
                     self.dataloader._cache_data(data, symbol, cache_key)
-                return data
+                return {**data, "frequency": requested_frequency}
             # Price/EBIT berechnen
             price_to_ebit = round(current_price / ebit_per_share, 2)
             data = {
@@ -5282,7 +5330,7 @@ class Model:
             }
             if use_cache:
                 self.dataloader._cache_data(data, symbol, cache_key)
-            return data
+            return {**data, "frequency": requested_frequency}
         except Exception as e:
             return {"error": f"Fehler beim Berechnen von Price/EBIT für {symbol} ({frequency}): {str(e)}",
                     "symbol": symbol}
@@ -5314,7 +5362,10 @@ class Model:
                       "symbol": symbol
                   }
         """
-        if frequency not in ["annual", "quarterly"]:
+        requested_frequency = frequency
+        frequency = resolve_ttm_alias(frequency)
+
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}. Nur 'annual' wird unterstützt.", "symbol": symbol}
 
         # Cache-Daten-Typ für den Schlüssel
@@ -5324,7 +5375,7 @@ class Model:
         if use_cache:
             cached_data = self.dataloader._load_cached_data(symbol, data_type)
             if cached_data is not None:
-                return cached_data
+                return {**cached_data, "frequency": requested_frequency} if isinstance(cached_data, dict) and "frequency" in cached_data else cached_data
 
         try:
             # Net Income aus Finanzdaten abrufen
@@ -5387,7 +5438,7 @@ class Model:
             if use_cache:
                 self.dataloader._cache_data(result, symbol, data_type)
 
-            return result
+            return {**result, "frequency": requested_frequency}
 
         except Exception as e:
             return {

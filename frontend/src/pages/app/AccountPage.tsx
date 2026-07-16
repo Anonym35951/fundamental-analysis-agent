@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   deleteAccount,
   getCurrentUser,
+  invalidateCurrentUserCache,
   updateProfile,
   type CurrentUserResponse,
 } from "../../api/auth";
@@ -290,6 +291,11 @@ const canManageSubscriptionPortal =
       );
 
       try {
+        // EV-112: ohne diesen Invalidate wuerde ein innerhalb der letzten
+        // 30s bereits gecachter (jetzt veralteter) Nutzer zurueckgegeben,
+        // statt des durch die vorherige Mutation tatsaechlich geaenderten
+        // billing_status.
+        invalidateCurrentUserCache();
         const refreshedUser = await getCurrentUser();
         setCurrentUser(refreshedUser);
       } catch {
@@ -325,6 +331,11 @@ const canManageSubscriptionPortal =
       );
 
       try {
+        // EV-112: ohne diesen Invalidate wuerde ein innerhalb der letzten
+        // 30s bereits gecachter (jetzt veralteter) Nutzer zurueckgegeben,
+        // statt des durch die vorherige Mutation tatsaechlich geaenderten
+        // billing_status.
+        invalidateCurrentUserCache();
         const refreshedUser = await getCurrentUser();
         setCurrentUser(refreshedUser);
       } catch {

@@ -10,6 +10,7 @@ import requests
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed, RetryError
 
 from agent.cache_object_storage import ObjectStorageCacheSync
+from agent.frequency import ALLOWED_FREQUENCIES
 
 
 # Formtypen, die für die "neues Filing verfügbar"-Benachrichtigung relevant
@@ -60,7 +61,7 @@ class SecSource:
             use_cache: bool = True,
             scope: str = "core",
     ):
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {
                 "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                 "symbol": symbol,
@@ -179,7 +180,7 @@ class SecSource:
             scope: str = "core",
     ):
 
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {
                 "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                 "symbol": symbol,
@@ -321,7 +322,7 @@ class SecSource:
             by: str = "index",
             use_cache: bool = True,
     ):
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}.", "symbol": symbol}
 
         if scope not in ["core", "raw", "labeled"]:
@@ -436,7 +437,7 @@ class SecSource:
             use_cache: bool = True,
             scope: str = "core",
     ):
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {
                 "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
                 "symbol": symbol,
@@ -578,7 +579,7 @@ class SecSource:
             by: str = "index",
             use_cache: bool = True,
     ):
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}.", "symbol": symbol}
 
         if scope not in ["core", "raw", "labeled"]:
@@ -2672,7 +2673,7 @@ class SecSource:
             by: str = "index",
             use_cache: bool = True,
     ):
-        if frequency not in ["annual", "quarterly"]:
+        if frequency not in ALLOWED_FREQUENCIES:
             return {"error": f"Ungültige Frequenz: {frequency}.", "symbol": symbol}
 
         if scope not in ["core", "raw", "labeled"]:

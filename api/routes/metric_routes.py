@@ -303,13 +303,24 @@ def profit_growth(
                 end_date=None,
                 use_cache=True
             )
-        else:
+        elif frequency == "quarterly":
             result = action.model.calculate_avg_quarterly_profit_growth(
                 symbol,
                 start_date=None,
                 end_date=None,
                 use_cache=True
             )
+        else:
+            # EV-133: Ø Jahres-/Quartalswachstum (AAGR/AQGR) unterstützt kein
+            # "ttm" (EVOLVING.md §9/§11 E5 - TTM-vs-TTM-Vorjahr wäre neue
+            # Numerik, kein reiner Alias auf einen bestehenden Pfad). Vorher
+            # fiel jeder Nicht-"annual"-Wert stillschweigend in den
+            # Quarterly-Zweig - mit "ttm" als neu erreichbarem Wert wäre das
+            # eine fachlich falsche Berechnung statt eines klaren Fehlers.
+            return {
+                "symbol": symbol,
+                "error": f"Ungültige Frequenz: {frequency}. Verwende 'annual' oder 'quarterly'.",
+            }
 
         return make_json_safe(result)
 

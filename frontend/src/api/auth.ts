@@ -11,6 +11,10 @@ export type RegisterPayload = {
   birth_date: string;
   terms_accepted: boolean;
   privacy_accepted: boolean;
+  // EV-124: welcher Landingpage-Abschnitt/welche Seite den Registrierungs-
+  // Link ausgeloest hat (?src=... in der URL) - rein informativ fuer die
+  // CTA-Attribution im Admin-Dashboard, siehe api/schemas/user.py.
+  src?: string;
 };
 
 export type UserProfileUpdatePayload = Partial<{
@@ -81,12 +85,60 @@ export async function loginUser(
   });
 }
 
+// EV-112: getCurrentUser() wurde bis zu 4x parallel pro Seitenladung
+// aufgerufen (DashBoardPage, AppSidebar, EmailVerificationBanner, useAppTour,
+// je nach Seite +BillingPage/AccountPage/AdminRoute/useCustomAnalysisDefinitions)
+// - kein Request-Cache im fetch-Wrapper (api/client.ts) dedupliziert das.
+// Statt jede der ~9 Call-Sites umzubauen, cached/dedupliziert dieser
+// Export selbst: gleichzeitige Aufrufe teilen sich ein In-Flight-Promise,
+// ein frisches Ergebnis bleibt kurz (TTL) gültig. Hook-/Call-Site-Signatur
+// bleibt unveraendert.
+const CURRENT_USER_CACHE_TTL_MS = 30_000;
+let cachedCurrentUser: CurrentUserResponse | null = null;
+let cachedCurrentUserAt = 0;
+let currentUserInFlight: Promise<CurrentUserResponse> | null = null;
+
+/** Verwirft den gecachten Nutzer, damit der naechste getCurrentUser()-Aufruf
+ * garantiert neu vom Server laedt. Noetig direkt nach Mutationen, die
+ * `/auth/me`-Felder aendern (Abo kuendigen/fortsetzen, Login/Logout) - siehe
+ * Aufrufstellen in AccountPage.tsx und die app:login/app:logout-Listener
+ * unten. */
+export function invalidateCurrentUserCache(): void {
+  cachedCurrentUser = null;
+  cachedCurrentUserAt = 0;
+  currentUserInFlight = null;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("app:login", invalidateCurrentUserCache);
+  window.addEventListener("app:logout", invalidateCurrentUserCache);
+}
+
 export async function getCurrentUser(): Promise<CurrentUserResponse> {
   if (!localStorage.getItem("access_token")) {
     throw new Error("Nicht eingeloggt.");
   }
 
-  return apiRequest<CurrentUserResponse>("/auth/me");
+  const isFresh = cachedCurrentUser !== null && Date.now() - cachedCurrentUserAt < CURRENT_USER_CACHE_TTL_MS;
+  if (isFresh) {
+    return cachedCurrentUser as CurrentUserResponse;
+  }
+
+  if (currentUserInFlight) {
+    return currentUserInFlight;
+  }
+
+  currentUserInFlight = apiRequest<CurrentUserResponse>("/auth/me")
+    .then((user) => {
+      cachedCurrentUser = user;
+      cachedCurrentUserAt = Date.now();
+      return user;
+    })
+    .finally(() => {
+      currentUserInFlight = null;
+    });
+
+  return currentUserInFlight;
 }
 
 /** Optionale Profil-Nachpflege (Benutzername/Vorname/Nachname/Alter) -
@@ -94,10 +146,15 @@ export async function getCurrentUser(): Promise<CurrentUserResponse> {
 export async function updateProfile(
   payload: UserProfileUpdatePayload
 ): Promise<CurrentUserResponse> {
-  return apiRequest<CurrentUserResponse>("/auth/profile", {
+  const user = await apiRequest<CurrentUserResponse>("/auth/profile", {
     method: "PATCH",
     body: payload,
   });
+  // Server-Antwort ist bereits der frische Nutzer - Cache direkt damit
+  // befuellen statt nur zu verwerfen, spart den sonst noetigen Re-Fetch.
+  cachedCurrentUser = user;
+  cachedCurrentUserAt = Date.now();
+  return user;
 }
 
 /** Markiert die gefuehrte Onboarding-Tour als abgeschlossen (oder

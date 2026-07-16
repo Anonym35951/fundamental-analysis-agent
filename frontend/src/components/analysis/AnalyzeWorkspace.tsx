@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { AnalysisMode, SymbolMeta } from "../../api/analysis";
 import type { CustomAnalysisDefinition } from "../../types/customAnalysis";
+import type { Frequency } from "../../types/frequency";
 import { theme } from "../ui/theme";
 import SymbolCommandField from "./SymbolCommandField";
 import ModeSelectorGrid from "./ModeSelectorGrid";
@@ -44,8 +45,8 @@ type Props = {
   onCreateNewDefinition: () => void;
   onRunAdHoc: () => void;
 
-  selectedFrequency: "annual" | "quarterly";
-  onFrequencyChange: (value: "annual" | "quarterly") => void;
+  selectedFrequency: Frequency;
+  onFrequencyChange: (value: Frequency) => void;
 
   startButton: ReactNode;
 };

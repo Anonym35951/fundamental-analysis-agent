@@ -26,6 +26,15 @@ def _validate_birth_date(value: date) -> date:
     return value
 
 
+# EV-124: Landingpage-CTA-Attribution — welcher Abschnitt/welche Seite den
+# Registrierungslink ausgeloest hat, landet als Metadata am bereits
+# existierenden `user_registered`-Event (kein neuer Tracking-Endpoint,
+# keine Cookies). Striktes Allowlist statt Freitext, damit hier kein
+# beliebiger Client-String ungefiltert in die Event-Metadaten des privaten
+# Admin-Dashboards gelangt.
+ALLOWED_REGISTRATION_SOURCES = {"hero", "value", "final", "pricing", "header"}
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -35,6 +44,10 @@ class UserCreate(BaseModel):
     birth_date: date
     terms_accepted: bool
     privacy_accepted: bool
+    # Optional, nur zu Attributionszwecken - fehlt bei Direktaufrufen von
+    # /register (Bookmark, manuelle URL) und macht die Registrierung dort
+    # nicht ungueltig.
+    src: str | None = None
 
     @field_validator("username")
     @classmethod
@@ -44,6 +57,16 @@ class UserCreate(BaseModel):
                 "Benutzername muss 3-50 Zeichen lang sein und darf nur "
                 "Buchstaben, Zahlen, Punkt, Unterstrich oder Bindestrich enthalten."
             )
+        return value
+
+    @field_validator("src")
+    @classmethod
+    def validate_src(cls, value: str | None) -> str | None:
+        # Unbekannter/manipulierter Wert wird stillschweigend verworfen statt
+        # die Registrierung mit einem 422 zu blockieren - src ist rein
+        # informativ, nie sicherheitsrelevant.
+        if value not in ALLOWED_REGISTRATION_SOURCES:
+            return None
         return value
 
     @field_validator("first_name", "last_name")
