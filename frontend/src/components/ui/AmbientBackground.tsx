@@ -35,7 +35,17 @@ export default function AmbientBackground({ variant = "subtle" }: AmbientBackgro
   const showRibbons = variant !== "minimal";
   const showScanLine = variant === "hero" && !isMobile;
   const grainOpacity = variant === "hero" ? 0.045 : variant === "subtle" ? 0.04 : 0.03;
-  const ribbonCount = variant === "hero" ? 3 : 2;
+  // Perf-Fix (2026-07-16, live auf iPhone Safari beobachtet): der volle
+  // Satz aus 2 Glow-Orbs (130px Blur) + bis zu 3 Ribbon-Layern (46-58px
+  // Blur), alle `position: fixed` über den ganzen Viewport, ist selbst OHNE
+  // die (bereits deaktivierte) Drift-Animation ein teurer Erstpaint auf
+  // Mobile-Safari - jeder Blur-Layer bleibt als eigene Compositing-Ebene
+  // bestehen. Kleinerer Blur-Radius + weniger Ribbons auf Mobile senkt die
+  // Paint-/Compositing-Kosten deutlich, bei praktisch identischer Optik
+  // (weicher Glow bleibt weich, nur weniger "teuer" berechnet). Desktop
+  // bleibt unveraendert (kein isMobile-Zweig dort).
+  const glowBlur = isMobile ? "48px" : theme.glow.blurPx;
+  const ribbonCount = isMobile ? 1 : variant === "hero" ? 3 : 2;
 
   return (
     <div
@@ -58,59 +68,65 @@ export default function AmbientBackground({ variant = "subtle" }: AmbientBackgro
               width: variant === "hero" ? "640px" : "420px",
               height: variant === "hero" ? "640px" : "420px",
               background: theme.glow.primary,
-              filter: `blur(${theme.glow.blurPx})`,
+              filter: `blur(${glowBlur})`,
               opacity: variant === "hero" ? 0.9 : 0.5,
               animation: disableContinuousAnimation ? undefined : "ambient-drift-a 28s ease-in-out infinite",
             }}
           />
-          <div
-            style={{
-              position: "absolute",
-              top: "8%",
-              right: "-10%",
-              width: variant === "hero" ? "520px" : "340px",
-              height: variant === "hero" ? "520px" : "340px",
-              background: theme.glow.secondary,
-              filter: `blur(${theme.glow.blurPx})`,
-              opacity: variant === "hero" ? 0.7 : 0.35,
-              animation: disableContinuousAnimation ? undefined : "ambient-drift-b 32s ease-in-out infinite",
-            }}
-          />
+          {!isMobile && (
+            <div
+              style={{
+                position: "absolute",
+                top: "8%",
+                right: "-10%",
+                width: variant === "hero" ? "520px" : "340px",
+                height: variant === "hero" ? "520px" : "340px",
+                background: theme.glow.secondary,
+                filter: `blur(${glowBlur})`,
+                opacity: variant === "hero" ? 0.7 : 0.35,
+                animation: disableContinuousAnimation ? undefined : "ambient-drift-b 32s ease-in-out infinite",
+              }}
+            />
+          )}
         </>
       )}
 
       {showRibbons && (
         <>
-          <div
-            style={{
-              position: "absolute",
-              top: "12%",
-              left: "-20%",
-              width: "140vw",
-              height: "48vh",
-              background: theme.gradients.chromeRibbon,
-              clipPath: "ellipse(58% 38% at 50% 50%)",
-              filter: "blur(50px)",
-              opacity: variant === "hero" ? 0.5 : 0.3,
-              transform: "translateY(calc(var(--scroll-progress, 0) * -30px)) rotate(-8deg)",
-              animation: disableContinuousAnimation ? undefined : "ribbon-drift-a 26s ease-in-out infinite",
-            }}
-          />
-          <div
-            style={{
-              position: "absolute",
-              top: "42%",
-              right: "-25%",
-              width: "150vw",
-              height: "52vh",
-              background: theme.gradients.chromeRibbon,
-              clipPath: "ellipse(55% 35% at 50% 50%)",
-              filter: "blur(58px)",
-              opacity: variant === "hero" ? 0.4 : 0.22,
-              transform: "translateY(calc(var(--scroll-progress, 0) * 24px)) rotate(10deg)",
-              animation: disableContinuousAnimation ? undefined : "ribbon-drift-b 34s ease-in-out infinite",
-            }}
-          />
+          {ribbonCount > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                top: "12%",
+                left: "-20%",
+                width: "140vw",
+                height: "48vh",
+                background: theme.gradients.chromeRibbon,
+                clipPath: "ellipse(58% 38% at 50% 50%)",
+                filter: isMobile ? "blur(24px)" : "blur(50px)",
+                opacity: variant === "hero" ? 0.5 : 0.3,
+                transform: "translateY(calc(var(--scroll-progress, 0) * -30px)) rotate(-8deg)",
+                animation: disableContinuousAnimation ? undefined : "ribbon-drift-a 26s ease-in-out infinite",
+              }}
+            />
+          )}
+          {ribbonCount > 1 && (
+            <div
+              style={{
+                position: "absolute",
+                top: "42%",
+                right: "-25%",
+                width: "150vw",
+                height: "52vh",
+                background: theme.gradients.chromeRibbon,
+                clipPath: "ellipse(55% 35% at 50% 50%)",
+                filter: isMobile ? "blur(26px)" : "blur(58px)",
+                opacity: variant === "hero" ? 0.4 : 0.22,
+                transform: "translateY(calc(var(--scroll-progress, 0) * 24px)) rotate(10deg)",
+                animation: disableContinuousAnimation ? undefined : "ribbon-drift-b 34s ease-in-out infinite",
+              }}
+            />
+          )}
           {ribbonCount > 2 && (
             <div
               style={{
