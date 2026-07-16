@@ -12,6 +12,22 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchFavorites = useCallback(() => {
+    // Bug-Fix (2026-07-16): FavoritesProvider ist oberhalb des Routers
+    // gemountet und lief bisher IMMER an, auch fuer ausgeloggte Besucher auf
+    // Landing/Login/Register. /favorites verlangt Auth (Depends(get_current_
+    // user), FastAPIs OAuth2PasswordBearer wirft ohne Header sofort 401) -
+    // jeder abgemeldete Aufruf endete in einem 401, das api/client.ts's
+    // clearSessionAndRedirectToLogin() mit einem HARTEN
+    // `window.location.href = "/login"` beantwortet. Sichtbar als: Seite
+    // rendert (Header/Footer aus dem statischen Layout erscheinen), dann
+    // reisst der Hard-Redirect alles weg und /login laedt neu - u. a. auch
+    // beim direkten Aufruf von /register. Ohne Token also gar nicht erst
+    // fetchen; app:login (nach echtem Login) fetcht ohnehin nach.
+    if (!localStorage.getItem("access_token")) {
+      setFavorites([]);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     getFavorites()
       .then(setFavorites)
