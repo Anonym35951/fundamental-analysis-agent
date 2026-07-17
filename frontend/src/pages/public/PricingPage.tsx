@@ -14,7 +14,7 @@ type BillingInterval = "month" | "year";
  * CTAs führen zur Registrierung, nicht direkt zu Stripe — der eigentliche
  * Checkout ist erst nach Login möglich (siehe BillingPage). */
 function PricingPage() {
-  const [billingInterval, setBillingInterval] = useState<BillingInterval>("year");
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
   const isYearly = billingInterval === "year";
 
   return (
@@ -33,13 +33,16 @@ function PricingPage() {
         >
           Monatlich
         </button>
-        <button
-          type="button"
-          onClick={() => setBillingInterval("year")}
-          style={toggleButton(isYearly)}
-        >
-          Jährlich
-        </button>
+        <div style={yearlyButtonWrap}>
+          <button
+            type="button"
+            onClick={() => setBillingInterval("year")}
+            style={toggleButton(isYearly)}
+          >
+            Jährlich
+          </button>
+          <span style={yearlyHintBadge}>2 Monate gratis</span>
+        </div>
       </div>
 
       <div style={pricingGrid}>
@@ -155,6 +158,27 @@ const toggleButton = (active: boolean): CSSProperties => ({
   background: active ? theme.gradients.ctaPrimary : "transparent",
   color: active ? theme.colors.bgDeep : theme.colors.textSecondary,
 });
+
+const yearlyButtonWrap: CSSProperties = {
+  position: "relative",
+};
+
+// Bewusster Ausbruch aus der monochromen Chrome-Palette: der Rabatt-Hinweis
+// soll als einziges warmes Signal auf der Seite sofort ins Auge fallen.
+const yearlyHintBadge: CSSProperties = {
+  position: "absolute",
+  top: "-22px",
+  right: "-8px",
+  padding: "2px 8px",
+  borderRadius: theme.radius.pill,
+  fontSize: "0.66rem",
+  fontWeight: 800,
+  whiteSpace: "nowrap",
+  color: "#ffffff",
+  background: "#f97316",
+  boxShadow: "0 2px 6px rgba(249, 115, 22, 0.5)",
+  pointerEvents: "none",
+};
 
 const pricingGrid: CSSProperties = {
   display: "grid",
