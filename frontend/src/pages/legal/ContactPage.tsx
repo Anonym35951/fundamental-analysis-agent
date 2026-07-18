@@ -41,8 +41,8 @@ function ContactPage() {
       <div style={{ ...card, marginTop: "16px" }}>
         <p style={{ margin: 0 }}>
           <strong>E-Mail:</strong>{" "}
-          <a href="mailto:gecenanalysis@gmail.com" style={{ color: theme.colors.chrome }}>
-            gecenanalysis@gmail.com
+          <a href="mailto:kontakt@comanalysis.de" style={{ color: theme.colors.chrome }}>
+            kontakt@comanalysis.de
           </a>
         </p>
         <p style={{ margin: "8px 0 0", color: theme.colors.textSecondary }}>

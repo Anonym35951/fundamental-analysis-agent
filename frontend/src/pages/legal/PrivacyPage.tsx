@@ -35,9 +35,11 @@ function PrivacyPage() {
       <p>
         Efe Gecen
         <br />
-        [Bitte vollständige Postanschrift ergänzen]
+        Handgasse 2
         <br />
-        E-Mail: gecenanalysis@gmail.com
+        97318 Kitzingen
+        <br />
+        E-Mail: kontakt@comanalysis.de
       </p>
 
       <h2 style={sectionHeading}>2. Welche Daten wir verarbeiten</h2>
@@ -124,13 +126,13 @@ function PrivacyPage() {
         Du hast jederzeit das Recht auf Auskunft, Berichtigung, Löschung und
         Einschränkung der Verarbeitung deiner personenbezogenen Daten sowie
         das Recht auf Datenübertragbarkeit und Widerspruch. Wende dich dazu
-        an: gecenanalysis@gmail.com.
+        an: kontakt@comanalysis.de.
       </p>
 
       <h2 style={sectionHeading}>7. Kontakt</h2>
       <p>
         Bei Fragen zum Datenschutz erreichst du uns unter
-        gecenanalysis@gmail.com.
+        kontakt@comanalysis.de.
       </p>
     </div>
   );
