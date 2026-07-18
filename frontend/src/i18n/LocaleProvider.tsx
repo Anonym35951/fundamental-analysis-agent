@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { LocaleContext, type LocaleContextValue } from "./localeContextValue";
-import type { Locale } from "./config";
+import { isSupportedLocale, type Locale } from "./config";
 import { detectInitialLocale, persistLocale } from "./detect";
 import { de, type Dictionary } from "./locales/de";
+import { getCurrentUser } from "../api/auth";
 
 /** EVOLVING.md § 13: Sprachwechsel ist reiner React-State → Re-Render ohne
  * Reload. Sämtlicher App-State (Compare-Auswahl, laufende Analysis-Jobs,
@@ -30,10 +31,34 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = locale;
   }, [locale]);
 
-  const setLocale = (next: Locale) => {
+  const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);
     persistLocale(next);
-  };
+  }, []);
+
+  // EVOLVING.md § 10: eine gesetzte Konto-Praeferenz gewinnt ueber die
+  // Geraete-/Browser-Wahl. Laeuft sowohl beim ersten Laden mit bereits
+  // gueltigem Token (Reload/neuer Tab) als auch nach einem frischen Login
+  // (app:login-Event, siehe LoginPage.tsx). NULL-Praeferenz => Geraetewahl
+  // bleibt unangetastet, kein Schreibzugriff hier (nur Lesen).
+  useEffect(() => {
+    function syncFromAccount() {
+      if (!localStorage.getItem("access_token")) return;
+      getCurrentUser()
+        .then((user) => {
+          if (isSupportedLocale(user.locale)) {
+            setLocale(user.locale);
+          }
+        })
+        .catch(() => {
+          // Nicht eingeloggt / Netzwerkfehler - Geraetewahl bleibt bestehen.
+        });
+    }
+
+    syncFromAccount();
+    window.addEventListener("app:login", syncFromAccount);
+    return () => window.removeEventListener("app:login", syncFromAccount);
+  }, [setLocale]);
 
   // Bis das EN-Bundle geladen ist bleibt DE sichtbar — nie rohe Keys oder
   // ein leerer Zwischenzustand (§ 13).
@@ -42,7 +67,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<LocaleContextValue>(
     () => ({ locale, setLocale, ready, dictionary: activeDictionary, fallbackDictionary: de }),
-    [locale, ready, activeDictionary]
+    [locale, setLocale, ready, activeDictionary]
   );
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;

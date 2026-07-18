@@ -34,6 +34,10 @@ def _validate_birth_date(value: date) -> date:
 # Admin-Dashboards gelangt.
 ALLOWED_REGISTRATION_SOURCES = {"hero", "value", "final", "pricing", "header"}
 
+# EVOLVING.md § Internationalisierung, I18N-004: muss mit
+# frontend/src/i18n/config.ts SUPPORTED_LOCALES synchron gehalten werden.
+ALLOWED_LOCALES = {"de", "en"}
+
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -104,6 +108,12 @@ class UserProfileUpdateRequest(BaseModel):
     # ihr Profil jetzt erstmals/erneut nachpflegen, wird ab sofort das
     # Geburtsdatum statt eines statischen Alters erfasst.
     birth_date: date | None = None
+    # EVOLVING.md § Internationalisierung, I18N-004/005: explizite
+    # Sprachwahl aus der AccountPage. update_user_profile() wendet nur
+    # gesetzte, nicht-None Felder an (exclude_unset+exclude_none) - wie bei
+    # allen anderen Feldern dieses Schemas gibt es hier keinen Weg, eine
+    # bereits gesetzte Praeferenz explizit wieder auf NULL zurueckzusetzen.
+    locale: str | None = None
 
     @field_validator("username")
     @classmethod
@@ -128,6 +138,13 @@ class UserProfileUpdateRequest(BaseModel):
         if value is None:
             return value
         return _validate_birth_date(value)
+
+    @field_validator("locale")
+    @classmethod
+    def validate_locale(cls, value: str | None) -> str | None:
+        if value is not None and value not in ALLOWED_LOCALES:
+            raise ValueError(f"Ungueltige Sprache. Erlaubt: {', '.join(sorted(ALLOWED_LOCALES))}.")
+        return value
 
 
 class UserResponse(BaseModel):
@@ -168,6 +185,7 @@ class UserResponse(BaseModel):
     age: int | None
     birth_date: date | None
     onboarding_completed_at: datetime | None
+    locale: str | None
 
     class Config:
         from_attributes = True

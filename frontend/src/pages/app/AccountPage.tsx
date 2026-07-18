@@ -20,16 +20,22 @@ import Input from "../../components/ui/Input";
 import { theme } from "../../components/ui/theme";
 import ParticleBeamBackground from "../../components/landing/ParticleBeamBackground";
 import { MIN_AGE, calculateAge } from "../../lib/age";
+import { useLocale } from "../../i18n/useLocale";
+import type { Locale } from "../../i18n/config";
+import { useToast } from "../../components/ui/useToast";
 
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
 function AccountPage() {
   const navigate = useNavigate();
+  const { locale, setLocale } = useLocale();
+  const { showToast } = useToast();
   const [currentUser, setCurrentUser] = useState<CurrentUserResponse | null>(
     null
   );
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isSavingLocale, setIsSavingLocale] = useState(false);
 
   // Optionale Profil-Nachpflege (Benutzername/Vorname/Nachname/Geburtsdatum) -
   // gleiches State-Namensmuster wie die Passwort-Sektion unten.
@@ -83,6 +89,29 @@ function AccountPage() {
 
     loadCurrentUser();
   }, []);
+
+  // EVOLVING.md § Internationalisierung, I18N-005: optimistisch — die UI
+  // wechselt sofort (Context + localStorage via setLocale), das PATCH läuft
+  // parallel im Hintergrund. Ein Fehlschlag revertiert die UI-Sprache
+  // absichtlich NICHT (kein Gezucke), sondern zeigt nur einen Hinweis, dass
+  // die Präferenz nicht im Konto gespeichert werden konnte.
+  async function handleSelectLocale(next: Locale) {
+    if (next === locale || isSavingLocale) {
+      return;
+    }
+
+    setLocale(next);
+    setIsSavingLocale(true);
+
+    try {
+      const updated = await updateProfile({ locale: next });
+      setCurrentUser(updated);
+    } catch {
+      showToast("Sprache konnte nicht im Konto gespeichert werden.", "error");
+    } finally {
+      setIsSavingLocale(false);
+    }
+  }
 
   function handleStartEditProfile() {
     setProfileErrorMessage("");
@@ -645,7 +674,33 @@ const canManageSubscriptionPortal =
               </div>
             </div>
 
+            <div style={sideCard}>
+              <div style={sectionEyebrow}>Sprache</div>
+              <div style={sideCardTitle}>Sprache / Language</div>
+              <p style={sideCardText}>
+                Wähle die Sprache der Benutzeroberfläche. Deine Wahl wird in
+                deinem Konto gespeichert.
+              </p>
 
+              <div style={languageToggleRow}>
+                <button
+                  type="button"
+                  onClick={() => handleSelectLocale("de")}
+                  disabled={isSavingLocale}
+                  style={languageToggleButton(locale === "de", isSavingLocale)}
+                >
+                  Deutsch
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectLocale("en")}
+                  disabled={isSavingLocale}
+                  style={languageToggleButton(locale === "en", isSavingLocale)}
+                >
+                  English
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1457,6 +1512,30 @@ const smallSecondaryButton = {
   fontSize: "0.96rem",
   border: "1px solid rgba(148, 163, 184, 0.16)",
 };
+
+const languageToggleRow = {
+  display: "flex",
+  gap: "6px",
+  padding: "5px",
+  borderRadius: theme.radius.pill,
+  background: theme.colors.panelAlt,
+  border: `1px solid ${theme.colors.border}`,
+  width: "fit-content",
+};
+
+function languageToggleButton(active: boolean, disabled: boolean) {
+  return {
+    padding: "9px 20px",
+    borderRadius: theme.radius.pill,
+    border: "none",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontWeight: 700 as const,
+    fontSize: "0.9rem",
+    background: active ? theme.gradients.ctaPrimary : "transparent",
+    color: active ? theme.colors.bgDeep : theme.colors.textSecondary,
+    opacity: disabled ? 0.75 : 1,
+  };
+}
 
 const cancelSection = {
   position: "relative" as const,

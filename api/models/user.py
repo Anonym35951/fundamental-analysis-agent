@@ -214,3 +214,12 @@ class User(Base):
         DateTime,
         nullable=True
     )
+
+    # ===== Sprache (EVOLVING.md § Internationalisierung, I18N-004) =====
+    # "de" | "en" | None. NULL = keine gespeicherte Präferenz — das Frontend
+    # ermittelt die Sprache dann aus localStorage/Browser (siehe
+    # frontend/src/i18n/detect.ts), kein serverseitiger Default hier.
+    locale: Mapped[str | None] = mapped_column(
+        String(10),
+        nullable=True
+    )

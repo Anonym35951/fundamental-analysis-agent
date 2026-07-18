@@ -1291,7 +1291,7 @@ Spätere eigene Tracks (nicht v1): Legal-Übersetzung, Admin-i18n, E-Mail-i18n.
 ## 23. Detaillierte Aufgaben
 
 ### [I18N-001] Formatter-Characterization-Tests einfrieren
-**Status:** Offen · **Phase:** 0 · **Priorität:** Kritisch · **Aufwand:** S · **Risiko:** Niedrig · **Abhängigkeiten:** keine
+**Status:** ✅ Umgesetzt (2026-07-18, Commit 2f10126) · **Phase:** 0 · **Priorität:** Kritisch · **Aufwand:** S · **Risiko:** Niedrig · **Abhängigkeiten:** keine
 **Ziel:** Heutige DE-Ausgaben aller Formatter als Literal-Snapshots festschreiben, bevor irgendetwas umgebaut wird.
 **Aktueller Zustand:** `chartUtils.test.ts`/`metricFormatting.test.ts` decken Teile ab, nicht alle Grenzfälle.
 **Fundstelle:** `frontend/src/components/charts/chartUtils.ts:114–127, 314–329`; `frontend/src/components/metrics/metricFormatting.tsx:25–39, 91–132`.
@@ -1301,33 +1301,34 @@ Spätere eigene Tracks (nicht v1): Legal-Übersetzung, Admin-i18n, E-Mail-i18n.
 **Tests:** vitest. **Akzeptanz:** [ ] Snapshots decken beide formatCompactNumber-Varianten, formatPercentChange, formatMetricValue ab. **Rollback:** Testdatei löschen (kein Produktivcode).
 
 ### [I18N-002] i18n-Kernmodul (config, t, Provider, detect)
-**Status:** Offen · **Phase:** 1 · **Priorität:** Kritisch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** —
+**Status:** ✅ Umgesetzt (2026-07-18, Commit 2f10126) · **Phase:** 1 · **Priorität:** Kritisch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** —
 **Ziel:** Tragfähiges, typisiertes i18n-Gerüst ohne sichtbare Verhaltensänderung.
 **Änderung:** Dateien aus § 13; `LocaleProvider` um `<App/>` in `main.tsx`; `<html lang>`-Sync; EN-Lazy-Load mit `ready`-Flag.
 **Schritte:** 1. config + t + Typen 2. detect (localStorage→navigator→"de") 3. Provider + Hook 4. leere Namespaces de/en + completeness-Test 5. Unit-Tests interpolate/plural/detect.
 **Paritätstest:** App rendert unter DE pixelidentisch (kein String migriert). **Akzeptanz:** [ ] `npm run build` grün [ ] kein sichtbarer Unterschied. **Rollback:** Provider-Wrap entfernen, i18n/-Ordner löschen.
 
 ### [I18N-003] Formatting-Layer format.ts + Delegation
-**Status:** Offen · **Phase:** 1 · **Priorität:** Kritisch · **Aufwand:** M · **Risiko:** Mittel · **Abhängigkeiten:** I18N-001, I18N-002
+**Status:** ✅ Umgesetzt (2026-07-18, Commit 2f10126) · **Phase:** 1 · **Priorität:** Kritisch · **Aufwand:** M · **Risiko:** Mittel · **Abhängigkeiten:** I18N-001, I18N-002
 **Ziel:** Eine zentrale locale-aware Formatter-Quelle; DE-Ausgaben byte-identisch.
 **Zu schützen:** alle I18N-001-Snapshots; bestehende Tests bleiben inhaltlich unverändert grün.
 **Änderung:** format.ts (§ 9); `chartUtils.formatCompactNumber`/`formatPercentChange` und `metricFormatting`-Helper delegieren mit fixem `"de"` (Aufrufstellen unverändert); `locale`-Parameter wird in späteren Phasen durchgereicht.
 **Akzeptanz:** [ ] I18N-001-Snapshots grün [ ] chartUtils.test.ts/metricFormatting.test.ts grün. **Rollback:** Delegation revertieren (Originalcode bleibt bis Phase 14 als Referenz im Git-Verlauf).
 
 ### [I18N-004] users.locale: Migration + API
-**Status:** Offen · **Phase:** 2 · **Priorität:** Hoch · **Aufwand:** S · **Risiko:** Niedrig · **Abhängigkeiten:** —
+**Status:** ✅ Umgesetzt (2026-07-19) · **Phase:** 2 · **Priorität:** Hoch · **Aufwand:** S · **Risiko:** Niedrig · **Abhängigkeiten:** —
 **Änderung:** Alembic `users.locale VARCHAR(10) NULL`; `api/models/user.py`; `UserResponse` + Profile-Update-Schema additiv; Validierung ∈ {"de","en"} → 422; `frontend/src/api/auth.ts`-Typen.
 **Zu schützen:** Bestehende User-Rows (NULL-safe), API-Verträge (nur additive Felder).
 **Tests:** pytest PATCH mit gültig/ungültig/None; Migration up+down auf Kopie. **Akzeptanz:** [ ] Bestandsnutzer-Login unverändert [ ] Rollback per downgrade verlustfrei.
 
 ### [I18N-005] Spracheinstellung AccountPage + Login-Sync
-**Status:** Offen · **Phase:** 2 · **Priorität:** Hoch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-002, I18N-004
+**Status:** ✅ Umgesetzt (2026-07-19) · **Phase:** 2 · **Priorität:** Hoch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-002, I18N-004
 **Änderung:** Sprach-Karte (Segmented Control) in AccountPage; Optimistic-Flow (§ 10); `app:login`-Listener im Provider.
 **Manuelle Tests:** Wechsel DE↔EN eingeloggt, Reload, Logout/Login, zweites Gerät (Inkognito), Fehlerfall PATCH (Netz aus) → UI bleibt umgeschaltet + Toast.
 **Akzeptanz:** [ ] Präferenz überlebt Reload + neues Gerät nach Login [ ] kein Zustandsverlust beim Wechsel.
+**Verifiziert (2026-07-19):** Backend vollständig via pytest (`test_locale_profile_i18n_004.py`, 5 Tests + volle Suite 333 grün); Frontend `tsc -b`/Build/vitest grün, Header-Switcher live im Browser geprüft (Context/localStorage/`<html lang>` ohne Reload). **Nicht verifiziert:** der authentifizierte PATCH-Roundtrip der AccountPage-Sprachkarte im echten Browser — kein Backend-Server + kein verifizierter Testnutzer in dieser Session verfügbar (gleiche Einschränkung wie bei früheren Sessions, siehe § 24 oben). Nachholen, sobald ein Test-Login verfügbar ist.
 
 ### [I18N-006] DE/EN-Switcher Public-/Auth-Header
-**Status:** Offen · **Phase:** 2 · **Priorität:** Hoch · **Aufwand:** S · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-002
+**Status:** ✅ Umgesetzt (2026-07-19) · **Phase:** 2 · **Priorität:** Hoch · **Aufwand:** S · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-002
 **Änderung:** kompakter Toggle in PublicLayout- und AuthLayout-Header; schreibt localStorage + Context.
 **Responsive:** mobil sichtbar, Touch-Target ≥ 40 px. **Akzeptanz:** [ ] Landing/Login umschaltbar ohne Reload.
 
