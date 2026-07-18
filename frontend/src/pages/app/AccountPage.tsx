@@ -794,7 +794,9 @@ const canManageSubscriptionPortal =
                 </div>
               </div>
 
-              <div style={passwordActionRow}>
+              {/* marginTop nur hier: außerhalb der Formulare fehlt der
+                  passwordForm-gap, sonst kleben die Buttons an der infoList. */}
+              <div style={{ ...passwordActionRow, marginTop: "24px" }}>
                 <button
                   type="button"
                   onClick={handleStartEditProfile}
