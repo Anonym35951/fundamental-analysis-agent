@@ -29,18 +29,16 @@ function ImprintPage() {
       <h2 style={sectionHeading}>Verantwortlich für den Inhalt</h2>
       <p>
         Efe Gecen
-        {/* TODO vor Launch: ladungsfähige Anschrift eintragen (Straße + Nr.,
-            PLZ + Ort) — Pflichtangabe nach § 5 DDG. */}
         <br />
-        [Straße und Hausnummer]
+        Handgasse 2
         <br />
-        [PLZ und Ort]
+        97318 Kitzingen
         <br />
         Deutschland
       </p>
 
       <h2 style={sectionHeading}>Kontakt</h2>
-      <p>E-Mail: gecenanalysis@gmail.com</p>
+      <p>E-Mail: kontakt@comanalysis.de</p>
 
       <h2 style={sectionHeading}>Umsatzsteuer-ID</h2>
       <p>
