@@ -1,4 +1,5 @@
 import { getMetricConfig, normalizeMetricKey } from "../../config/metricsConfig";
+import { formatCompactNumberMetric, formatBoolean } from "../../i18n/format";
 
 export type CriterionLike = {
   operator?: ">" | "<" | ">=" | "<=";
@@ -22,20 +23,12 @@ export function formatLabel(key: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+// Delegiert an i18n/format.ts (EVOLVING.md § 9.1, I18N-003) — bewusst NICHT
+// locale-abhängig (bleibt für DE unverändert K/M/B statt Tsd./Mio./Mrd.,
+// siehe Kommentar dort). Byte-identisch zum vorherigen Code, siehe
+// i18n/format.characterization.test.ts.
 export function formatCompactNumber(value: number): string {
-  const abs = Math.abs(value);
-
-  if (abs >= 1_000_000_000) {
-    return `${(value / 1_000_000_000).toFixed(2).replace(/\.?0+$/, "")}B`;
-  }
-  if (abs >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(2).replace(/\.?0+$/, "")}M`;
-  }
-  if (abs >= 1_000) {
-    return `${(value / 1_000).toFixed(2).replace(/\.?0+$/, "")}K`;
-  }
-
-  return value.toFixed(2).replace(/\.?0+$/, "");
+  return formatCompactNumberMetric(value);
 }
 
 /** ISO-Code → Symbol für die vier vom Feedback konkret genannten Währungen
@@ -115,7 +108,7 @@ export function formatMetricValue(value: unknown, key?: string, currency?: strin
   }
 
   if (typeof value === "boolean") {
-    return value ? "Ja" : "Nein";
+    return formatBoolean(value, "de");
   }
 
   if (Array.isArray(value)) {
