@@ -1058,3 +1058,455 @@ Stand 2026-07-16 (Sonnet 5, nach Umsetzung EV-101/110-114/120-124/130-138):
 
 **Offen/nicht in dieser Session erledigt:** EV-100 (Performance-Baseline mit echtem Lighthouse/realen Geräten), EV-115/116/117 (Skeletons, gezielte Memoisierung, Nachmessung) — diese benötigen eine laufende, authentifizierte Umgebung mit Testnutzer bzw. echte Lighthouse-Durchläufe, die in dieser Sitzung nicht verfügbar waren. EV-125 (optionaler Track-Endpoint) bewusst zurückgestellt (E8).
 - [ ] Keine Änderungen an package.json/Lockfiles, keine Alembic-Migration, kein Cache-Umbau (git diff-Nachweis)
+
+---
+---
+
+# Internationalisierung – Deutsch & Englisch
+
+Stand: 2026-07-18 (Fable 5, Planungsphase). Dieses Kapitel dokumentiert den vollständigen, freigegebenen Plan zur Internationalisierung der App (DE + EN). Die Umsetzung erfolgt phasenweise durch Sonnet 5 nach dem Sicherheitsprinzip in § 22.
+
+## 1. Ziel und Hintergrund
+
+Die gesamte App (öffentliche Seiten + eingeloggte App) soll zusätzlich vollständig auf Englisch verfügbar sein. Die deutsche Version bleibt funktional, strukturell und visuell 1:1 erhalten. Auf der AccountPage kommt eine Spracheinstellung hinzu. Architektur von Anfang an so, dass weitere Sprachen (fr, es, …) ohne Umbau ergänzbar sind.
+
+**Bestätigte Produktentscheidungen (Betreiber, 2026-07-18):**
+- Default-Sprache für neue/unbekannte Besucher: **Deutsch** (Browser `en-*` → automatisch Englisch)
+- Englische Locale: **en-US** (SEC-Daten, NYSE/NASDAQ, US-Terminologie; Datum MM/DD/YYYY)
+- **URLs bleiben unverändert** — keine `/de`/`/en`-Prefixe (EN = UI-Feature ohne eigenes SEO)
+- Scope v1: **App + öffentliche Seiten.** Admin bleibt deutsch, System-E-Mails eigene spätere Phase, Legal-Seiten bleiben deutsch bis zur fachlich/rechtlich geprüften Übersetzung
+
+## 2. Nicht verhandelbare Anforderungen
+
+1. Deutsch funktioniert exakt wie vorher (Strings werden **verbatim** verschoben, nie umformuliert; DE-Formatter-Ausgaben byte-identisch).
+2. Englisch besitzt exakt dieselben Funktionen wie Deutsch.
+3. Sprachwechsel verändert keine Daten, Analyseergebnisse, Custom Analyses, Subscriptions oder technischen IDs.
+4. Sprache und Währung sind vollständig getrennt (Währung = ISO-Code vom Backend, Locale nur Darstellung).
+5. Bestehende Nutzer verlieren keine Einstellungen (`users.locale` nullable, NULL = heutiges Verhalten).
+6. Weitere Sprachen später ohne Architekturumbau.
+7. Keine Big-Bang-Migration; jede Phase unabhängig shipbar und rücknehmbar.
+
+## 3. Bestehende Architektur
+
+- **Frontend:** React 19.2 + TS 5.9 + Vite 7.2, react-router-dom 7, recharts, framer-motion, Sentry, vitest (nur 2 Testdateien). SPA ohne SSR; Seiten lazy via `lazyWithRetry`.
+- **State:** kein Redux/React Query; Context-Provider-Stack in `App.tsx` (Compare, AnalysisJobs, AnalyzeWorkspace, Favorites, ThemeMode), `ToastProvider` in `main.tsx`. **Kein Auth-Context** — User via Modul-Cache `getCurrentUser()` in `frontend/src/api/auth.ts` (30 s TTL, invalidiert per Window-Events `app:login`/`app:logout`).
+- **Backend:** FastAPI + SQLAlchemy 2 + PostgreSQL + Alembic (21 Migrationen). `api/models/user.py` ohne locale/preferences-Feld. `PATCH /auth/profile` existiert.
+- **SEO:** statisches deutsches `index.html` + vorgerendertes Glossar (`frontend/scripts/generate-glossary.ts` → `dist/glossar/`, liest aus `metricsConfig.ts`).
+- **Persistenz-Muster vorhanden:** `theme-mode` in localStorage.
+
+## 4. Bestehende Internationalisierungsmechanismen
+
+**Keine.** Kein i18n-Paket, kein Language-Context, keine Übersetzungsdateien. `<html lang="de">` statisch. Nur hartkodierte `toLocaleString("de-DE")`-Aufrufe (verstreut) und zwei **inkonsistente** `formatCompactNumber`-Implementierungen: `chartUtils.ts` (Tsd./Mio./Mrd., de-DE) vs. `metricFormatting.tsx` (K/M/B). Wiederverwendbar: theme-mode-localStorage-Muster, `app:login`/`app:logout`-Events, `invalidateCurrentUserCache()`.
+
+## 5. Vollständige String-Inventur
+
+Gesamtschätzung: **~900–1.100 Frontend-Strings** + **~100–200 nutzersichtbare Backend-Texte**. Kategorien: UI, Navigation, Form, Validation, Error, Success, Analysis, Financial Metric, Chart, Tooltip, Account, Billing, Authentication, Marketing, SEO, Legal, Accessibility, Backend, Admin.
+
+### 5.1 Common UI
+Toast-System (`components/ui/Toast.tsx`, ~53 inline `showToast()`-Aufrufe verstreut), Modal (`components/ui/Modal.tsx`, aria „Schließen"), ErrorBoundary (~2), Cookie-Banner (`components/consent/CookieConsentBanner.tsx`, ~13), Suspense-Fallbacks. Keine 404-Seite (Fallback-Redirect auf `/`).
+
+### 5.2 LandingPage
+`pages/public/LandingPage.tsx` ~60–80 Strings (Marketing-Copy in Daten-Arrays + JSX-Props); `components/landing/AudienceTabs.tsx` ~7; `components/intro/IntroSlogan.tsx` ~1–3; `pages/public/PricingPage.tsx` ~12 + `config/pricingPlans.ts` (~14, inkl. „Spare 16,7 %", „2 Monate gratis").
+
+### 5.3 Authentication
+Login (~9), Register (~10), ForgotPassword (~5), ResetPassword (~4–8), VerifyEmail (~8) + `EmailVerificationBanner` (~3). Validierungstexte inline in den Seiten.
+
+### 5.4 Dashboard
+`DashBoardPage.tsx` ~14 + `DashboardFavoritesSection.tsx`; Datumsformate `toLocaleDateString("de-DE")`.
+
+### 5.5 AnalysisPage
+`AnalyzePage.tsx` ~18 + `components/analysis/*` (FrequencyToggle mit EN-Labels „Annual/TTM/Quarterly", AnalysisFrequencyPanel „X/Y erfüllt"/„Erfüllt/Kritisch/Neutral", DossierDetailPanel/DossierSummaryCard rendern Backend-Texte, QuotaExceededModal, SymbolCommandField).
+
+### 5.6 CustomAnalysisPage
+Kein eigener Route-Screen (in Analyze eingebettet): `components/customAnalysis/*` (6 Dateien, ~25 Strings) + `hooks/useCustomAnalysisDefinitions.ts` (Toasts „Analyse gespeichert." etc.).
+
+### 5.7 CompareAnalysisPage
+`ComparePage.tsx` ~5 + `components/compare/*` + `hooks/useCompare.tsx` (~6, inkl. Template-Strings).
+
+### 5.8 AccountPage
+`pages/app/AccountPage.tsx` (~1707 Zeilen, ~44 Strings): Hero, Kontoinformationen, Mitgliedschaft, Profil, Kündigen-Modal, Passwort, Zahlungen, Danger Zone. Label-Maps `getPlanLabel`/`getBillingStatusLabel`/`getBillingIntervalLabel` (Z. ~1151–1196).
+
+### 5.9 BillingPage
+`BillingPage.tsx` ~12 + `pages/billing/SuccessPage.tsx`/`CancelPage.tsx` (~7).
+
+### 5.10 Navigation
+Zentral: `components/layout/AppSidebar.tsx` (Nav-Array Z. 35–46: Dashboard/Analyse/Vergleich/Konto/Support/Abrechnung/Admin, inkl. Mobile-Nav + Account-Menü + Toasts), `Header.tsx` (~5), `Footer.tsx` (~3).
+
+### 5.11 Admin
+`AdminDashboardPage.tsx` (~8) + `components/admin/*` (~27). **Produktentscheidung: bleibt deutsch** (Betreiber-intern), kein i18n in v1.
+
+### 5.12 Errors & Validation
+`utils/jobErrors.ts` (JOB_LOST_MESSAGE), `api/client.ts` (Fallback „Anfrage fehlgeschlagen…", reicht Backend-`detail` 1:1 durch), `api/auth.ts` („Nicht eingeloggt."), Formular-Validierung inline pro Seite. **Backend:** `HTTPException.detail` gemischt DE/EN (auth.py „Benutzername bereits vergeben", billing.py, metric_routes.py, symbol_validation.py ~17 deutsche, custom_analysis.py, favorites.py, dependencies.py).
+
+### 5.13 SEO & Metadata
+Statisches `index.html` (deutscher Title/Description/OG). Keine Laufzeit-`document.title`-Setzung. Glossar-Seiten deutsch (bleiben deutsch).
+
+### 5.14 Accessibility
+~19 `aria-label`, ~32 `placeholder`, ~39 `title=` verstreut; keine `alt=` (SVG-Icons). `<html lang>` statisch.
+
+## 6. Technische IDs vs. Anzeigenamen
+
+Sauber getrennt, mit **einer Ausnahme**:
+- Frequency `"annual"|"quarterly"|"ttm"` (`types/frequency.ts`, `agent/frequency.py`) — stabil, Anzeige separat.
+- Metric-Keys: snake_case-IDs als Objekt-Keys/API-Parameter/persistierte Werte; `normalizeMetricKey` lowercased fürs Config-Lookup, der **rohe Katalog-Key** (teils gemischtes Casing wie `calculate_KGV`) bleibt die übertragene ID.
+- Operatoren: Symbol-IDs `">" | "<" | ">=" | "<="`.
+- Plan/Billing-Status: `free/friends/pro/admin`, `active/canceling/past_due/canceled/payment_failed_canceled`, `month/year` — Anzeige über Label-Maps.
+- Analytics: backend-seitige `product_event`s mit englischen snake_case-IDs + ID-Metadata. Kein Handlungsbedarf; optional später `locale`-Property.
+- ⚠️ **GESCHÜTZTER LEGACY-KEY:** `api/routes/analyze.py:270` baut Result-Dict-Keys `f"{DISPLAY_NAME[mode]}|{frequency}"` (z. B. `"Wachstumswerte|annual"`); Frontend parst in `types/analysis.ts:39–51`. **Wird eingefroren, niemals lokalisiert** — Kommentar-Marker an beiden Stellen, Anzeige über inverse Map `DISPLAY_NAME-Teil → mode-ID → t("analysis.modes.<id>")`.
+
+## 7. Finanzterminologie und Glossar
+
+Zentrale Terminologie-Quelle = `metrics`-Namespace (ein Eintrag pro Metric-Key mit `label`/`description`/`formula`). Eine Kennzahl hat app-weit genau eine Übersetzung (kein „Umsatz/Erlös/Einnahmen"-Drift möglich, weil alle Stellen über `getMetricLabel(key)` gehen). Heute schon englische DE-Labels („ROE", „Profit Growth") bleiben im DE-Dictionary wörtlich erhalten (Parität). EN-Terminologie: US-Standard (Revenue, Net Income, TTM = „Trailing Twelve Months"; DE-Anzeige „TTM/Letzte 12 Monate" wie bisher im UI). Perioden: `annual` → DE „Annual" (heutiges Label bleibt!) / EN „Annual"; die heutigen englischsprachigen Frequenz-Labels im DE-UI bleiben unverändert (Parität schlägt Eindeutschung).
+
+## 8. Dynamische Texte
+
+- **Backend-generiert** (`agent/AgentAction.py`): `overall_assessment` (endliche Wertemenge, quasi-Codes) + `message` (f-String-interpoliert, gemischt DE/EN). Strategie: **DE = Passthrough (byte-identisch), EN = Frontend-Rekonstruktion** aus Strukturdaten (`value`, `meets_criterion`, Schwellen, Metric-Labels) via `renderCriterionMessage()`; unbekannte Werte → Passthrough. Langfrist-Option (nicht jetzt): additives `message_code` + `message_params`.
+- **Frontend-generiert:** Score-Texte („{n}/{total} erfüllt", AnalysisFrequencyPanel), Template-Strings in AccountPage, useAnalysisJobs, useCompare, DashBoardPage, DossierDetailPanel → strukturierte Templates mit `{var}`-Interpolation, keine String-Konkatenation. Pluralisierung über natives `Intl.PluralRules`.
+
+## 9. Locale Formatting
+
+Neues Modul `frontend/src/i18n/format.ts`; Mapping `de → "de-DE"`, `en → "en-US"`. **Regel: DE-Pfade sind wörtliche Kopien der heutigen Implementierungen**, vor Umbau per Characterization-Tests eingefroren.
+
+### 9.1 Numbers
+`formatNumber(value, locale, opts)` via `Intl.NumberFormat`. Kompakt: `formatCompactNumberChart` (DE-Zweig = heutige chartUtils-Logik Tsd./Mio./Mrd. mit identischen Schwellen; EN-Zweig K/M/B, gleiche Schwellen) und `formatCompactNumberMetric` (heutige K/M/B-Logik, bleibt für DE **unverändert K/M/B** — die bestehende Inkonsistenz wird bewusst NICHT „mitrepariert").
+### 9.2 Percentages
+`formatPercent(value, locale, decimals)` — DE `12,4 %` (heutiges Format inkl. Leerzeichen), EN `12.4%`.
+### 9.3 Dates
+`formatDate(iso, locale, style)` — DE-Pfad exakt heutige `toLocaleDateString("de-DE", …)`-Optionen; EN en-US.
+### 9.4 Currencies
+`formatCurrency(value, currencyISO, locale)` — Währung kommt ausschließlich als ISO-Code vom Backend (`reporting_currency`/`currency`-Felder); Locale ändert nur Darstellung, **niemals** die Währung. Abo-Preise bleiben fix `€`.
+
+## 10. Spracheinstellung und Persistenz
+
+- **DB:** Alembic-Migration `users.locale VARCHAR(10) NULL`, kein Default, kein Backfill. NULL = keine Präferenz → Bestandsnutzer exakt wie heute. Rollback = Spalte droppen, verlustfrei.
+- **API:** bestehendes `PATCH /auth/profile` + `UserResponse` additiv um `locale` erweitert; Server validiert ∈ {"de","en"} sonst 422. Kein neuer Endpunkt.
+- **Prioritätslogik:** `user.locale` (eingeloggt, gültig) → `localStorage["app-locale"]` → `navigator.language(s)` (Prefix-Match, „en-GB" → „en") → `"de"`. Jeder Schritt validiert gegen `SUPPORTED_LOCALES`; ungültige Werte fallen lautlos durch.
+- **Login** (`app:login`-Event): gesetzte `user.locale` gewinnt über Gerätewahl und wird in localStorage gespiegelt; NULL → Gerätewahl bleibt, **kein automatischer Profil-Write** (persistiert wird nur bei expliziter Wahl).
+- **Logout:** localStorage + aktive Sprache bleiben. **Neues Gerät:** navigator → nach Login User-Pref.
+- **AccountPage-UI:** eigene kleine Karte „Sprache / Language", Segmented Control „Deutsch | English" (Optik analog FrequencyToggle, inline CSSProperties). Optimistic: Klick → sofort `setLocale` (Context + localStorage) → parallel `PATCH /auth/profile {locale}` → Erfolg: `invalidateCurrentUserCache()`; Fehler: Toast-Warnung, UI bleibt umgeschaltet. Ab ≥4 Sprachen → Dropdown.
+
+## 11. Verhalten für ausgeloggte Nutzer
+
+localStorage → navigator.language → Deutsch. Kompakter DE/EN-Switcher im Header von PublicLayout **und** AuthLayout (schreibt nur localStorage + Context, kein API-Call). Landing/Pricing/Auth/Legal damit umschaltbar (Legal-Inhalte selbst bleiben v1 deutsch, nur UI-Chrome wechselt).
+
+## 12. Routing- und SEO-Strategie
+
+URLs bleiben unverändert (bestätigt) — kein Migrationsrisiko für Links, Bookmarks, Login-/OAuth-/Stripe-Redirects, Analytics. Statisches `index.html` bleibt deutsch → deutsche SEO exakt erhalten. Laufzeit: Hook `usePageMeta(titleKey, descKey)` setzt `document.title` + Meta-Description pro Route+Locale; `<html lang>` dynamisch. **Dokumentierter Trade-off:** ohne getrennte URLs kein `hreflang`, EN-Inhalte nicht separat indexierbar — EN ist UI-Feature, kein SEO-Kanal. Falls EN-SEO später Ziel wird: `/en/*`-Prefix als eigenes Projekt (Routing, Canonicals, Prerender). Glossar bleibt deutsch.
+
+## 13. Zielarchitektur i18n
+
+**Leichtgewichtiges typisiertes Eigenbau-Dictionary** (keine Library). Begründung: (1) Paritätsanforderung dominiert — DE-Dictionary ist wörtlicher Copy-Paste des heutigen Codes, keine Library-Fallback-Magie kann DE-Ausgaben verändern; (2) stärkste Typsicherheit: DE als `as const` → Schema, EN typisiert dagegen → fehlender Key = **Compile-Fehler**; (3) ICU-Bedarf gering (`{var}`-Interpolation ~20 Zeilen, Plural via `Intl.PluralRules`, 0 KB); (4) ~0,5 KB statt 12–17 KB gzip; (5) Hook-API i18next-kompatibel (`useTranslation(ns)` → `{t}`) als Exit-Strategie. Kipppunkte für Library-Wechsel: >4 Sprachen, externes TMS, komplexe ICU-Selects.
+
+Neue Module unter `frontend/src/i18n/`:
+```
+config.ts             SUPPORTED_LOCALES=["de","en"], Locale-Typ, DEFAULT_LOCALE="de",
+                      LOCALE_STORAGE_KEY="app-locale", INTL_LOCALES {de:"de-DE", en:"en-US"}
+localeContextValue.ts Context + Typ (Repo-Muster analog Toast)
+LocaleProvider.tsx    State, <html lang>-Sync, DE eager / EN lazy via import()
+useTranslation.ts     useLocale(), useTranslation(ns) → { t, locale }
+t.ts                  interpolate(template, params), plural(locale, count, forms)
+detect.ts             Prioritätslogik
+format.ts             locale-aware Formatter (§ 9)
+apiErrorMessages.ts   detail-String/code → Translation-Key (Phase 11)
+locales/de/*.ts       Namespaces; locales/en/*.ts typisiert gegen DE-Schema
+```
+`LocaleProvider` in `main.tsx` außerhalb `ToastProvider`. Sprachwechsel = reiner React-State → Re-Render ohne Reload; App-State (Compare-Auswahl, laufende Jobs, Workspace, Favoriten, Router, Formulare) bleibt per Konstruktion erhalten, weil Locale nirgends in Request-Bau/State-Keys einfließt. Bis EN-Bundle geladen ist bleibt DE sichtbar (nie rohe Keys).
+
+## 14. Translation-Key-Architektur
+
+Namespaces: `common, nav, auth, landing, pricing, dashboard, analysis, customAnalysis, compare, account, billing, support, errors, validation, metrics, charts, tour, agent` (später: `legal`, `admin`). Keys semantisch + camelCase (`account.profile.editButton`, nicht `text1`/`account.bearbeiten`), verschachtelte Objekte statt Dot-Strings (TS-Inferenz), Interpolation `{name}`, kein HTML in Strings (Satz-Segmente `before/linkLabel/after`). DE eager, **EN als ein Lazy-Bundle** (bei 2 Sprachen ausreichend; Struktur bleibt splitting-fähig). `metrics`-Sonderfall: `METRICS_CONFIG` behält Technik (unit/decimals/scale), `label/description/formula` wandern nach `locales/de/metrics.ts` (per Extraktionsskript 1:1 generiert); `generate-glossary.ts` liest künftig daraus, Output muss **byte-identisch** bleiben (Snapshot).
+
+## 15. Missing Translation & Fallback Strategy
+
+Fallback-Kette: `en → de → Key-Rohwert`. Compile-Zeit: EN-Module sind gegen das DE-Schema typisiert (`TranslationShape<typeof de>`) → fehlender/überzähliger Key = TS-Fehler. CI: vitest `completeness.test.ts` vergleicht rekursiv die Key-Mengen (fängt leere Strings). Laufzeit: Dev-`console.warn` bei Missing Key + DE-Fallback — Produktion zeigt **nie** rohe Keys wie `analysis.chart.revenue.title`.
+
+## 16. Schutz bestehender Business Logic
+
+Sprachwechsel darf nicht ändern: Company Symbol, Analysis Mode ID, Metric ID, Period ID, Subscription ID, User ID, Saved Analysis ID, Custom-Definition, API-Parameter, Cache-Identity. Nachweis: Paritätstests (§ 28) rendern Kernflows unter beiden Locales mit gemocktem fetch → Request-URLs/Bodies deep-equal; Result-Key-Parser liefert identische Mode-IDs; Datenwerte in Charts identisch (nur Labels/Formatierung unterscheiden sich).
+
+## 17. Custom Analysis Compatibility
+
+Persistiert werden nur technische Keys, Operator-Symbole, numerische Thresholds und der **nutzergewählte freie `name`**. User-generated Content („Meine Value Strategie") wird **niemals** übersetzt. Test: persistierte Definition vor/nach Sprachwechsel byte-identisch; Speichern unter EN erzeugt identische DB-Rows wie unter DE.
+
+## 18. API- und Backend-Kompatibilität
+
+- **HTTPException-Texte:** rein frontendseitige Mapping-Schicht `apiErrorMessages.ts` — `ApiError.code` vorhanden (Mechanismus existiert: `QUOTA_EXCEEDED`, `EMAIL_NOT_VERIFIED`) → Key; sonst exakter String-Match auf Katalog bekannter deutscher detail-Literale; sonst Roh-detail (= Status quo, DE-Parität automatisch; EN-Nutzer sieht schlimmstenfalls deutschen Text, kein Bruch). Später additiv: Backend hebt Strings schrittweise auf `detail={"code":…, "message":"<identischer deutscher Text>"}`. **Serverseitiges `Accept-Language`: verworfen** (doppelter Katalog, Paritätsnachweis erschwert, Cache-Komplexität).
+- **AgentAction-Sätze:** Backend unangetastet (§ 8).
+- Kein API-Umbau; alle Erweiterungen additiv; kein bestehender Client bricht.
+- E-Mails (`api/services/email_service.py`, inline f-Strings, gemischt EN/DE): eigene spätere Phase; `user.locale` steht danach als Template-Selektor bereit.
+
+## 19. Performance-Auswirkungen
+
+DE-Strings liegen heute schon im Bundle (inline) — Verschiebung in eager DE-Dictionaries ist größenneutral (± Overhead der Objektstruktur). EN als ein lazy Chunk (~ Größe der DE-Texte, geschätzt < 100 KB roh, deutlich kleiner gzip), wird nur bei EN-Aktivierung geladen. Kein zusätzlicher Provider-Rerender-Hotspot: Locale-Context ändert sich nur beim expliziten Wechsel. Keine zukünftigen Sprachdateien im Initial-Load. `Intl.*` ist nativ (0 KB). Entry-Chunk-Budget (138 KB gzip, § oben EV-114) wird nach Phase 11 (Landing) per `npm run build` nachgemessen.
+
+## 20. AccountPage Profil Spacing Bug
+
+Siehe eigener Abschnitt „AccountPage Profil Spacing Bug" am Dokumentende (UI-001).
+
+## 21. Offene Produktentscheidungen
+
+Alle vier Kernfragen sind entschieden (§ 1). Verbleibend offen (blockiert nichts):
+1. **EN-Copy-Review:** Wer prüft die englischen Marketing-/Analyse-Texte fachlich? (Empfehlung: Betreiber-Review pro Phase; maschinelle Unterstützung erlaubt, ungeprüfte Übernahme nicht — besonders Finanzbegriffe, Billing, CTAs.)
+2. **Legal-Übersetzung:** Zeitpunkt + juristische Prüfung (eigener Track, nicht v1).
+3. **E-Mail-Zweisprachigkeit:** Zeitpunkt (eigener Track; danach auch Vereinheitlichung der heute gemischten EN/DE-Mails sinnvoll).
+4. **Analytics-`locale`-Property** an product_events (optional, additiv).
+
+## 22. Umsetzungsphasen
+
+**Sicherheitsprinzip pro Phase (verbindlich für Sonnet 5):** 1. Ist-Verhalten dokumentieren/screenshotten → 2. Tests ausführen → 3. nur Text-/Localization-Schicht ändern (Strings verbatim verschieben) → 4. Tests erneut → 5. DE visuell prüfen → 6. EN visuell prüfen → 7. Funktionsparität prüfen (Network-Requests identisch). Vor „fertig": echtes `npm run build`. Erst dann nächste Phase.
+
+### Phase 0 – Baseline und Regression absichern
+Characterization-Tests der heutigen Formatter-Ausgaben (chartUtils.formatCompactNumber, formatPercentChange, metricFormatting.formatMetricValue/formatCompactNumber) über Wertekatalog als Literal-Snapshots festschreiben; Glossar-HTML-Snapshot; DE-Screenshots der Hauptseiten.
+### Phase 1 – i18n Foundation
+`i18n/`-Gerüst komplett (config, t, LocaleProvider, useTranslation, detect, format.ts, leere de/en-Namespaces, completeness-Test), Delegation chartUtils/metricFormatting → format.ts (DE-Pfad, Tests aus Phase 0 bleiben grün), Provider in main.tsx. **Noch kein String migriert — nichts rendert anders.**
+### Phase 2 – Locale Preference und Account Settings
+Alembic-Migration, Model/Schema/Route additiv, `auth.ts`-Typen, Sprach-Karte AccountPage, `app:login`-Sync, DE/EN-Switcher Public-/Auth-Header.
+### Phase 3 – Common UI und Navigation
+`common`, `nav`: AppSidebar (inkl. Mobile), Header, Footer, CookieConsentBanner, Toast-/Modal-Chrome, ErrorBoundary.
+### Phase 4 – Authentication
+5 Auth-Seiten inkl. Validierungen, Placeholder, EmailVerificationBanner.
+### Phase 5 – Dashboard
+DashBoardPage + Favoriten-Sektion, Datumsformate → formatDate.
+### Phase 6 – AnalysisPage
+**Höchstes Risiko.** metrics-Namespace + metricsConfig-Umbau + Glossar-Snapshot; Mode-Labels über inverse DISPLAY_NAME-Map (Legacy-Key einfrieren + Kommentar-Marker); Score-/Panel-Texte; Dossier-Renderer (DE-Passthrough / EN-Rekonstruktion).
+### Phase 7 – CustomAnalysisPage
+Builder-UI; user-Namen und persistierte Keys/Operatoren unangetastet.
+### Phase 8 – CompareAnalysisPage
+ComparePage, charts-Namespace, Empty-States, Tooltips.
+### Phase 9 – Account und Billing
+AccountPage-Resttexte, Label-Maps → t, BillingPage, Quota-Modals, Success/Cancel, Support.
+### Phase 10 – LandingPage
+Landing + Pricing (größte statische Textmenge), usePageMeta.
+### Phase 11 – Errors, Validation und Dynamic Content
+apiErrorMessages.ts, jobErrors, ~53 showToast-Stellen, Formular-Validierungen, Tour; Grep-Sweep auf verbleibende deutsche Literale.
+### Phase 12 – SEO, Accessibility und Metadata
+aria-labels, restliche placeholder/title, document.title/Meta aller Routen, `<html lang>`-Verifikation.
+### Phase 13 – AccountPage Spacing Fix
+**Vorgezogen umgesetzt am 2026-07-18** (unabhängig von i18n, eigener Commit) — siehe UI-001.
+### Phase 14 – Full Regression & Verification
+Matrizen §§ 25–28 abarbeiten, EN-Copy-Review, Doku-Abschluss.
+
+Spätere eigene Tracks (nicht v1): Legal-Übersetzung, Admin-i18n, E-Mail-i18n.
+
+## 23. Detaillierte Aufgaben
+
+### [I18N-001] Formatter-Characterization-Tests einfrieren
+**Status:** Offen · **Phase:** 0 · **Priorität:** Kritisch · **Aufwand:** S · **Risiko:** Niedrig · **Abhängigkeiten:** keine
+**Ziel:** Heutige DE-Ausgaben aller Formatter als Literal-Snapshots festschreiben, bevor irgendetwas umgebaut wird.
+**Aktueller Zustand:** `chartUtils.test.ts`/`metricFormatting.test.ts` decken Teile ab, nicht alle Grenzfälle.
+**Fundstelle:** `frontend/src/components/charts/chartUtils.ts:114–127, 314–329`; `frontend/src/components/metrics/metricFormatting.tsx:25–39, 91–132`.
+**Zu schützen:** exakte Strings inkl. Suffixe (Tsd./Mio./Mrd. bzw. K/M/B), Komma/Punkt, `±0,0 %`, `n. v.`, `Ja/Nein`, `—`.
+**Änderung:** Neue Testdatei mit Wertekatalog (negativ, 0, Schwellen 10³/10⁶/10⁹ ±1, Dezimalgrenzen) und **erwarteten Literalwerten** (nicht berechnet).
+**Schritte:** 1. Kataloge definieren 2. Ist-Ausgaben einmalig erzeugen und als Literale eintragen 3. Test grün committen.
+**Tests:** vitest. **Akzeptanz:** [ ] Snapshots decken beide formatCompactNumber-Varianten, formatPercentChange, formatMetricValue ab. **Rollback:** Testdatei löschen (kein Produktivcode).
+
+### [I18N-002] i18n-Kernmodul (config, t, Provider, detect)
+**Status:** Offen · **Phase:** 1 · **Priorität:** Kritisch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** —
+**Ziel:** Tragfähiges, typisiertes i18n-Gerüst ohne sichtbare Verhaltensänderung.
+**Änderung:** Dateien aus § 13; `LocaleProvider` um `<App/>` in `main.tsx`; `<html lang>`-Sync; EN-Lazy-Load mit `ready`-Flag.
+**Schritte:** 1. config + t + Typen 2. detect (localStorage→navigator→"de") 3. Provider + Hook 4. leere Namespaces de/en + completeness-Test 5. Unit-Tests interpolate/plural/detect.
+**Paritätstest:** App rendert unter DE pixelidentisch (kein String migriert). **Akzeptanz:** [ ] `npm run build` grün [ ] kein sichtbarer Unterschied. **Rollback:** Provider-Wrap entfernen, i18n/-Ordner löschen.
+
+### [I18N-003] Formatting-Layer format.ts + Delegation
+**Status:** Offen · **Phase:** 1 · **Priorität:** Kritisch · **Aufwand:** M · **Risiko:** Mittel · **Abhängigkeiten:** I18N-001, I18N-002
+**Ziel:** Eine zentrale locale-aware Formatter-Quelle; DE-Ausgaben byte-identisch.
+**Zu schützen:** alle I18N-001-Snapshots; bestehende Tests bleiben inhaltlich unverändert grün.
+**Änderung:** format.ts (§ 9); `chartUtils.formatCompactNumber`/`formatPercentChange` und `metricFormatting`-Helper delegieren mit fixem `"de"` (Aufrufstellen unverändert); `locale`-Parameter wird in späteren Phasen durchgereicht.
+**Akzeptanz:** [ ] I18N-001-Snapshots grün [ ] chartUtils.test.ts/metricFormatting.test.ts grün. **Rollback:** Delegation revertieren (Originalcode bleibt bis Phase 14 als Referenz im Git-Verlauf).
+
+### [I18N-004] users.locale: Migration + API
+**Status:** Offen · **Phase:** 2 · **Priorität:** Hoch · **Aufwand:** S · **Risiko:** Niedrig · **Abhängigkeiten:** —
+**Änderung:** Alembic `users.locale VARCHAR(10) NULL`; `api/models/user.py`; `UserResponse` + Profile-Update-Schema additiv; Validierung ∈ {"de","en"} → 422; `frontend/src/api/auth.ts`-Typen.
+**Zu schützen:** Bestehende User-Rows (NULL-safe), API-Verträge (nur additive Felder).
+**Tests:** pytest PATCH mit gültig/ungültig/None; Migration up+down auf Kopie. **Akzeptanz:** [ ] Bestandsnutzer-Login unverändert [ ] Rollback per downgrade verlustfrei.
+
+### [I18N-005] Spracheinstellung AccountPage + Login-Sync
+**Status:** Offen · **Phase:** 2 · **Priorität:** Hoch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-002, I18N-004
+**Änderung:** Sprach-Karte (Segmented Control) in AccountPage; Optimistic-Flow (§ 10); `app:login`-Listener im Provider.
+**Manuelle Tests:** Wechsel DE↔EN eingeloggt, Reload, Logout/Login, zweites Gerät (Inkognito), Fehlerfall PATCH (Netz aus) → UI bleibt umgeschaltet + Toast.
+**Akzeptanz:** [ ] Präferenz überlebt Reload + neues Gerät nach Login [ ] kein Zustandsverlust beim Wechsel.
+
+### [I18N-006] DE/EN-Switcher Public-/Auth-Header
+**Status:** Offen · **Phase:** 2 · **Priorität:** Hoch · **Aufwand:** S · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-002
+**Änderung:** kompakter Toggle in PublicLayout- und AuthLayout-Header; schreibt localStorage + Context.
+**Responsive:** mobil sichtbar, Touch-Target ≥ 40 px. **Akzeptanz:** [ ] Landing/Login umschaltbar ohne Reload.
+
+### [I18N-007] Common UI + Navigation migrieren
+**Status:** Offen · **Phase:** 3 · **Priorität:** Hoch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-002
+**Betroffene Dateien:** AppSidebar.tsx (Nav-Array + Mobile + Account-Menü), Header.tsx, Footer.tsx, CookieConsentBanner.tsx, Toast.tsx/Modal.tsx (aria), ErrorBoundary.tsx.
+**Schritte:** 1. Strings verbatim nach `de/nav.ts`/`de/common.ts` 2. `t()`-Aufrufe 3. EN-Übersetzung 4. DE-Screenshot-Diff.
+**Responsive:** Sidebar + Mobile-Nav mit längeren EN-Texten prüfen. **Akzeptanz:** [ ] DE pixelidentisch [ ] EN ohne Overflow.
+
+### [I18N-008] Auth-Seiten
+**Status:** Offen · **Phase:** 4 · **Priorität:** Hoch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-007
+Login/Register/Forgot/Reset/VerifyEmail + Banner inkl. Validierungstexte + Placeholder → `auth`/`validation`. Paritätstest: Login-Request-Body identisch DE/EN.
+
+### [I18N-009] Dashboard
+**Status:** Offen · **Phase:** 5 · **Priorität:** Mittel · **Aufwand:** M · **Risiko:** Niedrig-Mittel · **Abhängigkeiten:** I18N-003, I18N-007
+DashBoardPage + Favoriten; `toLocaleDateString("de-DE")` → `formatDate`. Paritätstest: identische API-Calls; Kursdaten-Werte identisch.
+
+### [I18N-010] Analysis: metrics-Namespace + metricsConfig-Umbau
+**Status:** Offen · **Phase:** 6 · **Priorität:** Kritisch · **Aufwand:** L · **Risiko:** Hoch · **Abhängigkeiten:** I18N-003
+**Ziel:** `label/description/formula` aus METRICS_CONFIG in `locales/de/metrics.ts` (per Extraktionsskript 1:1), Technik-Felder bleiben; `getMetricLabel(key)`-Helper; Glossar-Generator liest neu.
+**Zu schützen:** Glossar-HTML **byte-identisch** (Snapshot-Vergleich); alle Metric-Key-Lookups unverändert (`normalizeMetricKey`).
+**Akzeptanz:** [ ] Glossar-Diff leer [ ] alle Verbraucher (Analyze, Custom, Compare, Charts) zeigen DE unverändert.
+
+### [I18N-011] Analysis: Legacy-Key-Schutz + Mode-Labels
+**Status:** Offen · **Phase:** 6 · **Priorität:** Kritisch · **Aufwand:** S · **Risiko:** Hoch · **Abhängigkeiten:** I18N-010
+**Änderung:** Kommentar-Marker „PROTECTED LEGACY KEY — niemals lokalisieren" an `api/routes/analyze.py:~270` und `types/analysis.ts:~39`; inverse Map DISPLAY_NAME→mode-ID; alle Anzeigen über `t("analysis.modes.<id>")`.
+**Paritätstest:** Result-Fixture → Parser → identische Mode-IDs unter DE/EN. **Akzeptanz:** [ ] Wire-Format unverändert (Fixture-Bytes).
+
+### [I18N-012] Analysis: Dossier DE-Passthrough / EN-Rekonstruktion
+**Status:** Offen · **Phase:** 6 · **Priorität:** Kritisch · **Aufwand:** L · **Risiko:** Hoch · **Abhängigkeiten:** I18N-010, I18N-011
+**Änderung:** `renderCriterionMessage()` + `agent`-Namespace + overall_assessment-Map (§ 8); DossierDetailPanel/SummaryCard; Score-Texte AnalysisFrequencyPanel → t.
+**Zu schützen:** DE rendert **exakt** die Backend-Strings (Passthrough); unbekannte Werte → Passthrough auch unter EN.
+**Paritätstest:** Fixture-Results je Analysemodus: DE-Rendering == heutiges Rendering (Snapshot); Datenwerte unter EN identisch. **Akzeptanz:** [ ] pro Analysemodus verifiziert; nicht abbildbare Sätze bleiben als Passthrough dokumentiert.
+
+### [I18N-013] CustomAnalysis-UI
+**Status:** Offen · **Phase:** 7 · **Priorität:** Hoch · **Aufwand:** M · **Risiko:** Mittel · **Abhängigkeiten:** I18N-010
+6 customAnalysis-Komponenten + Definitions-Hook-Toasts. **Zu schützen:** persistierte Definition byte-identisch vor/nach Sprachwechsel; user-`name` nie durch t() geleitet. **Akzeptanz:** [ ] Save unter EN erzeugt identische DB-Row wie unter DE.
+
+### [I18N-014] Compare + Charts
+**Status:** Offen · **Phase:** 8 · **Priorität:** Mittel · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-003, I18N-010
+ComparePage, useCompare-Toasts, charts-Namespace (Empty-States, Achsen, Tooltips, TIME_RANGE_OPTIONS-Labels). Paritätstest: Chart-Datenreihen DE == EN (nur Labels/Formatierung verschieden).
+
+### [I18N-015] Account + Billing + Support
+**Status:** Offen · **Phase:** 9 · **Priorität:** Hoch · **Aufwand:** L · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-005
+AccountPage-Resttexte, getPlanLabel/getBillingStatusLabel/getBillingIntervalLabel → t, CancelSubscriptionModal, BillingPage, Success/Cancel, SupportPage/-Form. Manuell: Stripe-Checkout-Flow DE (unverändert) + EN.
+
+### [I18N-016] Landing + Pricing
+**Status:** Offen · **Phase:** 10 · **Priorität:** Mittel · **Aufwand:** L · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-006, I18N-007
+LandingPage-Arrays/Props, Landing-Komponenten, IntroSlogan, PricingPage + pricingPlans-Anzeige-Texte, usePageMeta. EN-Marketing-Copy → Betreiber-Review (§ 21.1).
+
+### [I18N-017] Errors, Validation, Toasts, Tour
+**Status:** Offen · **Phase:** 11 · **Priorität:** Hoch · **Aufwand:** L · **Risiko:** Mittel · **Abhängigkeiten:** I18N-007
+apiErrorMessages.ts (code+String-Match+Passthrough-Kaskade), jobErrors, client.ts-Fallback, ~53 showToast-Stellen, restliche Validierungen, tourSteps/useAppTour. Abschluss: Grep-Sweep (Umlaute + häufige deutsche Wörter) über frontend/src → Restliste bewerten.
+
+### [I18N-018] SEO, a11y, Metadata
+**Status:** Offen · **Phase:** 12 · **Priorität:** Mittel · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-016
+usePageMeta auf allen Routen, restliche aria-label/placeholder/title, `<html lang>`-Verifikation, Screenreader-Stichprobe.
+
+### [I18N-019] Paritäts- und Vollständigkeitstests (Querschnitt)
+**Status:** Offen · **Phase:** 14 · **Priorität:** Kritisch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** alle
+completeness.test.ts, DE/EN-Request-Paritätstests (Login, Analyse, Definition-Save, Profil-PATCH), Chart-Datenwert-Test, Custom-Definition-Bytegleichheit, Matrizen §§ 25–28 abarbeiten.
+
+## 24. Abhängigkeitsmatrix
+
+| Aufgabe | hängt ab von |
+|---|---|
+| I18N-001 | — |
+| I18N-002 | — |
+| I18N-003 | 001, 002 |
+| I18N-004 | — (parallel möglich) |
+| I18N-005 | 002, 004 |
+| I18N-006 | 002 |
+| I18N-007 | 002 |
+| I18N-008 | 007 |
+| I18N-009 | 003, 007 |
+| I18N-010 | 003 |
+| I18N-011 | 010 |
+| I18N-012 | 010, 011 |
+| I18N-013 | 010 |
+| I18N-014 | 003, 010 |
+| I18N-015 | 005 |
+| I18N-016 | 006, 007 |
+| I18N-017 | 007 |
+| I18N-018 | 016 |
+| I18N-019 | alle |
+| UI-001 | — (unabhängig, vorgezogen) |
+
+## 25. Deutsch-Englisch Functional Parity Matrix
+
+| Funktion | DE | EN | Muss identisch sein | Nachweis |
+|---|---|---|---|---|
+| Login | ✓ | ✓ | Funktion (Request-Body) | Paritätstest I18N-008 |
+| Registrierung | ✓ | ✓ | Funktion | Paritätstest |
+| Analyse | ✓ | ✓ | Ergebnis (Rohdaten, Scores, Mode-IDs) | Fixture-Tests I18N-011/012 |
+| Compare | ✓ | ✓ | Ergebnis (Datenreihen) | I18N-014 |
+| Custom Analysis | ✓ | ✓ | Logik (persistierte Definition byte-identisch) | I18N-013 |
+| Favoriten | ✓ | ✓ | Daten | manuell + Request-Log |
+| Charts | ✓ | ✓ | Werte (nur Labels/Format verschieden) | I18N-014 |
+| Billing | ✓ | ✓ | Subscription (Stripe-Params) | I18N-015 |
+| Account | ✓ | ✓ | Nutzerdaten (PATCH-Payload) | I18N-005 |
+
+## 26. Responsive Test Matrix
+
+Pro migrierter Phase: Desktop (1280+), Laptop (~1100), Tablet (768), iPhone (375), Android (~412) × DE × EN. Fokus: Buttons/CTAs (EN teils länger, DE-Komposita teils länger), Sidebar + Mobile-Nav, Tabs/Segmented Controls, Tabellen (horizontal scrollbar im Container), Tooltips, Hero-Headlines, Formulare, Chart-Legenden. Verboten: abgeschnittene/überlappende Texte, horizontales Seiten-Scrollen, springende Buttons, Touch-Targets < 40 px, verschobene Charts. Keine Sprach-Sonderlayouts — Komponenten müssen beide Textlängen tragen (flexWrap/min-width statt fixer Breiten).
+
+## 27. Translation Completeness Matrix
+
+| Namespace | DE | EN | Prüfung |
+|---|---|---|---|
+| common, nav, auth, landing, pricing, dashboard, analysis, customAnalysis, compare, account, billing, support, errors, validation, metrics, charts, tour, agent | Quelle (verbatim aus Code) | typisiert gegen DE-Schema | TS-Compile + completeness.test.ts (Key-Mengen + keine leeren Strings) |
+| legal, admin | deutsch (v1) | — (bewusst nicht übersetzt) | dokumentierte Ausnahme |
+
+## 28. Regressionstest-Matrix
+
+Seiten × Sprachen (DE, EN) × Zustände: LandingPage, Login, Registrierung, Forgot/Reset/Verify, Dashboard, AnalysisPage, CustomAnalysis (im Analyze), ComparePage, AccountPage, BillingPage (+Success/Cancel), Support, Navigation/Sidebar/Mobile-Nav, Legal (UI-Chrome), Cookie-Banner. Sprachwechsel-Matrix: DE→EN und EN→DE jeweils ausgeloggt, eingeloggt, auf Dashboard/Analyze/Compare/Account/Billing, nach Reload, neuer Tab, neues Gerät/Session, Logout+Login. Prüfpunkte je Zelle: Sprache korrekt, Preference gespeichert, keine Daten verloren, Navigation intakt, Analyse unverändert, keine unnötigen Requests, keine UI-Fehler.
+
+## 29. Migration und Rollback
+
+- Jede Phase = eigene Commits; Revert einer Phase lässt alle anderen funktionsfähig (Namespaces sind additiv).
+- DB: `alembic downgrade` entfernt `users.locale` verlustfrei; Frontend toleriert fehlendes Feld (optionales Property).
+- Kill-Switch UI: `SUPPORTED_LOCALES = ["de"]` deaktiviert EN app-weit (Switcher verschwindet, detect liefert immer "de"), ohne Code-Rückbau.
+- EN-Lazy-Chunk fehlgeschlagen → `ready` bleibt false → DE bleibt sichtbar (kein Fehlerzustand).
+
+## 30. Adding a New Language Checklist
+
+1. Locale in `SUPPORTED_LOCALES` + `INTL_LOCALES` registrieren (config.ts)
+2. `locales/<xx>/` anlegen: alle Namespaces, typisiert gegen DE-Schema (Compiler erzwingt Vollständigkeit)
+3. Formatierungsregeln prüfen (format.ts: Kompakt-Suffixe der neuen Sprache ergänzen; `Intl.*` übernimmt Zahlen/Datum automatisch)
+4. Server-Validierung erweitern (erlaubte locale-Werte, api/routes/auth.py)
+5. Switcher-UI: ab ≥4 Sprachen Segmented Control → Dropdown
+6. completeness.test + Responsive-Stichprobe + `npm run build`
+Nicht nötig: Komponenten-Umbau, Business-Logik, DB-Änderung (Spalte generisch), Routing.
+
+## 31. Definition of Done
+
+- Architektur: i18n-Schicht vollständig, DE/EN produktiv, weitere Sprachen per Checkliste § 30 ergänzbar
+- Strings: alle Bereiche aus § 5 migriert (außer dokumentierte Ausnahmen legal/admin); dynamische Texte, Fehler, Validation, a11y abgedeckt
+- Business Logic: alle Paritätstests grün; Legacy-Key eingefroren; Custom-Definitionen byte-stabil; API-Parameter/Cache-Keys locale-frei
+- Account: Spracheinstellung mit Persistenz, Bestandsnutzer (NULL) unverändert, ausgeloggte Nutzer per detect
+- Localization: Zahlen/Prozent/Datum locale-aware, Währung strikt getrennt
+- UX: alle Hauptseiten beide Sprachen responsive ohne Layoutbrüche; Sprachwechsel zerstört keinen Zustand
+- SEO: Laufzeit-Title/Meta pro Sprache; hreflang-Verzicht dokumentiert
+- Testing: Characterization-, Paritäts-, Completeness-, Missing-Key-, Responsive-Tests vorhanden und grün
+- AccountPage-Bug: behoben (UI-001 ✓)
+
+## 32. Final Verification Checklist
+
+- [ ] `npm run build` grün (echter Build) + vitest vollständig grün + pytest vollständig grün
+- [ ] DE-Durchklick aller Seiten: pixelnah identisch zu Vorher-Screenshots
+- [ ] EN-Durchklick aller Seiten: vollständig übersetzt (Grep-Sweep leer), keine Layoutbrüche
+- [ ] Sprachwechsel-Matrix § 28 vollständig
+- [ ] Network-Nachweis: identische Requests unter DE und EN (Login, Analyse, Save, PATCH)
+- [ ] Laufende Analyse überlebt Sprachwechsel (Job-Ergebnis identisch)
+- [ ] Custom-Definition vor/nach Wechsel byte-identisch (DB-Vergleich)
+- [ ] Bestandsnutzer (locale=NULL) verhält sich exakt wie vor dem Projekt
+- [ ] Migration up/down auf DB-Kopie verifiziert
+- [ ] Glossar-HTML byte-identisch
+- [ ] Entry-Chunk-Budget nachgemessen (§ 19)
+- [ ] EN-Copy fachlich reviewt (Betreiber)
+
+---
+
+# AccountPage Profil Spacing Bug (UI-001)
+
+**Status:** Umgesetzt 2026-07-18 · **Priorität:** Hoch · **Aufwand:** XS · **Risiko:** Niedrig · **Abhängigkeiten:** keine
+
+## Beobachtung
+Im Bereich „Profil" der AccountPage stehen die Buttons („Bearbeiten", „Tour erneut starten") direkt unter der letzten Info-Zeile („Geburtsdatum") ohne vertikalen Abstand.
+
+## Ursache (verifiziert)
+`frontend/src/pages/app/AccountPage.tsx`, Profil-Sektion (`data-tour="account-profile-section"`). Im **Nicht-Editiermodus** liegen `<div style={infoList}>` (flex column, `gap:14px`, kein marginBottom) und `<div style={passwordActionRow}>` (kein marginTop) als direkte Geschwister in einem Fragment ohne Wrapper-gap → **0 px Abstand**. Der Editiermodus ist korrekt (`passwordForm` mit `gap:22px`). `passwordActionRow` wird an 3 Stellen genutzt; nur die Instanz nach `infoList` (~Z. 797) ist fehlerhaft. Vergleichsmuster im selben File: `membershipInfoList` hat `marginBottom:18px`, `heroActionRow` hat `marginTop:26px`.
+
+## Fix (kleinstmöglich)
+Nur an der fehlerhaften Instanz: `style={{ ...passwordActionRow, marginTop: "24px" }}`. Geteilte Style-Objekte (`infoList`, `passwordActionRow`) und die beiden korrekten Instanzen bleiben unangetastet. Kein Redesign, keine strukturelle Änderung.
+
+## Tests
+- Desktop + Mobile: Abstand vorhanden, kein Umbruchfehler (Buttons haben `flexWrap:"wrap"`)
+- Editiermodus unverändert (eigene Form-Instanz)
+- Nach i18n-Phase 9: erneute Prüfung mit englischen (teils längeren) Buttontexten
+
+## Rollback
+Einzeiler revertieren.
