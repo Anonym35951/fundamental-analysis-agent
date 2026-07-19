@@ -4,7 +4,6 @@ import * as Sentry from "@sentry/react";
 import "./index.css";
 import App from "./App";
 import { ToastProvider } from "./components/ui/Toast";
-import { LocaleProvider } from "./i18n/LocaleProvider";
 
 // Error-Tracking: aktiviert sich nur, wenn VITE_SENTRY_DSN gesetzt ist.
 if (import.meta.env.VITE_SENTRY_DSN) {
@@ -16,10 +15,8 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <LocaleProvider>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
-    </LocaleProvider>
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </StrictMode>
 );

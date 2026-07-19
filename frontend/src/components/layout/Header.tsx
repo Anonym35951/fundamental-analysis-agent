@@ -1,36 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { theme } from "../ui/theme";
-import { useLocale } from "../../i18n/useLocale";
-import { useTranslation } from "../../i18n/useTranslation";
-import type { Locale } from "../../i18n/config";
 
 type HeaderProps = {
   variant?: "public" | "auth";
 };
-
-// EVOLVING.md § Internationalisierung, I18N-006: kompakter DE/EN-Switcher,
-// sichtbar auf allen öffentlichen und Auth-Seiten (unabhängig vom
-// Login-Status) - schreibt nur Context + localStorage (i18n/LocaleProvider),
-// kein API-Call.
-function LanguageSwitcher() {
-  const { locale, setLocale } = useLocale();
-
-  function select(next: Locale) {
-    if (next !== locale) setLocale(next);
-  }
-
-  return (
-    <div style={langSwitcherRow}>
-      <button type="button" onClick={() => select("de")} style={langButton(locale === "de")}>
-        DE
-      </button>
-      <button type="button" onClick={() => select("en")} style={langButton(locale === "en")}>
-        EN
-      </button>
-    </div>
-  );
-}
 
 function Header({ variant = "public" }: HeaderProps) {
   // Login/Logout im selben Tab crossen immer eine Layout-Grenze (Remount von
@@ -38,7 +12,6 @@ function Header({ variant = "public" }: HeaderProps) {
   // (Tab A auf öffentlicher Seite, Tab B loggt sich ein/aus). Fix: auf
   // app:login/app:logout/storage hören statt nur einmal beim Render zu lesen.
   const [hasToken, setHasToken] = useState(() => Boolean(localStorage.getItem("access_token")));
-  const { t } = useTranslation("nav");
   useEffect(() => {
     const sync = () => setHasToken(Boolean(localStorage.getItem("access_token")));
     window.addEventListener("app:login", sync);
@@ -103,12 +76,10 @@ function Header({ variant = "public" }: HeaderProps) {
             background: "transparent",
           }}
         >
-          <LanguageSwitcher />
-
           {/* PUBLIC (logged in) */}
           {variant === "public" && hasToken && (
             <Link to="/app/dashboard" style={pillCta}>
-              {t("header.dashboardCta")}
+              Zum Dashboard
             </Link>
           )}
 
@@ -117,16 +88,16 @@ function Header({ variant = "public" }: HeaderProps) {
             <>
               {variant === "public" ? (
                 <Link to="/pricing" style={pillLinkGhost}>
-                  {t("header.pricingLink")}
+                  Preise
                 </Link>
               ) : null}
 
               <Link to="/login" style={pillLinkGhost}>
-                {t("header.loginLink")}
+                Login
               </Link>
 
               <Link to="/register?src=header" style={pillCta}>
-                {t("header.registerCta")}
+                Registrieren
               </Link>
             </>
           )}
@@ -152,34 +123,6 @@ const pillLinkGhost: React.CSSProperties = {
   alignItems: "center",
   borderRadius: theme.radius.pill,
 };
-
-const langSwitcherRow: React.CSSProperties = {
-  display: "flex",
-  gap: "2px",
-  padding: "3px",
-  borderRadius: theme.radius.pill,
-  background: theme.colors.panelAlt,
-  border: `1px solid ${theme.colors.border}`,
-};
-
-function langButton(active: boolean): React.CSSProperties {
-  return {
-    padding: "8px 10px",
-    minHeight: "36px",
-    boxSizing: "border-box",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: theme.radius.pill,
-    border: "none",
-    cursor: "pointer",
-    fontWeight: 700,
-    fontSize: "0.78rem",
-    letterSpacing: "0.02em",
-    background: active ? theme.gradients.ctaPrimary : "transparent",
-    color: active ? theme.colors.bgDeep : theme.colors.textSecondary,
-  };
-}
 
 const pillCta: React.CSSProperties = {
   textDecoration: "none",

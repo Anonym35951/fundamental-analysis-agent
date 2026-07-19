@@ -8,7 +8,6 @@ import { X } from "lucide-react";
 import { theme } from "./theme";
 import { useIsMobile } from "../../hooks/useMediaQuery";
 import { ToastContext, type ToastAction, type ToastTone } from "./toastContextValue";
-import { useTranslation } from "../../i18n/useTranslation";
 
 type ToastItem = {
   id: number;
@@ -42,7 +41,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextId = useRef(0);
   const isMobile = useIsMobile();
-  const { t } = useTranslation("common");
 
   const dismissToast = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -117,7 +115,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                     event.stopPropagation();
                     dismissToast(toast.id);
                   }}
-                  aria-label={t("toast.dismissAriaLabel")}
+                  aria-label="Benachrichtigung schließen"
                   style={{
                     position: "absolute",
                     top: "10px",

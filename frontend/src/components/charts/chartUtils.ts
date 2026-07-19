@@ -1,5 +1,3 @@
-import { formatCompactNumberChart, formatPercentChangeChart } from "../../i18n/format";
-
 export type ChartLayer = {
   id: string;
   label: string;
@@ -112,16 +110,20 @@ export const LAYER_COLORS = [
 
 /** Compact German number formatting (k / Mio. / Mrd.) so large axis ticks
  * and tooltip values (market cap, enterprise value, ...) stay readable
- * instead of rendering as long unbroken digit strings.
- *
- * Delegiert an i18n/format.ts (EVOLVING.md § 9.1, I18N-003) mit fest
- * verdrahtetem "de" — die Signatur hier bleibt unverändert (kein
- * locale-Parameter), das Verhalten ist byte-identisch zum vorherigen
- * Code (siehe i18n/format.characterization.test.ts). Sprachabhängige
- * Anzeige folgt erst, wenn AnalysisPage/Charts in Phase 6/8 migriert
- * werden. */
+ * instead of rendering as long unbroken digit strings. */
 export function formatCompactNumber(value: number): string {
-  return formatCompactNumberChart(value, "de");
+  const abs = Math.abs(value);
+
+  if (abs >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toFixed(abs >= 10_000_000_000 ? 0 : 1)} Mrd.`;
+  }
+  if (abs >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)} Mio.`;
+  }
+  if (abs >= 1_000) {
+    return `${(value / 1_000).toFixed(abs >= 10_000 ? 0 : 1)} Tsd.`;
+  }
+  return value.toLocaleString("de-DE", { maximumFractionDigits: 2 });
 }
 
 export type TooltipRow = {
@@ -316,7 +318,14 @@ export function computePercentChange(series: Array<{ date: string; value: number
  * zwischen den Gründen ist nur für Tooltips/Titel relevant, nicht für den
  * sichtbaren Badge-Text. */
 export function formatPercentChange(result: PercentChangeResult): string {
-  return formatPercentChangeChart(result, "de");
+  if (result.percent === null) return "n. v.";
+
+  const rounded = Math.round(result.percent * 10) / 10;
+  if (rounded === 0) return "±0,0 %";
+
+  const sign = rounded > 0 ? "+" : "";
+  const formatted = rounded.toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return `${sign}${formatted} %`;
 }
 
 /** EVOLVING.md EV-051: eine Kennzahl bekommt eine %-Veränderungs-Badge NUR,

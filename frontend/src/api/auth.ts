@@ -22,8 +22,6 @@ export type UserProfileUpdatePayload = Partial<{
   first_name: string;
   last_name: string;
   birth_date: string;
-  // EVOLVING.md § Internationalisierung, I18N-004/005: "de" | "en".
-  locale: string;
 }>;
 
 export type LoginPayload = {
@@ -62,10 +60,6 @@ export type CurrentUserResponse = {
   age: number | null;
   birth_date: string | null;
   onboarding_completed_at: string | null;
-  // EVOLVING.md § Internationalisierung, I18N-004: "de" | "en" | null (keine
-  // gespeicherte Praeferenz — Frontend faellt dann auf localStorage/Browser
-  // zurueck, siehe frontend/src/i18n/detect.ts).
-  locale: string | null;
 };
 
 export async function registerUser(payload: RegisterPayload): Promise<void> {

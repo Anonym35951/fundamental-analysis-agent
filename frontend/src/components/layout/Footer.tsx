@@ -1,14 +1,11 @@
 import { Link } from "react-router-dom";
 import { theme } from "../ui/theme";
-import { useTranslation } from "../../i18n/useTranslation";
 
 type FooterProps = {
   variant?: "public" | "auth" | "app";
 };
 
 function Footer({ variant = "public" }: FooterProps) {
-  const { t } = useTranslation("nav");
-
   return (
     <footer
       style={{
@@ -43,7 +40,7 @@ function Footer({ variant = "public" }: FooterProps) {
               fontSize: "0.95rem",
             }}
           >
-            {t("footer.copyright", { year: new Date().getFullYear() })}
+            © {new Date().getFullYear()} ComAnalysis
           </div>
 
           <nav
@@ -57,31 +54,31 @@ function Footer({ variant = "public" }: FooterProps) {
              * Seite außerhalb des React-Router-Baums (siehe scripts/generate-glossary.ts),
              * ein Client-seitiger Router-Wechsel würde dort nur einen 404 im SPA-Kontext zeigen. */}
             <a href="/glossar" style={linkStyle}>
-              {t("footer.glossaryLink")}
+              Kennzahlen-Glossar
             </a>
 
             <Link to="/pricing" style={linkStyle}>
-              {t("footer.pricingLink")}
+              Preise
             </Link>
 
             <Link to="/legal/privacy" style={linkStyle}>
-              {t("footer.privacyLink")}
+              Datenschutz
             </Link>
 
             <Link to="/legal/cookies" style={linkStyle}>
-              {t("footer.cookiesLink")}
+              Cookies
             </Link>
 
             <Link to="/legal/terms" style={linkStyle}>
-              {t("footer.termsLink")}
+              AGB
             </Link>
 
             <Link to="/legal/imprint" style={linkStyle}>
-              {t("footer.imprintLink")}
+              Impressum
             </Link>
 
             <Link to="/legal/contact" style={linkStyle}>
-              {t("footer.contactLink")}
+              Kontakt
             </Link>
           </nav>
         </div>

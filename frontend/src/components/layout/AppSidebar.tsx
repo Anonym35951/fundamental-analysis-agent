@@ -23,7 +23,6 @@ import { useIsMobile } from "../../hooks/useMediaQuery";
 import { theme } from "../ui/theme";
 import { useThemeMode } from "../ui/useThemeMode";
 import { useToast } from "../ui/useToast";
-import { useTranslation } from "../../i18n/useTranslation";
 import LivePriceBadge from "../shared/LivePriceBadge";
 
 type AppSidebarProps = {
@@ -32,21 +31,19 @@ type AppSidebarProps = {
   onToggleCollapse: () => void;
 };
 
-type NavKey = "dashboard" | "analyze" | "compare" | "account" | "support" | "billing" | "admin";
-
-const navItems: Array<{ to: string; labelKey: NavKey; icon: typeof LayoutDashboard }> = [
-  { to: "/app/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
-  { to: "/app/analyze", labelKey: "analyze", icon: LineChart },
-  { to: "/app/compare", labelKey: "compare", icon: GitCompare },
-  { to: "/app/account", labelKey: "account", icon: UserCircle },
-  { to: "/app/support", labelKey: "support", icon: LifeBuoy },
+const navItems = [
+  { to: "/app/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/app/analyze", label: "Analyse", icon: LineChart },
+  { to: "/app/compare", label: "Vergleich", icon: GitCompare },
+  { to: "/app/account", label: "Konto", icon: UserCircle },
+  { to: "/app/support", label: "Support", icon: LifeBuoy },
 ];
 
 // EVOLVING.md EV-080: nur für Free-Nutzer in effectiveNavItems eingefügt -
 // Pro/Friends/Admin verwalten ihr Abo über den AccountPage-Portal-Button
 // (deckt auch past_due/canceling ab, da diese Zustände weiterhin
 // plan==="pro" sind).
-const billingNavItem = { to: "/app/billing", labelKey: "billing" as const, icon: CreditCard };
+const billingNavItem = { to: "/app/billing", label: "Abrechnung", icon: CreditCard };
 
 function AppSidebar({
   onLogout,
@@ -60,12 +57,11 @@ function AppSidebar({
   const isMobile = useIsMobile();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const { mode, toggleMode } = useThemeMode();
-  const { t } = useTranslation("nav");
 
   const normalizedPlan = currentPlan.trim().toLowerCase();
   const isFreePlan = normalizedPlan === "free";
   const isAdmin = normalizedPlan === "admin";
-  const displayPlan = isFreePlan ? t("sidebar.freePlanLabel") : t("sidebar.proPlanLabel");
+  const displayPlan = isFreePlan ? "Free Plan" : "Pro Plan";
 
   useEffect(() => {
     async function loadUser() {
@@ -113,17 +109,14 @@ function AppSidebar({
       items.splice(3, 0, billingNavItem);
     }
     if (isAdmin) {
-      items.push({ to: "/app/admin", labelKey: "admin" as const, icon: ShieldCheck });
+      items.push({ to: "/app/admin", label: "Admin", icon: ShieldCheck });
     }
     return items;
   }, [isLoadingUser, isFreePlan, isAdmin]);
 
   const filteredNavItems = useMemo(
-    () =>
-      effectiveNavItems.filter((item) =>
-        t(`sidebar.${item.labelKey}`).toLowerCase().includes(normalizedQuery)
-      ),
-    [effectiveNavItems, normalizedQuery, t]
+    () => effectiveNavItems.filter((item) => item.label.toLowerCase().includes(normalizedQuery)),
+    [effectiveNavItems, normalizedQuery]
   );
 
   const filteredFavorites = useMemo(
@@ -217,8 +210,8 @@ function AppSidebar({
               whileTap={{ scale: 0.94 }}
               transition={theme.motion.spring}
               type="button"
-              aria-label={isCollapsed ? t("sidebar.expandAriaLabel") : t("sidebar.collapseAriaLabel")}
-              title={isCollapsed ? t("sidebar.expandTitle") : t("sidebar.collapseTitle")}
+              aria-label={isCollapsed ? "Sidebar ausklappen" : "Sidebar einklappen"}
+              title={isCollapsed ? "Ausklappen" : "Einklappen"}
               style={{
                 flexShrink: 0,
                 width: "40px",
@@ -251,7 +244,7 @@ function AppSidebar({
                 type="text"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={t("sidebar.searchPlaceholder")}
+                placeholder="Suchen..."
                 style={{
                   width: "100%",
                   height: "42px",
@@ -300,16 +293,16 @@ function AppSidebar({
               }}
             >
               <div>
-                <SectionLabel>{t("sidebar.sectionNavigation")}</SectionLabel>
+                <SectionLabel>Navigation</SectionLabel>
                 <nav style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                   {filteredNavItems.map((item) => (
-                    <SidebarItem key={item.to} to={item.to} label={t(`sidebar.${item.labelKey}`)} icon={item.icon} />
+                    <SidebarItem key={item.to} to={item.to} label={item.label} icon={item.icon} />
                   ))}
                 </nav>
               </div>
 
               <div data-tour="sidebar-favorites">
-                <SectionLabel>{t("sidebar.sectionFavorites")}</SectionLabel>
+                <SectionLabel>Favoriten</SectionLabel>
                 {favorites.length === 0 ? (
                   <div
                     style={{
@@ -319,7 +312,7 @@ function AppSidebar({
                       lineHeight: 1.5,
                     }}
                   >
-                    {t("sidebar.noFavorites")}
+                    Noch keine Favoriten
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
@@ -355,7 +348,7 @@ function AppSidebar({
                 marginBottom: "8px",
               }}
             >
-              {t("sidebar.statusLabel")}
+              Status
             </div>
 
             <div
@@ -366,7 +359,7 @@ function AppSidebar({
                 marginBottom: "6px",
               }}
             >
-              {isLoadingUser ? t("sidebar.loading") : displayPlan}
+              {isLoadingUser ? "Lädt..." : displayPlan}
             </div>
 
             {!isLoadingUser && isFreePlan ? (
@@ -377,7 +370,7 @@ function AppSidebar({
                   lineHeight: 1.6,
                 }}
               >
-                {t("sidebar.freePlanHint")}
+                Upgrade später dynamisch aus dem Backend.
               </div>
             ) : null}
           </div>
@@ -388,8 +381,8 @@ function AppSidebar({
             whileTap={{ scale: 0.98 }}
             transition={theme.motion.spring}
             type="button"
-            aria-label={mode === "dark" ? t("sidebar.themeToggleAriaLabelToLight") : t("sidebar.themeToggleAriaLabelToDark")}
-            title={mode === "dark" ? t("sidebar.themeLabelLight") : t("sidebar.themeLabelDark")}
+            aria-label={mode === "dark" ? "Hell-Modus aktivieren" : "Dark-Modus aktivieren"}
+            title={mode === "dark" ? "Hell-Modus" : "Dark-Modus"}
             style={{
               width: "100%",
               border: `1px solid ${theme.colors.borderSubtle}`,
@@ -408,7 +401,7 @@ function AppSidebar({
             }}
           >
             {mode === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-            {mode === "dark" ? t("sidebar.themeLabelLight") : t("sidebar.themeLabelDark")}
+            {mode === "dark" ? "Hell-Modus" : "Dark-Modus"}
           </motion.button>
 
           <motion.button
@@ -433,7 +426,7 @@ function AppSidebar({
             }}
           >
             <LogOut size={16} />
-            {t("sidebar.logout")}
+            Logout
           </motion.button>
         </div>
       )}
@@ -521,7 +514,6 @@ function SidebarItem({ to, label, icon: Icon }: SidebarItemProps) {
 function FavoriteItem({ symbol }: { symbol: string }) {
   const { toggleFavorite } = useFavorites();
   const { showToast } = useToast();
-  const { t } = useTranslation("nav");
 
   async function handleRemove(event: React.MouseEvent | React.KeyboardEvent) {
     // Stern sitzt innerhalb des Link-Wrappers (Klick auf die Zeile navigiert
@@ -532,7 +524,7 @@ function FavoriteItem({ symbol }: { symbol: string }) {
     try {
       await toggleFavorite(symbol);
     } catch {
-      showToast(t("sidebar.removeFavoriteError"), "error");
+      showToast("Konnte nicht entfernt werden.", "error");
     }
   }
 
@@ -578,7 +570,7 @@ function FavoriteItem({ symbol }: { symbol: string }) {
       <span
         role="button"
         tabIndex={0}
-        aria-label={t("sidebar.removeFavoriteAriaLabel", { symbol })}
+        aria-label={`${symbol} aus Favoriten entfernen`}
         onClick={handleRemove}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") handleRemove(event);
