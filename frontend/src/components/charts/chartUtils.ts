@@ -366,3 +366,111 @@ export function normalizePriceSeries(series: Array<{ date: string; value: number
     .filter((point) => Number.isFinite(point.value))
     .map((point) => ({ date: point.date, value: ((point.value - base) / base) * 100 }));
 }
+
+/** EVOLVING.md CH-003: lokales Kalenderdatum als "YYYY-MM-DD". Bewusst NICHT
+ * `toISOString().slice(0,10)` — das wäre UTC und würde in Deutschland nach
+ * Mitternacht (aber vor 01:00/02:00 UTC-Offset) noch das Vortagsdatum
+ * liefern, wodurch `appendLivePoint` den falschen Punkt ersetzen würde. */
+export function localIsoDate(now: Date = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/** EVOLVING.md CH-003/CH-005: hängt den Live-Preis als letzten Punkt an eine
+ * Tages-Schlusskurs-Serie an, damit das Chart-Ende dem daneben angezeigten
+ * Live-Preis entspricht (beobachtete PYPL-Diskrepanz: Sparkline endete am
+ * letzten Tages-Close, das Badge pollt intraday).
+ * - Live-Preis null/undefined/nicht-finit oder leere Serie → unverändert.
+ * - Spätestes Serien-Datum == heute → letzten Wert ERSETZEN (Intraday-Update
+ *   des heutigen Close, kein Duplikat-Datum).
+ * - Spätestes Datum < heute → neuen Punkt mit heutigem Datum ANHÄNGEN
+ *   (Wochenende/Feiertag: wertgleicher flacher Punkt — akzeptiert, keine
+ *   Börsenkalender-Logik, siehe EVOLVING.md § 5).
+ * - Spätestes Datum > heute (defensiv, sollte nie vorkommen) → unverändert.
+ * Mutiert die Eingabe nicht. */
+export function appendLivePoint(
+  series: Array<{ date: string; value: number }>,
+  livePrice: number | null | undefined,
+  todayIso: string
+): Array<{ date: string; value: number }> {
+  if (livePrice === null || livePrice === undefined || !Number.isFinite(livePrice)) return series;
+  if (series.length === 0) return series;
+
+  // Spätesten Punkt über das date-Feld suchen, nicht über die Array-Position
+  // (dieselbe Absicherung gegen unsortierte Serien wie computePercentChange).
+  let latestIndex = 0;
+  for (let i = 1; i < series.length; i++) {
+    if (series[i].date > series[latestIndex].date) latestIndex = i;
+  }
+
+  const latest = series[latestIndex];
+  if (latest.date > todayIso) return series;
+
+  if (latest.date === todayIso) {
+    const next = [...series];
+    next[latestIndex] = { date: latest.date, value: livePrice };
+    return next;
+  }
+
+  return [...series, { date: todayIso, value: livePrice }];
+}
+
+/** EVOLVING.md CH-003/CH-004: die zwei Tick-Werte für die minimale
+ * Start/Ende-Y-Achse des Dashboard-Sparklines. Start/Ende werden wie in
+ * computePercentChange datumsbasiert ermittelt (nicht per Array-Position).
+ * Rückgabe [] bei < 2 gültigen Punkten (Sparkline rendert dann ohnehin
+ * nichts); Dedupe auf nur [ende], wenn beide Labels identisch formatiert
+ * würden, die Serie keine Spannweite hat oder Start und Ende vertikal so
+ * nah beieinander liegen (< 25 % der Wertspannweite ≈ Label-Überlappung bei
+ * ~48px Charthöhe), dass sich die Beschriftungen überlagern würden. */
+export function computeStartEndTicks(
+  series: Array<{ date: string; value: number }>,
+  format: (value: number) => string
+): number[] {
+  const valid = series.filter((point) => Number.isFinite(point.value));
+  if (valid.length < 2) return [];
+
+  let start = valid[0];
+  let end = valid[0];
+  let min = valid[0].value;
+  let max = valid[0].value;
+  for (const point of valid) {
+    if (point.date < start.date) start = point;
+    if (point.date > end.date) end = point;
+    if (point.value < min) min = point.value;
+    if (point.value > max) max = point.value;
+  }
+
+  const span = max - min;
+  if (span === 0) return [end.value];
+  if (format(start.value) === format(end.value)) return [end.value];
+  if (Math.abs(start.value - end.value) / span < 0.25) return [end.value];
+
+  return [start.value, end.value];
+}
+
+/** EVOLVING.md CH-003: Preis-Beschriftung für die schmale Sparkline-Achse.
+ * "$"-Präfix nur bei USD (gleiche Konvention wie LivePriceBadge, das
+ * `$price.toFixed(2)` zeigt); andere Währungen zeigen den nackten Wert —
+ * für einen ISO-Suffix ist die ~46px-Achse zu schmal, und der Code steht
+ * bereits am PercentChange-/Karten-Kontext. Ab 1000 gerundet ohne
+ * Dezimalstellen, damit auch hohe Kurse (BRK.A) in die Achse passen. */
+export function formatPriceTick(value: number, currency?: string | null): string {
+  const formatted =
+    Math.abs(value) >= 1000
+      ? Math.round(value).toLocaleString("en-US")
+      : value.toFixed(2);
+  return currency === "USD" ? `$${formatted}` : formatted;
+}
+
+/** EVOLVING.md CH-003/CH-005: Anzeige-Label für einen Range-Wert aus der
+ * price-history-API ("1m" → "1M"), über die bestehende TIME_RANGE_OPTIONS-
+ * Quelle statt einer zweiten Mapping-Tabelle. Unbekannte Werte fallen auf
+ * die Großschreibung des Rohwerts zurück (defensiv, z. B. falls das Backend
+ * einmal neue Ranges liefert, bevor das Frontend sie kennt). */
+export function timeRangeLabel(range: string): string {
+  const option = TIME_RANGE_OPTIONS.find((candidate) => candidate.value === range);
+  return option ? option.label : range.toUpperCase();
+}

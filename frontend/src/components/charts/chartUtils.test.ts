@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendLivePoint,
   bucketKey,
   computePercentChange,
+  computeStartEndTicks,
   extractTooltipRows,
   filterChartLayers,
   filterSeriesByRange,
   formatPercentChange,
+  formatPriceTick,
   isPercentChangeEligibleUnit,
   layersCurrencyState,
+  localIsoDate,
   mergeLayers,
   normalizePriceSeries,
+  timeRangeLabel,
   type ChartLayer,
   type TimeRange,
 } from "./chartUtils";
@@ -526,5 +531,169 @@ describe("normalizePriceSeries (EVOLVING.md EV-062)", () => {
       { date: "2024-01-01", value: 0 },
       { date: "2024-01-03", value: 20 },
     ]);
+  });
+});
+
+describe("localIsoDate (EVOLVING.md CH-003)", () => {
+  it("formats a local date as YYYY-MM-DD with zero padding", () => {
+    expect(localIsoDate(new Date(2026, 0, 5))).toBe("2026-01-05");
+  });
+
+  it("uses the LOCAL calendar day, not UTC (no date jump after midnight in DE)", () => {
+    // 00:30 lokale Zeit — toISOString() würde hier (UTC+1/+2) noch den
+    // Vortag liefern; localIsoDate muss den lokalen Tag zurückgeben.
+    const shortlyAfterMidnight = new Date(2026, 6, 19, 0, 30);
+    expect(localIsoDate(shortlyAfterMidnight)).toBe("2026-07-19");
+  });
+});
+
+describe("appendLivePoint (EVOLVING.md CH-003/CH-005)", () => {
+  const series = [
+    { date: "2026-07-16", value: 100 },
+    { date: "2026-07-17", value: 102 },
+  ];
+
+  it("appends a new point when the latest row is older than today", () => {
+    const result = appendLivePoint(series, 105, "2026-07-18");
+    expect(result).toEqual([
+      { date: "2026-07-16", value: 100 },
+      { date: "2026-07-17", value: 102 },
+      { date: "2026-07-18", value: 105 },
+    ]);
+  });
+
+  it("replaces the latest value when its date equals today (intraday update, no duplicate date)", () => {
+    const result = appendLivePoint(series, 105, "2026-07-17");
+    expect(result).toEqual([
+      { date: "2026-07-16", value: 100 },
+      { date: "2026-07-17", value: 105 },
+    ]);
+  });
+
+  it("finds the latest row by date, not array position", () => {
+    const unsorted = [
+      { date: "2026-07-17", value: 102 },
+      { date: "2026-07-16", value: 100 },
+    ];
+    const result = appendLivePoint(unsorted, 105, "2026-07-17");
+    expect(result).toEqual([
+      { date: "2026-07-17", value: 105 },
+      { date: "2026-07-16", value: 100 },
+    ]);
+  });
+
+  it("returns the series unchanged for a null/undefined/non-finite live price", () => {
+    expect(appendLivePoint(series, null, "2026-07-18")).toBe(series);
+    expect(appendLivePoint(series, undefined, "2026-07-18")).toBe(series);
+    expect(appendLivePoint(series, NaN, "2026-07-18")).toBe(series);
+  });
+
+  it("returns an empty series unchanged", () => {
+    expect(appendLivePoint([], 105, "2026-07-18")).toEqual([]);
+  });
+
+  it("leaves the series unchanged when the latest row is (defensively) in the future", () => {
+    expect(appendLivePoint(series, 105, "2026-07-16")).toBe(series);
+  });
+
+  it("does not mutate the input series", () => {
+    const input = [{ date: "2026-07-16", value: 100 }];
+    appendLivePoint(input, 105, "2026-07-17");
+    expect(input).toEqual([{ date: "2026-07-16", value: 100 }]);
+  });
+});
+
+describe("computeStartEndTicks (EVOLVING.md CH-003/CH-004)", () => {
+  const fmt = (v: number) => v.toFixed(2);
+
+  it("returns [start, end] picked by date, not array position", () => {
+    const ticks = computeStartEndTicks(
+      [
+        { date: "2026-07-10", value: 80 },
+        { date: "2026-06-19", value: 100 },
+        { date: "2026-07-17", value: 130 },
+      ],
+      fmt
+    );
+    expect(ticks).toEqual([100, 130]);
+  });
+
+  it("returns [] for fewer than 2 valid points", () => {
+    expect(computeStartEndTicks([], fmt)).toEqual([]);
+    expect(computeStartEndTicks([{ date: "2026-07-17", value: 100 }], fmt)).toEqual([]);
+    expect(
+      computeStartEndTicks(
+        [
+          { date: "2026-07-16", value: NaN },
+          { date: "2026-07-17", value: 100 },
+        ],
+        fmt
+      )
+    ).toEqual([]);
+  });
+
+  it("dedupes to [end] for a flat series (zero span)", () => {
+    const ticks = computeStartEndTicks(
+      [
+        { date: "2026-07-16", value: 100 },
+        { date: "2026-07-17", value: 100 },
+      ],
+      fmt
+    );
+    expect(ticks).toEqual([100]);
+  });
+
+  it("dedupes to [end] when start and end format identically", () => {
+    const ticks = computeStartEndTicks(
+      [
+        { date: "2026-06-19", value: 100.001 },
+        { date: "2026-07-01", value: 90 },
+        { date: "2026-07-17", value: 100.004 },
+      ],
+      fmt
+    );
+    expect(ticks).toEqual([100.004]);
+  });
+
+  it("dedupes to [end] when start and end are vertically too close (< 25% of the span)", () => {
+    // Spannweite 100 (50..150), |start-ende| = 10 -> 10% -> Überlappung.
+    const ticks = computeStartEndTicks(
+      [
+        { date: "2026-06-19", value: 100 },
+        { date: "2026-07-01", value: 50 },
+        { date: "2026-07-10", value: 150 },
+        { date: "2026-07-17", value: 110 },
+      ],
+      fmt
+    );
+    expect(ticks).toEqual([110]);
+  });
+});
+
+describe("formatPriceTick (EVOLVING.md CH-003)", () => {
+  it("prefixes USD values with $ and two decimals below 1000", () => {
+    expect(formatPriceTick(56.789, "USD")).toBe("$56.79");
+  });
+
+  it("rounds values at or above 1000 without decimals (en-US grouping)", () => {
+    expect(formatPriceTick(712345.6, "USD")).toBe("$712,346");
+  });
+
+  it("omits the $ prefix for non-USD and unknown currencies", () => {
+    expect(formatPriceTick(56.789, "EUR")).toBe("56.79");
+    expect(formatPriceTick(56.789, null)).toBe("56.79");
+    expect(formatPriceTick(56.789, undefined)).toBe("56.79");
+  });
+});
+
+describe("timeRangeLabel (EVOLVING.md CH-003/CH-005)", () => {
+  it("maps known ranges through TIME_RANGE_OPTIONS", () => {
+    expect(timeRangeLabel("1m")).toBe("1M");
+    expect(timeRangeLabel("3m")).toBe("3M");
+    expect(timeRangeLabel("1y")).toBe("1J");
+  });
+
+  it("falls back to the uppercased raw value for unknown ranges", () => {
+    expect(timeRangeLabel("6w")).toBe("6W");
   });
 });

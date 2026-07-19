@@ -4,8 +4,9 @@ import { theme } from "../ui/theme";
 import LivePriceBadge from "../shared/LivePriceBadge";
 import Sparkline from "../charts/Sparkline";
 import PercentChangeBadge from "../charts/PercentChangeBadge";
-import { computePercentChange } from "../charts/chartUtils";
+import { appendLivePoint, computePercentChange, localIsoDate, timeRangeLabel } from "../charts/chartUtils";
 import { useFavorites } from "../../hooks/useFavoritesContext";
+import { useLivePrice } from "../../hooks/useLivePrice";
 import { getPriceHistoryBatch, type PriceHistoryBatchEntry } from "../../api/marketData";
 
 // EVOLVING.md EV-071: erste 10 Favoriten in einem Batch-Call, Rest erst
@@ -105,39 +106,14 @@ export default function DashboardFavoritesSection() {
       <div style={panelTitle}>Favoriten</div>
 
       <div style={cardGrid}>
-        {visibleFavorites.map((favorite) => {
-          const entry = batchData[favorite.symbol];
-          const rows = entry && "rows" in entry ? entry.rows : null;
-          const sparklineData = rows?.map((row) => ({ date: row.date, value: row.close })) ?? [];
-          const percentResult = rows && rows.length > 0
-            ? computePercentChange(rows.map((row) => ({ date: row.date, value: row.close })))
-            : null;
-
-          return (
-            <div key={favorite.symbol} style={favoriteCard}>
-              <div style={favoriteCardHeader}>
-                <span style={favoriteSymbol}>{favorite.symbol}</span>
-                <LivePriceBadge symbol={favorite.symbol} size="sm" />
-              </div>
-
-              {isLoadingBatch && !entry ? (
-                <div style={sparklinePlaceholder}>Lädt…</div>
-              ) : sparklineData.length >= 2 ? (
-                <Sparkline data={sparklineData} color={theme.colors.chrome} height={40} />
-              ) : (
-                <div style={sparklinePlaceholder}>–</div>
-              )}
-
-              <div style={favoriteCardFooter}>
-                {percentResult ? (
-                  <PercentChangeBadge result={percentResult} />
-                ) : (
-                  <span style={dashText}>–</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {visibleFavorites.map((favorite) => (
+          <FavoriteCard
+            key={favorite.symbol}
+            symbol={favorite.symbol}
+            entry={batchData[favorite.symbol]}
+            isLoadingBatch={isLoadingBatch}
+          />
+        ))}
       </div>
 
       {batchError ? (
@@ -151,6 +127,67 @@ export default function DashboardFavoritesSection() {
           {favorites.length - visibleCount} weitere Favoriten anzeigen
         </button>
       ) : null}
+    </div>
+  );
+}
+
+type FavoriteCardProps = {
+  symbol: string;
+  entry: PriceHistoryBatchEntry | undefined;
+  isLoadingBatch: boolean;
+};
+
+/** Eine Favoriten-Karte (EVOLVING.md CH-005). Eigene Komponente statt inline
+ * im .map(), weil der useLivePrice-Hook nicht in einer Schleife aufrufbar
+ * ist. Der Hook erzeugt KEINE zusätzlichen Requests: er wird zweiter
+ * Listener desselben priceStore-Eintrags, den das LivePriceBadge daneben
+ * ohnehin schon abonniert (geteilter 20s-Poll, in-flight-Dedupe). */
+function FavoriteCard({ symbol, entry, isLoadingBatch }: FavoriteCardProps) {
+  const { price } = useLivePrice(symbol);
+
+  const rows = entry && "rows" in entry ? entry.rows : null;
+  const baseSeries = rows?.map((row) => ({ date: row.date, value: row.close })) ?? [];
+  // CH-005: Live-Preis als letzter Chartpunkt, damit das Chart-Ende dem
+  // daneben angezeigten Live-Preis entspricht (beobachtete PYPL-Diskrepanz:
+  // die History endet am letzten Tages-Close, das Badge pollt intraday).
+  const sparklineData = appendLivePoint(baseSeries, price, localIsoDate());
+  // %-Badge rechnet auf derselben ERWEITERTEN Serie — Badge und Chart-Ende
+  // bleiben konsistent (beide inkl. Live-Preis).
+  const percentResult = sparklineData.length > 0 ? computePercentChange(sparklineData) : null;
+
+  return (
+    <div style={favoriteCard}>
+      <div style={favoriteCardHeader}>
+        <span style={favoriteSymbol}>{symbol}</span>
+        <LivePriceBadge symbol={symbol} size="sm" />
+      </div>
+
+      {isLoadingBatch && !entry ? (
+        <div style={sparklinePlaceholder}>Lädt…</div>
+      ) : sparklineData.length >= 2 ? (
+        <Sparkline
+          data={sparklineData}
+          color={theme.colors.chrome}
+          height={48}
+          showStartEndAxis
+          currency={entry && "rows" in entry ? entry.currency : null}
+        />
+      ) : (
+        <div style={sparklinePlaceholder}>–</div>
+      )}
+
+      <div style={favoriteCardFooter}>
+        {entry && "rows" in entry ? (
+          <span style={rangeLabelText}>{timeRangeLabel(entry.range)}</span>
+        ) : (
+          <span />
+        )}
+        {percentResult ? (
+          <PercentChangeBadge result={percentResult} />
+        ) : (
+          <span style={dashText}>–</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -212,11 +249,23 @@ const favoriteSymbol: React.CSSProperties = {
 
 const favoriteCardFooter: React.CSSProperties = {
   display: "flex",
-  justifyContent: "flex-end",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "8px",
+};
+
+// CH-005: TimeFrame-Herkunft der Chart-Daten ("1M") — Quelle ist das bisher
+// ungenutzte range-Feld der price-history-Response, kein Umschalter
+// (Produktentscheidung; Batch-Endpoint kann serverseitig nur 1m/3m).
+const rangeLabelText: React.CSSProperties = {
+  color: theme.colors.textMuted,
+  fontSize: "0.74rem",
+  fontWeight: 700,
+  letterSpacing: "0.04em",
 };
 
 const sparklinePlaceholder: React.CSSProperties = {
-  height: "40px",
+  height: "48px",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
