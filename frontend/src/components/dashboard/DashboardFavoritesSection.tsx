@@ -4,7 +4,7 @@ import { theme } from "../ui/theme";
 import LivePriceBadge from "../shared/LivePriceBadge";
 import Sparkline from "../charts/Sparkline";
 import PercentChangeBadge from "../charts/PercentChangeBadge";
-import { appendLivePoint, computePercentChange, localIsoDate, timeRangeLabel } from "../charts/chartUtils";
+import { appendLivePoint, computePercentChange, filterToLastDays, localIsoDate } from "../charts/chartUtils";
 import { useFavorites } from "../../hooks/useFavoritesContext";
 import { useLivePrice } from "../../hooks/useLivePrice";
 import { getPriceHistoryBatch, type PriceHistoryBatchEntry } from "../../api/marketData";
@@ -12,12 +12,19 @@ import { getPriceHistoryBatch, type PriceHistoryBatchEntry } from "../../api/mar
 // EVOLVING.md EV-071: erste 10 Favoriten in einem Batch-Call, Rest erst
 // nach "Mehr anzeigen" (Payload-/yfinance-Schonung, analog EV-070).
 const INITIAL_VISIBLE_COUNT = 10;
+// EVOLVING.md CH-007: der Batch-Endpoint kennt serverseitig nur "1m"/"3m" —
+// "1m" wird weiterhin geladen (genug Handelstage, um daraus verlässlich eine
+// Woche herauszuschneiden, auch über Feiertage hinweg), aber NUR die letzten
+// FAVORITES_DISPLAY_WINDOW_DAYS Kalendertage werden angezeigt/berechnet
+// (Chart + %-Änderung) — kein zusätzlicher Request nötig.
 const SPARKLINE_RANGE = "1m" as const;
+const FAVORITES_DISPLAY_WINDOW_DAYS = 7;
+const FAVORITES_DISPLAY_WINDOW_LABEL = "1W";
 
 type BatchState = Record<string, PriceHistoryBatchEntry>;
 
 /** Dashboard-Sektion "Favoriten" (EVOLVING.md EV-071): Symbol, Live-Kurs,
- * 1M-Sparkline, 1M-%-Veränderung. Ergänzt die bestehende Sidebar-
+ * 1W-Sparkline, 1W-%-Veränderung. Ergänzt die bestehende Sidebar-
  * Favoritenliste, ersetzt sie nicht - beide bleiben unabhängig
  * nebeneinander bestehen. */
 export default function DashboardFavoritesSection() {
@@ -147,12 +154,22 @@ function FavoriteCard({ symbol, entry, isLoadingBatch }: FavoriteCardProps) {
 
   const rows = entry && "rows" in entry ? entry.rows : null;
   const baseSeries = rows?.map((row) => ({ date: row.date, value: row.close })) ?? [];
+  // CH-007: erst auf die letzte Woche der ECHTEN Historie zuschneiden (Anker
+  // = spätestes Datum in baseSeries selbst), DANN den Live-Preis anhängen —
+  // nicht umgekehrt. Grund: der Preis-History-Cache kann gegenüber dem
+  // aktuellen Kalendertag hinterherhinken (Wochenende/Feiertag/Cache-TTL);
+  // würde zuerst der auf "heute" datierte Live-Punkt angehängt und danach
+  // auf 7 Tage zurückgeschnitten, könnte genau dieser Rückstand die
+  // gesamte echte Historie aus dem Fenster herausfiltern und nur den
+  // einzelnen Live-Punkt übriglassen (leerer Chart, "n. v."-Badge).
+  const lastWeek = filterToLastDays(baseSeries, FAVORITES_DISPLAY_WINDOW_DAYS);
   // CH-005: Live-Preis als letzter Chartpunkt, damit das Chart-Ende dem
   // daneben angezeigten Live-Preis entspricht (beobachtete PYPL-Diskrepanz:
   // die History endet am letzten Tages-Close, das Badge pollt intraday).
-  const sparklineData = appendLivePoint(baseSeries, price, localIsoDate());
-  // %-Badge rechnet auf derselben ERWEITERTEN Serie — Badge und Chart-Ende
-  // bleiben konsistent (beide inkl. Live-Preis).
+  // Wird NACH dem Zuschnitt angehängt, damit er nie herausgefiltert wird.
+  const sparklineData = appendLivePoint(lastWeek, price, localIsoDate());
+  // %-Badge rechnet auf derselben Serie — Badge und Chart-Ende bleiben
+  // konsistent (beide inkl. Live-Preis, beide 1 Woche).
   const percentResult = sparklineData.length > 0 ? computePercentChange(sparklineData) : null;
 
   return (
@@ -178,7 +195,7 @@ function FavoriteCard({ symbol, entry, isLoadingBatch }: FavoriteCardProps) {
 
       <div style={favoriteCardFooter}>
         {entry && "rows" in entry ? (
-          <span style={rangeLabelText}>{timeRangeLabel(entry.range)}</span>
+          <span style={rangeLabelText}>{FAVORITES_DISPLAY_WINDOW_LABEL}</span>
         ) : (
           <span />
         )}

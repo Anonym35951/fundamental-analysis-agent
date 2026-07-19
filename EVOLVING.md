@@ -60,11 +60,18 @@ Neue optionale Props `showStartEndAxis?: boolean`, `currency?: string | null`. W
 - Batch-`error`-Einträge hinter `"rows" in entry`-Guard → Karte zeigt „–".
 **Akzeptanz:** [x] Chart-Endpunkt == LivePriceBadge-Wert (PYPL/AAPL im Browser bestätigt, siehe § 6b) [x] „1M"-Label sichtbar [x] Fehler-Karten unverändert (Guard unangetastet) [x] Network: keine zusätzlichen current-price-Requests (per `performance.getEntriesByType` gemessen: exakt 1 Request/Symbol im 21s-Fenster).
 
+### [CH-007] Dashboard-Favoriten: Standardfenster von 1 Monat auf 1 Woche verkürzt
+**Status:** ✅ Umgesetzt (2026-07-19) · **Risiko:** Niedrig-Mittel · **Abhängigkeiten:** CH-003, CH-005
+**Auslöser (Nutzerfeedback):** 1 Monat war als Standard-Zeitraum zu groß. 1 Tag wäre bei reinen Tages-Schlusskursen kaum aussagekräftig (nur Live-Preis vs. letzter Close, keine Linie). Entschieden: **1 Woche**, kein Umschalter.
+**Änderung:** neue reine Funktion `filterToLastDays(series, days)` in `chartUtils.ts` (Anker = spätestes Datum in der Serie, analog `filterSeriesByRange`/`subtractMonths`, aber mit neuem privaten `subtractDays`). `DashboardFavoritesSection.tsx`: `FAVORITES_DISPLAY_WINDOW_DAYS = 7`, festes Label `"1W"` (ersetzt das dynamische `timeRangeLabel(entry.range)`, das damit ungenutzt war und entfernt wurde — der zugrunde liegende Batch-Fetch bleibt `SPARKLINE_RANGE = "1m"`, nur die Anzeige/Berechnung wird auf 7 Tage beschränkt, kein zusätzlicher Request).
+**Bug gefunden + behoben (im Browser, vor dem Commit):** Erste Implementierung hängte den Live-Punkt VOR dem 7-Tage-Zuschnitt an. Wenn der Preis-History-Cache gegenüber dem aktuellen Kalendertag zurückliegt (beobachtet: Cache endete 2026-07-10, Systemdatum 2026-07-20 → 10 Tage Rückstand), lag der komplette echte Verlauf außerhalb des 7-Tage-Fensters ab dem auf „heute" datierten Live-Punkt — übrig blieb ein einzelner Punkt (leerer Chart, „n. v."-Badge). Fix: Reihenfolge getauscht — **erst** `filterToLastDays(baseSeries, 7)` auf die echte Historie, **danach** `appendLivePoint(...)` anhängen, damit der Live-Punkt nie durch den Zuschnitt herausfällt.
+**Akzeptanz:** [x] Chart zeigt sichtbare Linie über die letzte Woche + Live-Preis als Endpunkt (PYPL/AAPL im Browser bestätigt) [x] „1W"-Label sichtbar [x] Funktioniert auch bei veraltetem History-Cache (Regressionstest des gefundenen Bugs) [x] 91/91 Tests grün, Build grün, Network-Dedup weiterhin 1 Request/Symbol/21s.
+
 ### [CH-006] Doku, Tests, Build, Verifikation
 **Status:** ✅ Umgesetzt (2026-07-19) · **Risiko:** Niedrig
-`npx vitest run`: 89/89 grün (70 Bestand + 19 neue). `npm run build`: grün. Commits: CH-001–002 (Teil A), CH-003–005 (Teil B), diese Statusaktualisierung.
+`npx vitest run`: 91/91 grün (70 Bestand + 21 neue). `npm run build`: grün. Commits: CH-001–002 (Teil A), CH-003–005 (Teil B), CH-007 (Wochenfenster + Bugfix), diese Statusaktualisierung.
 
-**Reihenfolge:** CH-006.1 ✓ → CH-001 ✓ → CH-002 ✓ → CH-003 ✓ → CH-004 ✓ → CH-005 ✓ → CH-006.2 ✓.
+**Reihenfolge:** CH-006.1 ✓ → CH-001 ✓ → CH-002 ✓ → CH-003 ✓ → CH-004 ✓ → CH-005 ✓ → CH-007 ✓ → CH-006.2 ✓.
 
 ## 5. Bekannte Edge-Cases (dokumentiert, bewusst nicht überbaut)
 

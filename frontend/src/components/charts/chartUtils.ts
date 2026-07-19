@@ -241,6 +241,33 @@ export function filterSeriesByRange(
   return series.filter((point) => point.date >= cutoff);
 }
 
+/** Zieht `days` Kalendertage von einem "YYYY-MM-DD"-Datum ab (naiver
+ * `Date`-Rollover ist hier unproblematisch, anders als bei subtractMonths -
+ * es gibt keine "Monatsende"-Mehrdeutigkeit bei Tagen). */
+function subtractDays(dateStr: string, days: number): string {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return localIsoDate(new Date(year, month - 1, day - days));
+}
+
+/** EVOLVING.md CH-007: schneidet die letzten `days` Kalendertage aus einer
+ * Tagesserie (Anker = neuestes Datum der Serie, nicht "heute" - selbes
+ * Prinzip wie filterSeriesByRange, funktioniert damit unabhängig davon, ob
+ * bereits ein appendLivePoint-Punkt angehängt wurde). Für die Favoriten-
+ * Sparkline auf dem Dashboard: die vorhandene 1-Monats-Serie wird auf die
+ * letzte Woche (7 Kalendertage ≈ 5 Handelstage) heruntergeschnitten, ohne
+ * einen eigenen Backend-Request zu brauchen. */
+export function filterToLastDays(
+  series: Array<{ date: string; value: number }>,
+  days: number
+): Array<{ date: string; value: number }> {
+  if (series.length === 0) return series;
+
+  const anchor = series.reduce((latest, point) => (point.date > latest ? point.date : latest), series[0].date);
+  const cutoff = subtractDays(anchor, days);
+
+  return series.filter((point) => point.date >= cutoff);
+}
+
 /** Filtert ALLE Layer eines Charts auf denselben Zeitraum mit einem
  * GEMEINSAMEN Anker (dem neuesten Datum über alle Layer hinweg), statt jede
  * Firmen-Serie an ihrem eigenen letzten Punkt zu kappen - sonst würden
@@ -463,14 +490,4 @@ export function formatPriceTick(value: number, currency?: string | null): string
       ? Math.round(value).toLocaleString("en-US")
       : value.toFixed(2);
   return currency === "USD" ? `$${formatted}` : formatted;
-}
-
-/** EVOLVING.md CH-003/CH-005: Anzeige-Label für einen Range-Wert aus der
- * price-history-API ("1m" → "1M"), über die bestehende TIME_RANGE_OPTIONS-
- * Quelle statt einer zweiten Mapping-Tabelle. Unbekannte Werte fallen auf
- * die Großschreibung des Rohwerts zurück (defensiv, z. B. falls das Backend
- * einmal neue Ranges liefert, bevor das Frontend sie kennt). */
-export function timeRangeLabel(range: string): string {
-  const option = TIME_RANGE_OPTIONS.find((candidate) => candidate.value === range);
-  return option ? option.label : range.toUpperCase();
 }

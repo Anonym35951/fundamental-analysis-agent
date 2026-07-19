@@ -7,6 +7,7 @@ import {
   extractTooltipRows,
   filterChartLayers,
   filterSeriesByRange,
+  filterToLastDays,
   formatPercentChange,
   formatPriceTick,
   isPercentChangeEligibleUnit,
@@ -14,7 +15,6 @@ import {
   localIsoDate,
   mergeLayers,
   normalizePriceSeries,
-  timeRangeLabel,
   type ChartLayer,
   type TimeRange,
 } from "./chartUtils";
@@ -686,14 +686,47 @@ describe("formatPriceTick (EVOLVING.md CH-003)", () => {
   });
 });
 
-describe("timeRangeLabel (EVOLVING.md CH-003/CH-005)", () => {
-  it("maps known ranges through TIME_RANGE_OPTIONS", () => {
-    expect(timeRangeLabel("1m")).toBe("1M");
-    expect(timeRangeLabel("3m")).toBe("3M");
-    expect(timeRangeLabel("1y")).toBe("1J");
+
+describe("filterToLastDays (EVOLVING.md CH-007)", () => {
+  it("keeps only points within the last N calendar days, anchored on the series' latest date", () => {
+    const series = [
+      { date: "2026-07-01", value: 10 },
+      { date: "2026-07-10", value: 20 },
+      { date: "2026-07-16", value: 30 },
+      { date: "2026-07-17", value: 40 },
+    ];
+
+    const result = filterToLastDays(series, 7);
+
+    expect(result).toEqual([
+      { date: "2026-07-10", value: 20 },
+      { date: "2026-07-16", value: 30 },
+      { date: "2026-07-17", value: 40 },
+    ]);
   });
 
-  it("falls back to the uppercased raw value for unknown ranges", () => {
-    expect(timeRangeLabel("6w")).toBe("6W");
+  it("anchors on the latest date by value, not array position (unsorted input)", () => {
+    const series = [
+      { date: "2026-07-01", value: 10 },
+      { date: "2026-07-17", value: 40 },
+      { date: "2026-07-10", value: 20 },
+    ];
+
+    const result = filterToLastDays(series, 7);
+
+    expect(result.map((p) => p.date).sort()).toEqual(["2026-07-10", "2026-07-17"]);
+  });
+
+  it("returns an empty series unchanged", () => {
+    expect(filterToLastDays([], 7)).toEqual([]);
+  });
+
+  it("keeps every point when the window covers the whole series", () => {
+    const series = [
+      { date: "2026-07-16", value: 1 },
+      { date: "2026-07-17", value: 2 },
+    ];
+
+    expect(filterToLastDays(series, 30)).toEqual(series);
   });
 });
