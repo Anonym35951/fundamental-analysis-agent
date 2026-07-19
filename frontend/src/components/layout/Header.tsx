@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { theme } from "../ui/theme";
 import { useLocale } from "../../i18n/useLocale";
+import { useTranslation } from "../../i18n/useTranslation";
 import type { Locale } from "../../i18n/config";
 
 type HeaderProps = {
@@ -37,6 +38,7 @@ function Header({ variant = "public" }: HeaderProps) {
   // (Tab A auf öffentlicher Seite, Tab B loggt sich ein/aus). Fix: auf
   // app:login/app:logout/storage hören statt nur einmal beim Render zu lesen.
   const [hasToken, setHasToken] = useState(() => Boolean(localStorage.getItem("access_token")));
+  const { t } = useTranslation("nav");
   useEffect(() => {
     const sync = () => setHasToken(Boolean(localStorage.getItem("access_token")));
     window.addEventListener("app:login", sync);
@@ -106,7 +108,7 @@ function Header({ variant = "public" }: HeaderProps) {
           {/* PUBLIC (logged in) */}
           {variant === "public" && hasToken && (
             <Link to="/app/dashboard" style={pillCta}>
-              Zum Dashboard
+              {t("header.dashboardCta")}
             </Link>
           )}
 
@@ -115,16 +117,16 @@ function Header({ variant = "public" }: HeaderProps) {
             <>
               {variant === "public" ? (
                 <Link to="/pricing" style={pillLinkGhost}>
-                  Preise
+                  {t("header.pricingLink")}
                 </Link>
               ) : null}
 
               <Link to="/login" style={pillLinkGhost}>
-                Login
+                {t("header.loginLink")}
               </Link>
 
               <Link to="/register?src=header" style={pillCta}>
-                Registrieren
+                {t("header.registerCta")}
               </Link>
             </>
           )}

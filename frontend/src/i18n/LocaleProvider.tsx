@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { LocaleContext, type LocaleContextValue } from "./localeContextValue";
+import { LocaleContext, type LocaleContextValue, type RuntimeDictionary } from "./localeContextValue";
 import { isSupportedLocale, type Locale } from "./config";
 import { detectInitialLocale, persistLocale } from "./detect";
-import { de, type Dictionary } from "./locales/de";
+import { de } from "./locales/de";
 import { getCurrentUser } from "../api/auth";
 
 /** EVOLVING.md § 13: Sprachwechsel ist reiner React-State → Re-Render ohne
@@ -12,7 +12,7 @@ import { getCurrentUser } from "../api/auth";
  * State-Keys einfließt (siehe Paritätstests § 16/28). */
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(detectInitialLocale);
-  const [enDictionary, setEnDictionary] = useState<Dictionary | null>(null);
+  const [enDictionary, setEnDictionary] = useState<RuntimeDictionary | null>(null);
 
   // DE ist eager im Bundle (heutiger Zustand ohnehin), EN wird erst bei
   // tatsächlicher Aktivierung nachgeladen (§ 14 Lazy-Loading-Entscheidung).
@@ -63,7 +63,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   // Bis das EN-Bundle geladen ist bleibt DE sichtbar — nie rohe Keys oder
   // ein leerer Zwischenzustand (§ 13).
   const ready = locale === "de" || enDictionary !== null;
-  const activeDictionary: Dictionary = locale === "en" && enDictionary ? enDictionary : de;
+  const activeDictionary: RuntimeDictionary = locale === "en" && enDictionary ? enDictionary : de;
 
   const value = useMemo<LocaleContextValue>(
     () => ({ locale, setLocale, ready, dictionary: activeDictionary, fallbackDictionary: de }),

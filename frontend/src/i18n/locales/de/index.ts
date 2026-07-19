@@ -7,9 +7,12 @@
  * (§ 22). Sobald ein Namespace Inhalt bekommt, zieht er in eine eigene Datei
  * um (`locales/de/<namespace>.ts`), analog zur EN-Seite. */
 
+import { common } from "./common";
+import { nav } from "./nav";
+
 export const de = {
-  common: {},
-  nav: {},
+  common,
+  nav,
   auth: {},
   landing: {},
   pricing: {},

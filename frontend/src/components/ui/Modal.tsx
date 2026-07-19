@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { theme } from "./theme";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type ModalProps = {
   isOpen: boolean;
@@ -15,6 +16,8 @@ type ModalProps = {
  * the app (history list, confirm dialogs, future modals) instead of each
  * one re-implementing entrance animation and glass surface separately. */
 export default function Modal({ isOpen, onClose, title, children, maxWidth = "560px" }: ModalProps) {
+  const { t } = useTranslation("common");
+
   useEffect(() => {
     if (!isOpen) return;
     // Verhindert Scroll-Bleed des Hintergrunds hinter dem Overlay (v.a. auf
@@ -47,7 +50,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "56
           >
             <div style={headerRow}>
               <h2 style={titleStyle}>{title}</h2>
-              <button onClick={onClose} aria-label="Schließen" style={closeButton}>
+              <button onClick={onClose} aria-label={t("modal.closeAriaLabel")} style={closeButton}>
                 <X size={18} />
               </button>
             </div>

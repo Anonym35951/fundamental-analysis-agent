@@ -30,6 +30,7 @@ import { TourStatusProvider } from "../hooks/TourStatusProvider";
 import { useTourStatus } from "../hooks/useTourStatus";
 import { theme } from "../components/ui/theme";
 import { clearAuthAndWorkspaceState } from "../api/client";
+import { useTranslation } from "../i18n/useTranslation";
 
 /** Wraps AppLayoutInner in the tour-status context so the inner component
  * can itself read isTourRunning/currentStepData (e.g. to auto-open the
@@ -47,6 +48,7 @@ function AppLayout() {
 function AppLayoutInner() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const { t } = useTranslation("nav");
   const { isTourRunning, currentStepData } = useTourStatus();
   useScrollProgress();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
@@ -210,7 +212,7 @@ function AppLayoutInner() {
           <button
             type="button"
             onClick={handleToggleSidebar}
-            aria-label={isSidebarCollapsed ? "Menü öffnen" : "Menü schließen"}
+            aria-label={isSidebarCollapsed ? t("mobile.openMenuAriaLabel") : t("mobile.closeMenuAriaLabel")}
             style={{
               position: "fixed",
               // Safe-Area-Puffer gegen die iPhone-Statusleiste/Notch

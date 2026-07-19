@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import ErrorFallback from "./ErrorFallback";
 
 type ErrorBoundaryProps = {
   children: ReactNode;
@@ -29,43 +30,7 @@ export default class ErrorBoundary extends Component<
 
   render() {
     if (this.state.error) {
-      return (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            minHeight: "60dvh",
-            padding: "48px 24px",
-            textAlign: "center",
-            gap: "16px",
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: "1.5rem" }}>
-            Etwas ist schiefgelaufen.
-          </h2>
-          <p style={{ margin: 0, opacity: 0.8, maxWidth: "480px" }}>
-            Diese Ansicht konnte nicht geladen werden. Bitte lade die Seite
-            neu. Falls das Problem weiterhin besteht, kontaktiere den
-            Support.
-          </p>
-          <button
-            onClick={this.handleReload}
-            style={{
-              padding: "10px 20px",
-              borderRadius: "10px",
-              border: "1px solid rgba(148, 163, 184, 0.4)",
-              background: "rgba(59, 130, 246, 0.15)",
-              color: "inherit",
-              cursor: "pointer",
-              fontSize: "0.95rem",
-            }}
-          >
-            Seite neu laden
-          </button>
-        </div>
-      );
+      return <ErrorFallback onReload={this.handleReload} />;
     }
 
     return this.props.children;

@@ -5,6 +5,7 @@ import { theme } from "../ui/theme";
 import Button from "../ui/Button";
 import { loadWebAnalyticsScript } from "../../lib/webAnalytics";
 import { useIsMobile } from "../../hooks/useMediaQuery";
+import { useTranslation } from "../../i18n/useTranslation";
 
 const CONSENT_KEY = "analytics_consent";
 
@@ -17,6 +18,7 @@ const CONSENT_KEY = "analytics_consent";
 function CookieConsentBanner() {
   const [isVisible, setIsVisible] = useState(false);
   const isMobile = useIsMobile();
+  const { t } = useTranslation("common");
 
   useEffect(() => {
     const consent = localStorage.getItem(CONSENT_KEY);
@@ -92,20 +94,19 @@ function CookieConsentBanner() {
           >
             {isMobile ? (
               <>
-                <strong style={{ color: theme.colors.textPrimary }}>Cloudflare Web Analytics</strong>{" "}
-                — cookielos, keine PII.{" "}
+                <strong style={{ color: theme.colors.textPrimary }}>{t("cookieConsent.brandStrong")}</strong>{" "}
+                {t("cookieConsent.mobileSuffix")}{" "}
                 <Link to="/legal/cookies" style={{ color: theme.colors.chrome, fontWeight: 700 }}>
-                  Details
+                  {t("cookieConsent.mobileLinkLabel")}
                 </Link>
               </>
             ) : (
               <>
-                Wir nutzen{" "}
-                <strong style={{ color: theme.colors.textPrimary }}>Cloudflare Web Analytics</strong> —
-                datenschutzfreundlich, ohne Cookies und ohne personenbezogene
-                Daten. Details in unseren{" "}
+                {t("cookieConsent.desktopPrefix")}{" "}
+                <strong style={{ color: theme.colors.textPrimary }}>{t("cookieConsent.brandStrong")}</strong>{" "}
+                {t("cookieConsent.desktopMiddle")}{" "}
                 <Link to="/legal/cookies" style={{ color: theme.colors.chrome, fontWeight: 700 }}>
-                  Cookie-Hinweisen
+                  {t("cookieConsent.desktopLinkLabel")}
                 </Link>
                 .
               </>
@@ -118,14 +119,14 @@ function CookieConsentBanner() {
               onClick={handleReject}
               style={isMobile ? { padding: "7px 14px", fontSize: "0.8rem" } : undefined}
             >
-              Ablehnen
+              {t("cookieConsent.rejectButton")}
             </Button>
             <Button
               variant="cta"
               onClick={handleAccept}
               style={isMobile ? { padding: "7px 14px", fontSize: "0.8rem" } : undefined}
             >
-              Zustimmen
+              {t("cookieConsent.acceptButton")}
             </Button>
           </div>
         </motion.div>

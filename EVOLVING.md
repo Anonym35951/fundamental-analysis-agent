@@ -1333,10 +1333,11 @@ Spätere eigene Tracks (nicht v1): Legal-Übersetzung, Admin-i18n, E-Mail-i18n.
 **Responsive:** mobil sichtbar, Touch-Target ≥ 40 px. **Akzeptanz:** [ ] Landing/Login umschaltbar ohne Reload.
 
 ### [I18N-007] Common UI + Navigation migrieren
-**Status:** Offen · **Phase:** 3 · **Priorität:** Hoch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-002
-**Betroffene Dateien:** AppSidebar.tsx (Nav-Array + Mobile + Account-Menü), Header.tsx, Footer.tsx, CookieConsentBanner.tsx, Toast.tsx/Modal.tsx (aria), ErrorBoundary.tsx.
+**Status:** ✅ Umgesetzt (2026-07-19) · **Phase:** 3 · **Priorität:** Hoch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-002
+**Betroffene Dateien:** AppSidebar.tsx (Nav-Array + Mobile + Account-Menü), Header.tsx, Footer.tsx, CookieConsentBanner.tsx, Toast.tsx/Modal.tsx (aria), ErrorBoundary.tsx (ausgelagert nach ErrorFallback.tsx wegen Hook-in-Klassenkomponente), AppLayout.tsx (Mobile-Hamburger-aria-labels).
 **Schritte:** 1. Strings verbatim nach `de/nav.ts`/`de/common.ts` 2. `t()`-Aufrufe 3. EN-Übersetzung 4. DE-Screenshot-Diff.
-**Responsive:** Sidebar + Mobile-Nav mit längeren EN-Texten prüfen. **Akzeptanz:** [ ] DE pixelidentisch [ ] EN ohne Overflow.
+**Responsive:** Sidebar + Mobile-Nav mit längeren EN-Texten geprüft (Mobile-375px, Cookie-Banner nutzt eigene kürzere Mobile-Textvariante). **Akzeptanz:** [x] DE pixelidentisch (Header/Footer/Cookie-Banner Screenshot-Vergleich) [x] EN ohne Overflow (Desktop+Mobile geprüft).
+**Verifiziert (2026-07-19):** `tsc -b`/ESLint/vitest (148 Tests)/`npm run build` grün. Browser: Landing-Header DE→EN→DE Wechsel ohne Reload, Footer-Links, Cookie-Banner (Desktop+Mobile-Variante) beide Sprachen, kein Konsolenfehler durch die i18n-Änderungen (ein vorbestehender, unabhängiger framer-motion-Style-Warning in `AuthLayout.tsx` — nicht in dieser Phase berührt). AppSidebar/AppLayout-Hamburger nur per Code-Review + Typecheck verifiziert (kein authentifizierter Testlauf verfügbar, gleiche Einschränkung wie I18N-005).
 
 ### [I18N-008] Auth-Seiten
 **Status:** Offen · **Phase:** 4 · **Priorität:** Hoch · **Aufwand:** M · **Risiko:** Niedrig · **Abhängigkeiten:** I18N-007

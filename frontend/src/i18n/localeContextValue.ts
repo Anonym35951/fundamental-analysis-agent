@@ -1,6 +1,15 @@
 import { createContext } from "react";
 import type { Locale } from "./config";
 import type { Dictionary } from "./locales/de";
+import type { MatchShape } from "./types";
+
+// Laufzeit-Dictionaries sind gegen die DE-Struktur typisiert, aber mit
+// generischen `string`-Blattwerten (MatchShape) statt DE-Literalen, weil
+// dieselbe Variable je nach aktiver Locale entweder das DE- oder das
+// EN-Dictionary enthält. Die literal-typisierte `Dictionary` (typeof de)
+// wird nur für die Compile-Zeit-Key-Prüfung in useTranslation gebraucht,
+// nicht für den tatsächlichen Laufzeit-Wert hier.
+export type RuntimeDictionary = MatchShape<Dictionary>;
 
 export type LocaleContextValue = {
   locale: Locale;
@@ -8,10 +17,10 @@ export type LocaleContextValue = {
   /** true sobald das Dictionary der aktiven Locale geladen ist — für "de"
    * immer sofort true (eager), für "en" erst nach dem Lazy-Import. */
   ready: boolean;
-  dictionary: Dictionary;
+  dictionary: RuntimeDictionary;
   /** DE dient als Fallback für einzelne fehlende EN-Keys (§ 15) — bei
    * vollständig typisierten Dictionaries im Normalfall nie gebraucht. */
-  fallbackDictionary: Dictionary;
+  fallbackDictionary: RuntimeDictionary;
 };
 
 // Eigene Datei ohne Komponenten-Export, damit weder LocaleProvider.tsx
