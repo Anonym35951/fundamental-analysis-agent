@@ -12,7 +12,7 @@ import {
 import { theme, useChartTokens } from "../ui/theme";
 import { useIsMobile } from "../../hooks/useMediaQuery";
 import { formatCompactNumber, layersCurrencyState, mergeLayers, type BucketMode, type ChartLayer } from "./chartUtils";
-import ChartTooltip from "./ChartTooltip";
+import ChartTooltip, { ChartTooltipCard } from "./ChartTooltip";
 
 export type { ChartLayer } from "./chartUtils";
 
@@ -75,6 +75,15 @@ export default function MultiLayerChart({ layers, height = 320, bucketMode = "da
   const [zoom, setZoom] = useState<{ left: number; right: number }>({ left: 1, right: 1 });
   const dragState = useRef<DragState | null>(null);
 
+  // EVOLVING.md CH-002: Ohne Interaktion zeigt ein Overlay die Tooltip-Karte
+  // mit dem NEUESTEN Datenpunkt (Werte sichtbar ohne Hover — v.a. mobil, wo
+  // man bisher präzise tippen musste). recharts' eigenes defaultIndex kehrt
+  // nach mouseleave nie zum Default zurück (combineTooltipInteractionState:
+  // defaultIndex-Zweig läuft nur vor der ersten Interaktion) und touchend
+  // dispatcht gar nichts (klebender Tooltip) — daher dieser kontrollierte
+  // Zustand statt defaultIndex/active-Props.
+  const [isInteracting, setIsInteracting] = useState(false);
+
   const handleDragMove = useCallback((event: MouseEvent) => {
     const drag = dragState.current;
     if (!drag) return;
@@ -135,7 +144,15 @@ export default function MultiLayerChart({ layers, height = 320, bucketMode = "da
           Originalwährungen: {currencyState.mixed.join(", ")} – Werte nicht direkt vergleichbar
         </div>
       ) : null}
-      <div style={{ position: "relative", width: "100%", height }}>
+      <div
+        style={{ position: "relative", width: "100%", height }}
+        // Touch bewusst am Wrapper statt am LineChart: recharts dispatcht bei
+        // touchend nichts (der Hover-Zustand bliebe kleben) — touchend hier
+        // stellt das Default-Overlay auf jedem Gerät wieder her (CH-002).
+        onTouchStart={() => setIsInteracting(true)}
+        onTouchEnd={() => setIsInteracting(false)}
+        onTouchCancel={() => setIsInteracting(false)}
+      >
       {/* Zieh-Griffe sind reine Mouse-Event-Handler (mousemove/mouseup) ohne
        * Touch-Äquivalent — auf Touch-Geräten überlagerten sie bisher nur
        * nutzlos den Chart-Rand, ohne je auf einen Tap/Drag zu reagieren
@@ -162,7 +179,12 @@ export default function MultiLayerChart({ layers, height = 320, bucketMode = "da
       ) : null}
 
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={merged} margin={{ top: 8, right: 16, bottom: 8, left: 0 }}>
+        <LineChart
+          data={merged}
+          margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
+          onMouseMove={() => setIsInteracting(true)}
+          onMouseLeave={() => setIsInteracting(false)}
+        >
           <CartesianGrid stroke={chartTokens.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="label"
@@ -202,6 +224,10 @@ export default function MultiLayerChart({ layers, height = 320, bucketMode = "da
              Cause des "nur 1-2 Firmen im Tooltip"-Bugs); ChartTooltip
              iteriert stattdessen über `layers` und zeigt "–" für Lücken. */}
           <Tooltip
+            // active={false} unterdrückt den recharts-Tooltip im Ruhezustand
+            // vollständig (auch den nach Touch festklebenden) — das Overlay
+            // unten übernimmt dann; undefined = normales Hover-Verhalten.
+            active={isInteracting ? undefined : false}
             content={(props) => (
               <ChartTooltip {...props} layers={layers} showCurrencyPerRow={"mixed" in currencyState} />
             )}
@@ -223,6 +249,33 @@ export default function MultiLayerChart({ layers, height = 320, bucketMode = "da
           ))}
         </LineChart>
       </ResponsiveContainer>
+
+      {/* EVOLVING.md CH-002: Default-Anzeige des NEUESTEN Datenpunkts (Datum
+        * + Werte aller Serien) in identischer Tooltip-Optik, solange nicht
+        * gehovert/getippt wird. Rechts verankert (entspricht recharts'
+        * eigener defaultIndex-Platzierung am letzten Punkt) — kann dadurch
+        * nie über den rechten Rand hinauslaufen. pointerEvents:none hält
+        * Chart und Achsen-Drag-Handles (zIndex 5) voll bedienbar. */}
+      {!isInteracting && merged.length > 0 ? (
+        <div
+          style={{
+            position: "absolute",
+            right: 16 + (hasRightAxis ? axisWidth : 0),
+            top: "50%",
+            transform: "translateY(-50%)",
+            pointerEvents: "none",
+            zIndex: 4,
+            maxHeight: "90%",
+            overflow: "hidden",
+          }}
+        >
+          <ChartTooltipCard
+            row={merged[merged.length - 1]}
+            layers={layers}
+            showCurrencyPerRow={"mixed" in currencyState}
+          />
+        </div>
+      ) : null}
       </div>
     </div>
   );

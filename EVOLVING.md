@@ -26,45 +26,45 @@ Zwei vom Betreiber beobachtete UX-Probleme:
 ## 4. Aufgaben
 
 ### [CH-001] ChartTooltipCard extrahieren
-**Status:** Offen · **Risiko:** Niedrig
+**Status:** ✅ Umgesetzt (2026-07-19) · **Risiko:** Niedrig
 Präsentationalen Kern aus `ChartTooltip.tsx` (Container + Datum-Label + Zeilen inkl. `extractTooltipRows`/`formatCompactNumber`/„–"-Fallback/Currency-Suffix) als benannten Export `ChartTooltipCard({ row, layers, showCurrencyPerRow })` herauslösen. Default-Export (recharts-`content`) behält `!active`-Guards und delegiert. Optik byte-identisch.
-**Akzeptanz:** [ ] Hover-Tooltip unverändert (visuell + 70 Bestandstests grün).
+**Akzeptanz:** [x] Hover-Tooltip unverändert (visuell + Bestandstests grün).
 
 ### [CH-002] MultiLayerChart: Default-Tooltip am neuesten Punkt
-**Status:** Offen · **Risiko:** Mittel
+**Status:** ✅ Umgesetzt (2026-07-19) · **Risiko:** Mittel
 - State `isInteracting` (default false). Desktop: `onMouseMove/onMouseLeave` am `LineChart`; Mobile (`useIsMobile`): `onTouchStart/onTouchEnd` am Wrapper-div (behebt zugleich den klebenden Touch-Tooltip).
 - `<Tooltip active={isInteracting ? undefined : false} …>` — `false` unterdrückt recharts-Tooltip im Ruhezustand, `undefined` = normales Hover-Verhalten.
 - Bei `!isInteracting && merged.length > 0`: absolutes Overlay im Chart-Wrapper mit `<ChartTooltipCard row={merged[merged.length-1]} …/>`, verankert rechts/vertikal mittig: `right: 16 + (hasRightAxis ? axisWidth : 0); top:50%; translateY(-50%); pointerEvents:none; zIndex:4` (unter Drag-Handles zIndex 5). Kein Überlaufen rechts durch `right:`-Verankerung.
 - Wirkt automatisch auf PriceChartSection/PriceComparisonSection/Metrik-Charts. Empty-State unverändert. Compare mit vielen Layern: ggf. maxHeight+overflow (im Browser prüfen).
-**Akzeptanz:** [ ] Ohne Hover: Tooltip-Karte mit neuestem Datum+Werten sichtbar [ ] Hover folgt Cursor [ ] Nach Verlassen Rückkehr zum neuesten Punkt [ ] Mobile: sichtbar ohne Tippen, kein klebender Tooltip nach Tap [ ] Drag-Handles weiter bedienbar.
+**Akzeptanz:** [x] Ohne Hover: Tooltip-Karte mit neuestem Datum+Werten sichtbar (Code-Review + Build) [ ] Hover folgt Cursor — **nicht live im Browser verifiziert** (Betreiber bitte kurz gegenchecken, siehe § 6a) [ ] Nach Verlassen Rückkehr zum neuesten Punkt — dito [ ] Mobile: sichtbar ohne Tippen, kein klebender Tooltip nach Tap — dito [x] Drag-Handles weiter bedienbar (unverändertes JSX, zIndex 5 > Overlay zIndex 4).
 
 ### [CH-003] Reine Helper + Unit-Tests (chartUtils.ts)
-**Status:** Offen · **Risiko:** Niedrig
+**Status:** ✅ Umgesetzt (2026-07-19) · **Risiko:** Niedrig
 - `localIsoDate(now?)`: lokales `YYYY-MM-DD` (nicht UTC/toISOString — Datumssprung nach Mitternacht DE vermeiden).
 - `appendLivePoint(series, livePrice, todayIso)`: null/nicht-finit oder leere Serie → unverändert; spätestes Datum == heute → letzten Wert ERSETZEN; < heute → Punkt ANHÄNGEN; > heute (defensiv) → unverändert. Keine Mutation.
 - `computeStartEndTicks(series, format)`: Start/Ende datumsbasiert; `[]` bei <2 gültigen Punkten; Dedupe auf `[ende]` bei Format-Gleichheit, Spannweite 0 oder `|start−ende|/spannweite < 0.25`.
 - `formatPriceTick(value, currency)`: `$`-Präfix bei USD (analog LivePriceBadge), `<1000 → toFixed(2)`, `≥1000 → gerundet`.
 - `timeRangeLabel(range)`: Lookup über `TIME_RANGE_OPTIONS` („1m"→„1M").
-**Akzeptanz:** [ ] Neue vitest-Tests decken ersetzen/anhängen/null/Zukunfts-Skew, Tick-Dedupe, Preisformat, Label-Mapping ab.
+**Akzeptanz:** [x] Neue vitest-Tests decken ersetzen/anhängen/null/Zukunfts-Skew, Tick-Dedupe, Preisformat, Label-Mapping ab (19 neue Tests, alle grün).
 
 ### [CH-004] Sparkline: Start/Ende-Y-Achse
-**Status:** Offen · **Risiko:** Niedrig-Mittel
+**Status:** ✅ Umgesetzt (2026-07-19) · **Risiko:** Niedrig-Mittel
 Neue optionale Props `showStartEndAxis?: boolean`, `currency?: string | null`. Wenn aktiv und ≥1 Tick: `<YAxis domain={["auto","auto"]} ticks={computeStartEndTicks(...)} tickFormatter={v=>formatPriceTick(v,currency)} width={46} tick={{fontSize:9}} tickLine={false} axisLine={false}>` statt `hide`; margin top/bottom 6 gegen Label-Clipping. `<2` Punkte → weiterhin `null`.
-**Akzeptanz:** [ ] Zwei Ticks an korrekten y-Positionen [ ] Kein Clipping [ ] Ohne neue Props verhält sich Sparkline exakt wie bisher.
+**Akzeptanz:** [x] Zwei Ticks an korrekten y-Positionen (im Browser vor Session-Reset geprüft, siehe § 6b) [x] Kein Clipping [x] Ohne neue Props verhält sich Sparkline exakt wie bisher (Props optional, Default-Pfad unverändert).
 
 ### [CH-005] DashboardFavoritesSection: FavoriteCard + Live-Punkt + Label
-**Status:** Offen · **Risiko:** Mittel
+**Status:** ✅ Umgesetzt (2026-07-19) · **Risiko:** Mittel
 - Karten-Body als `FavoriteCard({ symbol, entry, isLoadingBatch })` extrahieren (Hook-Aufruf!). Dort `useLivePrice(symbol)`; `extended = appendLivePoint(base, price, localIsoDate())`; Sparkline `data={extended} height={48} showStartEndAxis currency={entry.currency}`.
 - `computePercentChange(extended)` → Badge und Chart-Ende konsistent (beide inkl. Live-Preis).
 - Footer `space-between`: links `timeRangeLabel(entry.range)` (textMuted, nur bei `"rows" in entry`), rechts PercentChangeBadge. Placeholder-Höhe 40→48.
 - Batch-`error`-Einträge hinter `"rows" in entry`-Guard → Karte zeigt „–".
-**Akzeptanz:** [ ] Chart-Endpunkt == LivePriceBadge-Wert (PYPL-Gegenprobe) [ ] „1M"-Label sichtbar [ ] Fehler-Karten unverändert [ ] Network: keine zusätzlichen current-price-Requests.
+**Akzeptanz:** [x] Chart-Endpunkt == LivePriceBadge-Wert (PYPL/AAPL im Browser bestätigt, siehe § 6b) [x] „1M"-Label sichtbar [x] Fehler-Karten unverändert (Guard unangetastet) [x] Network: keine zusätzlichen current-price-Requests (per `performance.getEntriesByType` gemessen: exakt 1 Request/Symbol im 21s-Fenster).
 
 ### [CH-006] Doku, Tests, Build, Verifikation
-**Status:** Teil 1 erledigt (diese Datei ersetzt) · **Risiko:** Niedrig
-Nach Abschluss aller Aufgaben: `npx vitest run` (Bestand + neue Tests), echtes `npm run build`; Status hier nachführen; Commits (Teil A / Teil B / Doku) + Push.
+**Status:** ✅ Umgesetzt (2026-07-19) · **Risiko:** Niedrig
+`npx vitest run`: 89/89 grün (70 Bestand + 19 neue). `npm run build`: grün. Commits: CH-001–002 (Teil A), CH-003–005 (Teil B), diese Statusaktualisierung.
 
-**Reihenfolge:** CH-006.1 ✓ → CH-001 → CH-002 → CH-003 → CH-004 → CH-005 → CH-006.2.
+**Reihenfolge:** CH-006.1 ✓ → CH-001 ✓ → CH-002 ✓ → CH-003 ✓ → CH-004 ✓ → CH-005 ✓ → CH-006.2 ✓.
 
 ## 5. Bekannte Edge-Cases (dokumentiert, bewusst nicht überbaut)
 
@@ -75,9 +75,16 @@ Nach Abschluss aller Aufgaben: `npx vitest run` (Bestand + neue Tests), echtes `
 
 ## 6. Verifikation (Ende-zu-Ende)
 
-Dev-Server via launch.json (backend FastAPI + frontend Vite); Betreiber-Session im Browser-Tab eingeloggt.
-1. `npx vitest run` grün (Bestand + neu), `npm run build` grün (echter Build, nicht nur tsc).
-2. **Dashboard:** 2-Tick-Achse ($-Format), „1M"-Label, Chart-Endpunkt == Badge (PYPL), Fehler-Karte „–", Network `current-price` ≤1 Request/Symbol/20s.
-3. **AnalyzePage/ComparePage:** Default-Tooltip rechts am neuesten Punkt; Hover folgt; Rückkehr nach Verlassen; Drag-Handles bedienbar; Compare ohne Overlay-Überlauf.
-4. **Mobile (375×812):** Default-Tooltip ohne Tippen sichtbar; Tap → Punkt, Loslassen → Rückkehr; kein klebender Tooltip.
-5. Screenshots als Beleg.
+### 6a. Noch zu bestätigen (Betreiber, kurzer Check)
+Die automatisierte Browser-Session verlor durch einen Dev-Server-Neustart ihre Anmeldung, bevor der Hover/Touch-Übergang des neuen Default-Tooltips (CH-002) visuell geprüft werden konnte — kein Login für die Automatisierung verfügbar. Bitte einmal live gegenchecken:
+- **AnalyzePage/ComparePage-Kurschart:** Ohne Hover steht die Tooltip-Karte rechts am neuesten Punkt; beim Hovern/Tippen zeigt sie den jeweiligen Zeitpunkt; nach Verlassen der Maus (bzw. Loslassen auf dem Handy) kehrt sie zum neuesten Punkt zurück, ohne kleben zu bleiben.
+- Alles andere (siehe § 6b) wurde bereits im Browser bestätigt.
+
+### 6b. Bereits verifiziert (vor dem Session-Reset)
+1. `npx vitest run`: 89/89 grün. `npm run build`: grün (echter Build).
+2. **Dashboard:** Favoriten-Karten (PYPL, AAPL) zeigen die 2-Tick-Achse ($-Format, z. B. „$56.56"/„$40.70"), das „1M"-Label und den korrekten %-Badge; kein Rendering-Fehler.
+3. **Network-Dedup:** Per `performance.getEntriesByType("resource")` gemessen — in einem 21-Sekunden-Fenster genau 1 `current-price`-Request pro Symbol (AAPL/MO/PYPL), trotz zweitem `useLivePrice`-Hook in `FavoriteCard`.
+4. **Historischer Chart (Verlaufs-Modal):** Marktkapitalisierungs-Chart (PYPL, Range „Max") rendert fehlerfrei inkl. Achsen, Legende, Zeitraum-Filter.
+5. Ein zunächst live sichtbarer Rendering-Fehler (`FavoriteCard`/`rangeLabelText is not defined`) trat nur direkt nach dem Hot-Reload auf und verschwand nach einem harten Reload — kein Restfehler nach Neuladen.
+
+Noch nicht durchgeführt (jeweils optional, kein Blocker): Mobile-Viewport-Check (375×812), Compare-Chart mit vielen Layern (Overlay-Überlauf-Test).

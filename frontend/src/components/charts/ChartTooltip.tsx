@@ -18,19 +18,17 @@ type Props = TooltipContentProps<ValueType, NameType> & {
   showCurrencyPerRow?: boolean;
 };
 
-/** Ersetzt Rechart's Standard-Tooltip (der nur Serien mit definiertem Wert
- * an der gehoverten X-Position auflistet - Root Cause des "nur 1-2 Firmen
- * im Tooltip"-Bugs, siehe EVOLVING.md Abschnitt 5.3/6 P5). Zusammen mit dem
- * Perioden-Bucketing aus EV-030 sind die meisten Zeilen jetzt zwar bereits
- * vollständig besetzt, aber nicht alle (kurze Firmenhistorie, fehlende
- * Meldung für ein Jahr) - dieser Tooltip zeigt für solche Fälle explizit
- * "–" statt die Firma stillschweigend wegzulassen. */
-export default function ChartTooltip({ active, payload, layers, showCurrencyPerRow }: Props) {
-  if (!active || !payload || payload.length === 0) return null;
+type CardProps = {
+  row: Record<string, string | number>;
+  layers: ChartLayer[];
+  showCurrencyPerRow?: boolean;
+};
 
-  const row = payload[0].payload as Record<string, string | number> | undefined;
-  if (!row) return null;
-
+/** Präsentationaler Kern des Tooltips, unabhängig vom recharts-Lebenszyklus
+ * (EVOLVING.md CH-001): wird sowohl vom Hover-Tooltip unten als auch vom
+ * Default-Overlay in MultiLayerChart (CH-002, "neuester Punkt ohne Hover")
+ * gerendert — dadurch sind beide Zustände garantiert optisch identisch. */
+export function ChartTooltipCard({ row, layers, showCurrencyPerRow }: CardProps) {
   const rows = extractTooltipRows(row, layers);
 
   return (
@@ -53,6 +51,22 @@ export default function ChartTooltip({ active, payload, layers, showCurrencyPerR
       ))}
     </div>
   );
+}
+
+/** Ersetzt Rechart's Standard-Tooltip (der nur Serien mit definiertem Wert
+ * an der gehoverten X-Position auflistet - Root Cause des "nur 1-2 Firmen
+ * im Tooltip"-Bugs, siehe frühere EVOLVING.md Abschnitt 5.3/6 P5). Zusammen
+ * mit dem Perioden-Bucketing aus EV-030 sind die meisten Zeilen jetzt zwar
+ * bereits vollständig besetzt, aber nicht alle (kurze Firmenhistorie,
+ * fehlende Meldung für ein Jahr) - dieser Tooltip zeigt für solche Fälle
+ * explizit "–" statt die Firma stillschweigend wegzulassen. */
+export default function ChartTooltip({ active, payload, layers, showCurrencyPerRow }: Props) {
+  if (!active || !payload || payload.length === 0) return null;
+
+  const row = payload[0].payload as Record<string, string | number> | undefined;
+  if (!row) return null;
+
+  return <ChartTooltipCard row={row} layers={layers} showCurrencyPerRow={showCurrencyPerRow} />;
 }
 
 const containerStyle: React.CSSProperties = {
