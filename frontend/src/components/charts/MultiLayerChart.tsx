@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
+  Bar,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -11,7 +12,7 @@ import {
 } from "recharts";
 import { theme, useChartTokens } from "../ui/theme";
 import { useIsMobile } from "../../hooks/useMediaQuery";
-import { formatCompactNumber, layersCurrencyState, mergeLayers, type BucketMode, type ChartLayer } from "./chartUtils";
+import { formatCompactNumber, layersCurrencyState, mergeLayers, type BucketMode, type ChartLayer, type ChartType } from "./chartUtils";
 import ChartTooltip, { ChartTooltipCard } from "./ChartTooltip";
 
 export type { ChartLayer } from "./chartUtils";
@@ -24,19 +25,39 @@ type Props = {
    * bisheriges Verhalten) ist für Einzelfirmen-Charts korrekt; Compare-
    * Charts geben je nach Annual/Quarterly-Auswahl "year"/"quarter" durch. */
   bucketMode?: BucketMode;
+  /** EVOLVING.md CHART-003: reine Render-Konfiguration - "line" (Default,
+   * unverändertes bisheriges Verhalten) oder "bar". Ändert keine Daten,
+   * keine Berechnung, keinen Zeitraum, keine Währung - beide Modi lesen
+   * dieselbe `merged`-Row über denselben `dataKey`. Aufrufer dürfen "bar"
+   * nur setzen, wenn `supportedChartTypes` (chartUtils.ts) es erlaubt. */
+  chartType?: ChartType;
 };
 
 /** Data-driven [min, max] for one axis's layers, compressed/stretched by
  * `zoom` around its center — zoom > 1 narrows the visible range (zoom in),
  * zoom < 1 widens it (zoom out). Mirrors dragging a price axis in
- * TradingView: pulling it apart stretches the scale instead of panning. */
-function computeDomain(layers: ChartLayer[], axis: "left" | "right", zoom: number): [number, number] {
+ * TradingView: pulling it apart stretches the scale instead of panning.
+ * `includeZero` (EVOLVING.md CHART-003) forces 0 into the domain — required
+ * for the bar chart's baseline (unstretched bars must start at 0, otherwise
+ * their height would misrepresent the value, and negative values like a
+ * loss-making year need a visible zero line to render below). Line mode
+ * never passes `includeZero`, so its domain math is unchanged. */
+function computeDomain(
+  layers: ChartLayer[],
+  axis: "left" | "right",
+  zoom: number,
+  includeZero = false
+): [number, number] {
   const values = layers.filter((layer) => layer.axis === axis).flatMap((layer) => layer.data.map((p) => p.value));
 
   if (values.length === 0) return [0, 1];
 
-  const min = Math.min(...values);
-  const rawMax = Math.max(...values);
+  let min = Math.min(...values);
+  let rawMax = Math.max(...values);
+  if (includeZero) {
+    min = Math.min(min, 0);
+    rawMax = Math.max(rawMax, 0);
+  }
   const max = rawMax === min ? rawMax + 1 : rawMax;
   const center = (min + max) / 2;
   const halfRange = (max - min) / 2 / zoom;
@@ -57,11 +78,25 @@ type DragState = { axis: "left" | "right"; startY: number; startZoom: number };
  * Each axis has a draggable handle (left edge / right edge) so a user can
  * stretch or compress that axis's scale by hand, TradingView-style, instead
  * of being stuck with whatever range the data happens to span. */
-export default function MultiLayerChart({ layers, height = 320, bucketMode = "date" }: Props) {
+export default function MultiLayerChart({ layers, height = 320, bucketMode = "date", chartType = "line" }: Props) {
   const chartTokens = useChartTokens();
   const isMobile = useIsMobile();
   const merged = useMemo(() => mergeLayers(layers, bucketMode), [layers, bucketMode]);
   const hasRightAxis = layers.some((layer) => layer.axis === "right");
+  const isBar = chartType === "bar";
+  // EVOLVING.md CHART-003: dieselbe Konvention wie StackedCards.tsx/
+  // AnimatedNumber.tsx - Säulen-Animation nur, wenn der Nutzer keine
+  // reduzierte Bewegung eingestellt hat.
+  const prefersReducedMotion = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+  }, []);
+  // EVOLVING.md CHART-007: je mehr gruppierte Säulen pro Bucket (bis zu 4
+  // Firmen, CHART-006) und je schmaler der Viewport, desto enger müssen die
+  // einzelnen Balken sein, damit z. B. Quarterly-Daten mit 4 Firmen nicht
+  // horizontal überlaufen. Zwei-stufige Verschmälerung statt einer
+  // kontinuierlichen Formel - einfach nachvollziehbar.
+  const barMaxSize = isMobile ? (layers.length > 2 ? 14 : 24) : layers.length > 2 ? 28 : 40;
   // EVOLVING.md EV-023: einheitliche Währung -> dezente Unterzeile (einzige
   // sichtbare Änderung im Standardfall); gemischte Originalwährungen ->
   // Hinweis-Badge + Currency-Code je Tooltip-Zeile; keine bekannte Währung
@@ -132,8 +167,14 @@ export default function MultiLayerChart({ layers, height = 320, bucketMode = "da
     return <div style={emptyState}>Noch keine Kennzahl als Layer hinzugefügt.</div>;
   }
 
-  const leftDomain = computeDomain(layers, "left", zoom.left);
-  const rightDomain = computeDomain(layers, "right", zoom.right);
+  // EVOLVING.md CHART-003: im Bar-Modus wird die Nulllinie erzwungen
+  // (includeZero) und der Achsen-Drag-Zoom deaktiviert - ein verschobener
+  // Nullpunkt würde Säulenhöhen visuell verfälschen. Zoom fest auf 1, die
+  // per Drag im Linien-Modus gesetzten Zoom-Werte bleiben im State erhalten
+  // (rein optische Präferenz, keine Daten) und wirken wieder, sobald zurück
+  // auf "line" gewechselt wird.
+  const leftDomain = computeDomain(layers, "left", isBar ? 1 : zoom.left, isBar);
+  const rightDomain = computeDomain(layers, "right", isBar ? 1 : zoom.right, isBar);
 
   return (
     <div style={{ position: "relative", width: "100%" }}>
@@ -158,8 +199,9 @@ export default function MultiLayerChart({ layers, height = 320, bucketMode = "da
        * nutzlos den Chart-Rand, ohne je auf einen Tap/Drag zu reagieren
        * (RESPONSIVE.md R-P1-6). Touch-Zoom nachzurüsten wäre ein größerer,
        * eigenständiger Eingriff; bis dahin werden sie auf Mobile ausgeblendet
-       * statt eine funktionslose Fläche zu zeigen. */}
-      {!isMobile ? (
+       * statt eine funktionslose Fläche zu zeigen. Im Bar-Modus (CHART-003)
+       * ebenfalls ausgeblendet - die Nulllinie ist dort fest, kein Zoom. */}
+      {!isMobile && !isBar ? (
         <div
           onMouseDown={startDrag("left")}
           onDoubleClick={() => resetZoom("left")}
@@ -168,7 +210,7 @@ export default function MultiLayerChart({ layers, height = 320, bucketMode = "da
           style={axisHandle("left")}
         />
       ) : null}
-      {!isMobile && hasRightAxis ? (
+      {!isMobile && !isBar && hasRightAxis ? (
         <div
           onMouseDown={startDrag("right")}
           onDoubleClick={() => resetZoom("right")}
@@ -179,11 +221,17 @@ export default function MultiLayerChart({ layers, height = 320, bucketMode = "da
       ) : null}
 
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart
+        <ComposedChart
           data={merged}
           margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
           onMouseMove={() => setIsInteracting(true)}
           onMouseLeave={() => setIsInteracting(false)}
+          // EVOLVING.md CHART-007: schmalerer Abstand zwischen Buckets auf
+          // Mobile lässt mehr Platz für die Balken selbst (barMaxSize) statt
+          // für Leerraum - wirkt nur im Bar-Modus sichtbar (Line hat keine
+          // Kategorie-Balken), ist aber unabhängig von chartType gesetzt, da
+          // Recharts die Prop bei LineChart-Serien ignoriert.
+          barCategoryGap={isMobile ? "12%" : "20%"}
         >
           <CartesianGrid stroke={chartTokens.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis
@@ -233,21 +281,43 @@ export default function MultiLayerChart({ layers, height = 320, bucketMode = "da
             )}
           />
           <Legend wrapperStyle={{ fontSize: "0.8rem" }} />
-          {layers.map((layer) => (
-            <Line
-              key={layer.id}
-              yAxisId={layer.axis}
-              type="monotone"
-              dataKey={layer.id}
-              name={layer.label}
-              stroke={layer.color}
-              strokeWidth={2}
-              dot={false}
-              connectNulls
-              isAnimationActive={false}
-            />
-          ))}
-        </LineChart>
+          {layers.map((layer) =>
+            isBar ? (
+              // EVOLVING.md CHART-003: liest denselben `merged`-Row über
+              // denselben dataKey/yAxisId wie die Line unten - reine
+              // Render-Alternative desselben Datensatzes, keine zweite
+              // Transformation. maxBarSize hält Säulen bei wenigen
+              // Datenpunkten (z. B. 3 Jahre) schlank statt Chart-breit.
+              <Bar
+                key={layer.id}
+                yAxisId={layer.axis}
+                dataKey={layer.id}
+                name={layer.label}
+                fill={layer.color}
+                radius={[3, 3, 0, 0]}
+                maxBarSize={barMaxSize}
+                // EVOLVING.md CHART-007: auf Mobile keine Animation, auch
+                // ohne prefers-reduced-motion - viele gruppierte Balken
+                // gleichzeitig einzublenden ist auf schwächeren Geräten
+                // spürbar ruckelig.
+                isAnimationActive={!prefersReducedMotion && !isMobile}
+              />
+            ) : (
+              <Line
+                key={layer.id}
+                yAxisId={layer.axis}
+                type="monotone"
+                dataKey={layer.id}
+                name={layer.label}
+                stroke={layer.color}
+                strokeWidth={2}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+              />
+            )
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
 
       {/* EVOLVING.md CH-002: Default-Anzeige des NEUESTEN Datenpunkts (Datum

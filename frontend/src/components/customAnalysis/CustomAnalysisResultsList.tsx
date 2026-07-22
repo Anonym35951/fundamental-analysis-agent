@@ -3,8 +3,16 @@ import { Card, theme } from "../ui";
 import CrvTargetPanel from "../metrics/CrvTargetPanel";
 import MultiLayerChart from "../charts/MultiLayerChart";
 import TimeRangeFilter from "../charts/TimeRangeFilter";
+import ChartTypeSelector from "../charts/ChartTypeSelector";
 import PercentChangeBadge from "../charts/PercentChangeBadge";
-import { computePercentChange, filterSeriesByRange, isPercentChangeEligibleUnit, type TimeRange } from "../charts/chartUtils";
+import {
+  computePercentChange,
+  filterSeriesByRange,
+  isPercentChangeEligibleUnit,
+  supportedChartTypes,
+  type ChartType,
+  type TimeRange,
+} from "../charts/chartUtils";
 import ComparePivotTable from "../compare/ComparePivotTable";
 import { getCompanyColor, mapCompanyComplexMetrics, mapCompanyMetricsToLayers } from "../../compare/mapping";
 import { useLivePrice } from "../../hooks/useLivePrice";
@@ -32,6 +40,11 @@ export default function CustomAnalysisResultsList({ catalog, result }: Props) {
   // Zeitraum je Chart-Sektion, Schlüssel = layer.id (EVOLVING.md EV-041,
   // D7: React-State pro Chart, keine URL-Persistenz).
   const [timeRanges, setTimeRanges] = useState<Record<string, TimeRange>>({});
+  // EVOLVING.md CHART-005: analog timeRanges - Chart-Darstellung je Chart-
+  // Sektion, nur React-State, keine Persistenz (Betreiberentscheidung
+  // "nur temporär"). Default "line" fehlt hier bewusst nicht im State,
+  // sondern als Fallback beim Lesen (`?? "line"`unten).
+  const [chartTypes, setChartTypes] = useState<Record<string, ChartType>>({});
 
   const layers = useMemo<CompareLayer[]>(
     () =>
@@ -78,17 +91,38 @@ export default function CustomAnalysisResultsList({ catalog, result }: Props) {
         const filteredData = filterSeriesByRange(layer.data ?? [], range);
         // EVOLVING.md EV-023/EV-051: dieselbe Bedingung für Currency-Label
         // und %-Badge - Ratio-/Margen-Charts bekommen keins von beidem.
-        const isEligibleUnit = isPercentChangeEligibleUnit(getMetricConfig(layer.metricKey)?.unit);
+        const unit = getMetricConfig(layer.metricKey)?.unit;
+        const isEligibleUnit = isPercentChangeEligibleUnit(unit);
+        // EVOLVING.md CHART-005: Eligibility-Hinweis für supportedChartTypes,
+        // NICHT das bucketMode der eigentlichen Chart-Zusammenführung (die
+        // bleibt unverändert "date" - ein einzelnes Firmen-Layer hat kein
+        // Mehrfirmen-Fiskaljahres-Alignment-Problem, siehe mergeLayers/
+        // EV-030). "year" signalisiert hier nur "diskrete periodische
+        // Fundamentaldaten, keine quasi-stetige Kursreihe".
+        const chartTypeOptions = supportedChartTypes({
+          unit,
+          bucketMode: "year",
+          companyCount: 1,
+          seriesLength: filteredData.length,
+        });
+        const chartType = chartTypes[layer.id] ?? "line";
 
         return (
           <section key={layer.id} style={chartSection}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px", marginBottom: "10px" }}>
               <div style={{ ...chartSectionEyebrow, marginBottom: 0 }}>{layer.label}</div>
-              <TimeRangeFilter
-                value={range}
-                onChange={(next) => setTimeRanges((prev) => ({ ...prev, [layer.id]: next }))}
-                options={FUNDAMENTAL_RANGE_OPTIONS}
-              />
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <TimeRangeFilter
+                  value={range}
+                  onChange={(next) => setTimeRanges((prev) => ({ ...prev, [layer.id]: next }))}
+                  options={FUNDAMENTAL_RANGE_OPTIONS}
+                />
+                <ChartTypeSelector
+                  value={chartType}
+                  onChange={(next) => setChartTypes((prev) => ({ ...prev, [layer.id]: next }))}
+                  options={chartTypeOptions}
+                />
+              </div>
             </div>
             {isEligibleUnit ? (
               <div style={percentBadgeRowStyle}>
@@ -110,6 +144,7 @@ export default function CustomAnalysisResultsList({ catalog, result }: Props) {
                   },
                 ]}
                 height={300}
+                chartType={chartType}
               />
             ) : (
               <div style={emptyRangeStyle}>Für diesen Zeitraum liegen zu wenige Datenpunkte vor – Zeitraum vergrößern.</div>

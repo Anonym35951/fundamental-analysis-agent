@@ -491,3 +491,49 @@ export function formatPriceTick(value: number, currency?: string | null): string
       : value.toFixed(2);
   return currency === "USD" ? `$${formatted}` : formatted;
 }
+
+/** EVOLVING.md CHART-002: wie ein Chart seine Daten rendert - reine
+ * Visualisierungsschicht auf demselben `mergeLayers`-Datensatz (siehe
+ * "Erweiterbare Chart-Darstellungen" in EVOLVING.md). Bewusst ein
+ * erweiterbarer String-Union statt eines Booleans (`isBarChart`), damit ein
+ * späterer dritter/vierter Typ (z. B. "area") keine bestehenden Call-Sites
+ * mit einem neuen Boolean-Feld bricht. */
+export type ChartType = "line" | "bar";
+
+export const CHART_TYPE_LABELS: Record<ChartType, string> = {
+  line: "Linie",
+  bar: "Säulen",
+};
+
+/** Eingaben, die entscheiden, ob ein Chart überhaupt eine Säulendarstellung
+ * anbieten darf (EVOLVING.md CHART-002, Abschnitt 4/6-7/20 des Chart-Plans).
+ * Zentrale Definition statt verstreuter `if metric === ...`-Abfragen in
+ * einzelnen Seiten. */
+export type ChartTypeEligibilityContext = {
+  /** `MetricUnit` aus config/metricsConfig.ts, lose typisiert, damit
+   * chartUtils keine Abhängigkeit auf den Metrik-Katalog braucht. */
+  unit: string | undefined;
+  bucketMode: BucketMode;
+  /** Anzahl der Firmen/Layer, die in diesem Chart gemeinsam dargestellt
+   * würden (1 bei Einzelanalyse). */
+  companyCount: number;
+  seriesLength: number;
+};
+
+/** Phase-1-Regel (EVOLVING.md, Betreiberentscheidung): Säulen nur für
+ * diskrete periodische Flow-Kennzahlen (unit "currency" - Umsatz, EBITDA,
+ * EBIT, Nettoergebnis, FCF, operativer Cashflow ...), nur bei
+ * jahres-/quartalsweise gebucketen Charts (`bucketMode !== "date"` -
+ * Kurscharts mit ihren quasi-stetigen Tagesdaten bleiben ausgeschlossen),
+ * und nur bis zu 4 gleichzeitig dargestellten Firmen (mehr Firmen ×
+ * gruppierte Säulen wird auf Mobile schnell unlesbar - testweise von 3 auf
+ * 4 angehoben, siehe EVOLVING.md CHART-006-Nachtrag). Ratio-/Margen-/
+ * Wachstums-Kennzahlen (%) sind bewusst als Phase-2-Kandidat
+ * zurückgestellt (brauchen eine korrekte Zero-Baseline für negative Werte,
+ * noch nicht umgesetzt). */
+export function supportedChartTypes(ctx: ChartTypeEligibilityContext): ChartType[] {
+  const isColumnEligible =
+    ctx.unit === "currency" && ctx.bucketMode !== "date" && ctx.companyCount <= 4 && ctx.seriesLength >= 1;
+
+  return isColumnEligible ? ["line", "bar"] : ["line"];
+}

@@ -95,3 +95,126 @@ Die automatisierte Browser-Session verlor durch einen Dev-Server-Neustart ihre A
 5. Ein zunächst live sichtbarer Rendering-Fehler (`FavoriteCard`/`rangeLabelText is not defined`) trat nur direkt nach dem Hot-Reload auf und verschwand nach einem harten Reload — kein Restfehler nach Neuladen.
 
 Noch nicht durchgeführt (jeweils optional, kein Blocker): Mobile-Viewport-Check (375×812), Compare-Chart mit vielen Layern (Overlay-Überlauf-Test).
+
+---
+
+# Erweiterbare Chart-Darstellungen – Linie & Säulen
+
+Stand: 2026-07-22 (Plan genehmigt durch den Betreiber). Rein **additive Visualisierungsschicht** auf
+dem bestehenden `MultiLayerChart` – **keine** Änderung an Daten, Berechnung, Zeitraum, Währung oder API.
+Vollständige Fundstellen/Details in der Plandatei
+`~/.claude/plans/aufgabe-umschaltbare-chart-darstellunge-agile-hamster.md`.
+
+## 1. Ziel und Hintergrund
+Nutzer sollen bei fachlich geeigneten Charts (diskrete jährliche/quartalsweise Flow-Kennzahlen) pro
+Chart zwischen **Linie** und **Säulen** umschalten können. Default bleibt Linie; identische Daten,
+nur andere Darstellung – Umsatz-/EBITDA-/FCF-Entwicklung wird als Säule schneller erfassbar.
+
+## 2. Nicht verhandelbare Anforderungen
+Line == Bar (exakt dieselbe `merged`-Row / `dataKey`); der Wechsel ändert keine Berechnung, keinen
+Zeitraum, keine Währung, keine %-Änderung, keine Analyseergebnisse; er löst **keinen** neuen
+API-Request aus (reiner Render-State); bestehende Charts bleiben unverändert; Default Linie; Säulen
+nur wo fachlich/visuell sinnvoll; Mobile-Performance unverändert (eine Chart-Instanz).
+
+## 3. Bestehende Chart-Architektur (verifiziert)
+`recharts 3.8.1` (einzige Library; kann Line+Bar via `ComposedChart` – keine neue Library nötig).
+Zentrale `components/charts/MultiLayerChart.tsx`: `<LineChart>` + N `<Line>`-Layer, eigener
+`ChartTooltip`/`ChartTooltipCard`, Default-Tooltip-Overlay (CH-002), zwei optionale Y-Achsen mit
+Drag-Zoom. Datenvertrag `ChartLayer`/`mergeLayers(layers, bucketMode)` in `chartUtils.ts`.
+Annual/Quarterly/TTM fließen bereits über `bucketMode` (`ComparePage.tsx:416`; **TTM delegiert
+backend-seitig auf den Annual-Pfad** → chart-identisch zu Annual). **Kein i18n-Framework** (Texte hart
+deutsch). %-Änderung/Währung/Badge werden **außerhalb** des Charts berechnet → durch den Wechsel
+unberührt. **Kein Chart-Export** (kein toPng/html2canvas). Tests: `vitest` (`chartUtils.test.ts`).
+`prefers-reduced-motion`-Muster vorhanden (`src/index.css`).
+
+## 4./5. Chart-Inventur & Eignungsmatrix
+| # | Chart / Verwender | Kennzahltyp | X-Achse | Säulen? | Klasse |
+|---|---|---|---|---|---|
+| 1 | Fundamental-Metrik, 1 Firma (`CustomAnalysisResultsList`) | Flow/Ratio/% | Jahr/Quartal | **Ja (Flow)** | A |
+| 2 | Fundamental-Metrik, N Firmen gruppiert (`ComparePage`) | Flow/Ratio/% | Jahr/Quartal | **Ja, ≤4 Firmen (Flow)** | A/D |
+| 3 | Kurschart 1 Firma (`PriceChartSection`) | Aktienkurs | Tage | Nein | C |
+| 4 | Kursvergleich normalisiert (`PriceComparisonSection`) | Kurs %-normiert | Tage | Nein | C |
+| 5 | Chart-Baukasten Multi-Layer/Dual-Axis (`ChartLayerBuilder`) | gemischt | Datum | Nein | C |
+| 6 | Dashboard-Favoriten-Sparkline (`Sparkline`) | Tageskurse | Tage | Nein | C |
+| 7 | Admin „Analysen nach Modus" (`AdminDashboardPage`) | Zähler | Kategorie | bereits BarChart, n/a | — |
+
+**A** Säulen sehr sinnvoll (#1, #2 nur `unit==="currency"`). **B** optional %/Margen/Wachstum
+(bewusst **Phase 2**, braucht Zero-Baseline-Sonderfall). **C** nur Linie (#3–#6, kein Selector).
+**D** #2 ab 5 Firmen → Selector aus / Linie erzwungen.
+
+## 6.–7. Kategorien & Annual/Quarterly/TTM
+Phase 1 nur Flow (`unit==="currency"`: Umsatz, EBIT, EBITDA, Nettoergebnis, FCF, operativer CF …).
+Annual/TTM: wenige Balken, ideal. Quarterly: `maxBarSize`/`barCategoryGap` begrenzen, X-Labels
+ausdünnen, **keine** Datenpunkte entfernen. Negative Werte (Net Income, FCF, EBIT) korrekt unter der
+**Nulllinie** (Y-Domain schließt im Bar-Modus 0 ein).
+
+## 8. Zielarchitektur
+`type ChartType = "line" | "bar"` in `chartUtils.ts` (erweiterbar auf area/stackedColumn; **kein
+Boolean** `isBarChart`). `MultiLayerChart` bekommt Prop `chartType` (Default `"line"`); `<LineChart>` →
+`<ComposedChart>`, pro Layer `<Line>` (heutiges JSX) **oder** `<Bar dataKey={layer.id} …>` – **gleiche
+`merged`-Row, gleicher `dataKey`, gleiche Achsen/Tooltip → Datenparität by construction, eine
+Instanz, kein versteckter Chart**. Bar-Modus: Y-Domain schließt 0 ein, Achsen-Drag-Zoom deaktiviert
+(sonst visuelle Manipulation), `isAnimationActive` nur ohne reduced-motion. Zentraler
+Eligibility-Helper `isColumnEligible({unit, bucketMode, companyCount, seriesLength})` (keine
+verstreuten `if metric===`). State pro Chart in der Owner-Komponente (wie `timeRanges`), **keine
+Persistenz**.
+
+## 9. Selector-UX
+Dezentes **Dropdown** (Variante A) oben rechts neben `TimeRangeFilter`. Interne IDs `line`/`bar`,
+Labels „Darstellung / Linie / Säulen" an einer Stelle (i18n-ready ohne Framework). A11y:
+`aria-haspopup="listbox"`, `aria-expanded`, `aria-label="Chart-Darstellung ändern"`, `role=option` +
+`aria-selected`, Keyboard, Touch ≥40px. Rendert `null` bei nur einer Option.
+
+## 10.–19. Seiten / Kompatibilität
+AnalyzePage (`CustomAnalysisResultsList`): Selector nur bei Flow-Charts. ComparePage: gruppierte
+Säulen ≤4 Firmen, ab 5 erzwungene Linie/kein Selector; gemeinsames Tooltip-Verhalten (iteriert über
+`layers`, „–" bei Lücken) bleibt. Dashboard-Sparkline: kein Selector. Tooltip/Currency/Zeitraum/%
+liegen außerhalb des Charts → unberührt. Responsive: `maxBarSize`/Label-Ausdünnung, keine
+Drag-Handles im Bar-Modus.
+
+## 20. Offene Produktentscheidungen (entschieden)
+Default Linie: **ja**. Persistenz: **nur temporär**. Compare-Säulen: **bis 4 Firmen** (testweise am
+2026-07-22 von 3 auf 4 angehoben, per Betreiber-Feedback nach dem CHART-006-Test). Umfang Phase 1:
+**nur Flow**. (Phase-2-Ausbau %/Margen/Wachstum offen zurückgestellt.)
+
+## 21. Aufgaben (für Sonnet 5, kleine sichere Schritte)
+- **[CHART-001]** EVOLVING.md-Abschnitt angelegt. ✅ (2026-07-22)
+- **[CHART-002]** `chartUtils.ts`: `ChartType` + `supportedChartTypes` + vitest-Matrix (7 neue Tests). ✅ (2026-07-22)
+- **[CHART-003]** `MultiLayerChart`: `LineChart`→`ComposedChart`, `chartType`-Prop, `<Bar>`, Zero-Baseline, Drag-Zoom im Bar-Modus aus, reduced-motion. ✅ (2026-07-22)
+- **[CHART-004]** `ChartTypeSelector.tsx` (dezentes Dropdown, a11y). ✅ (2026-07-22)
+- **[CHART-005]** `CustomAnalysisResultsList` verdrahten (Einzelfirma, Flow). ✅ (2026-07-22) – im Browser verifiziert (PYPL: Umsatz, EBIT, Free Cashflow inkl. negativer Werte).
+- **[CHART-006]** `ComparePage` verdrahten (gruppierte Säulen, ursprünglich ≤3, auf Betreiberwunsch nach Live-Test auf **≤4 Firmen** angehoben, ab 5 Linie erzwingen). ✅ (2026-07-22) – im Browser mit 3/4/5 Firmen verifiziert.
+- **[CHART-007]** Responsive/Mobile-Feinschliff (`barMaxSize`/`barCategoryGap` responsiv nach Viewport UND Firmenanzahl, keine Bar-Animation auf Mobile). ✅ (2026-07-22) – 375×812 & 768×1024 verifiziert, kein horizontales Scrollen (`scrollWidth`-Check), Annual + Quarterly (dicht und dünn besetzt).
+- **[CHART-008]** Datenparitäts-/Regressions-/E2E-Verifikation. ✅ (2026-07-22) – siehe Nachweise unten.
+- **Reihenfolge:** 001 → 002 → 003 → 004 → 005 → 006 → 007 → 008 (alle umgesetzt).
+- **Rollback:** `chartType`-Prop entfernen / Default `"line"` = exakt alter Zustand (kein Datenpfad geändert).
+
+### CHART-008 Nachweise
+- **Tests:** `npm run test` → 97/97 grün (inkl. der 7 neuen `supportedChartTypes`-Tests aus CHART-002). `npm run build` → grüner echter Build (nicht nur `tsc --noEmit`).
+- **Datenparität (Browser, real statt gemockt):** AnalyzePage „Historischer Umsatz" (PYPL) – identischer Tooltip-Wert (32 Mrd. am 2025-06-30) und identische %-Badge (+302,4 %) in Linie und Säulen. „Historischer Free Cashflow" – negativer Wert (-527 Mio. am 2018-03-31) in beiden Modi identisch, Nulllinie in Säulen korrekt. Architektonisch garantiert: `<Line>` und `<Bar>` lesen denselben `merged`-Array über denselben `dataKey`, `chartType` fließt nirgends in `mergeLayers`/die Datentransformation ein.
+- **Keine Zusatz-Requests:** Network-Panel vor/nach mehrfachem Linie↔Säulen-Wechsel zeigt identische Request-Liste (0 neue Einträge).
+- **Regression unberührter Komponenten:** `PriceChartSection` (Kurschart, AnalyzePage) und `PriceComparisonSection` (Kursvergleich) unverändert, da nie `chartType` übergeben. Dashboard-Sparkline (`Sparkline.tsx`) im Browser bestätigt unverändert (eigenständige Komponente, nutzt `MultiLayerChart` nicht). `ChartLayerBuilder.tsx` verifiziert als toter Code (kein Import/Rendering irgendwo im Repo, wie zuvor bereits `TimeSeriesChart.tsx`) – keine Laufzeit-Regression möglich.
+- **Dark/Light-Theme:** Säulen-Chart im Hell-Modus im Browser geprüft (ComparePage, „Historischer Umsatz", Quarterly) – Farben/Kontrast/Legende korrekt, keine Regression.
+- **Mobile/Tablet:** siehe CHART-007-Nachweise oben (375×812, 768×1024, kein horizontales Scrollen, 4-Firmen-Gruppierung lesbar).
+- **Compare-Grenzfall:** 4 Firmen → Säulen möglich; 5. Firma hinzugefügt → Selector verschwindet sofort, Chart fällt automatisch auf Linie zurück; danach wieder auf 4 reduziert → Säulen-Auswahl kehrt automatisch zurück (reine Ableitung aus State + Eligibility, kein Sonderfall-Code).
+
+## 22. Nicht angefasst (bewusst)
+`PriceChartSection`, `PriceComparisonSection`, `Sparkline`, `ChartLayerBuilder`, `AdminDashboardPage`,
+`TimeSeriesChart` (toter Code) – sie rufen `MultiLayerChart` ohne `chartType` → Default `"line"` →
+byte-identisches Verhalten.
+
+## 23. Nicht zweifelsfrei verifizierbar / offen
+Exakte recharts-3.8-Bar-Props (`maxBarSize`, negatives Verhalten in `ComposedChart` mit
+`allowDataOverflow`) – im Browser gegenzuprüfen. Compare 3 Firmen × Quarterly auf 375px – real messen,
+ggf. mobil auf Linie zurückstufen. Phase-2 (%/Margen/Wachstum) zurückgestellt.
+
+## 24. Nachtrag: Tooltip-Deckkraft erhöht (2026-07-22, Betreiber-Feedback)
+Der Chart-Tooltip (`ChartTooltip.tsx` – sowohl der Hover-Tooltip als auch das CH-002-Default-Overlay
+am neuesten Punkt, beide teilen `containerStyle`) nutzte bislang `theme.colors.panel`
+(~72–78 % Deckkraft, dieselbe halbtransparente „Glas"-Fläche wie andere Chart-Flächen) – Linien/Balken
+dahinter blieben dadurch sichtbar und beeinträchtigten die Lesbarkeit der Werte. Hintergrund auf
+`theme.colors.bgDeepAlt` (nahezu deckend: `#08080a` dunkel / `#fafafa` hell, derselbe Token wie beim
+`ChartTypeSelector`-Popover und `SymbolSuggestField`) plus `theme.glass.elevated.shadow` für optische
+Abhebung umgestellt. Betrifft **nur** den Chart-Tooltip, nicht `theme.colors.panel` global (Cards,
+Modals etc. unverändert). Im Browser in Dark- und Light-Mode verifiziert (computed style: `rgb(8,8,10)`
+dunkel / `rgb(250,250,250)` hell, korrekt themenreaktiv).

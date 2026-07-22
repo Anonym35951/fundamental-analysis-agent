@@ -6,9 +6,18 @@ import FrequencyToggle from "../../components/analysis/FrequencyToggle";
 import MetricCatalogPicker from "../../components/customAnalysis/MetricCatalogPicker";
 import MultiLayerChart, { type ChartLayer } from "../../components/charts/MultiLayerChart";
 import TimeRangeFilter from "../../components/charts/TimeRangeFilter";
+import ChartTypeSelector from "../../components/charts/ChartTypeSelector";
 import PercentChangeBadge from "../../components/charts/PercentChangeBadge";
 import PriceComparisonSection from "../../components/charts/PriceComparisonSection";
-import { computePercentChange, filterChartLayers, isPercentChangeEligibleUnit, mergeLayers, type TimeRange } from "../../components/charts/chartUtils";
+import {
+  computePercentChange,
+  filterChartLayers,
+  isPercentChangeEligibleUnit,
+  mergeLayers,
+  supportedChartTypes,
+  type ChartType,
+  type TimeRange,
+} from "../../components/charts/chartUtils";
 import ComparePivotTable from "../../components/compare/ComparePivotTable";
 import SymbolSuggestField from "../../components/compare/SymbolSuggestField";
 import { useCompare } from "../../hooks/useCompareContext";
@@ -67,6 +76,9 @@ function ComparePage() {
   // sondern beim Lesen (`timeRanges[key] ?? "max"`) angewendet, damit ein
   // fehlender Eintrag exakt dem Ist-Zustand vor EV-041 entspricht.
   const [timeRanges, setTimeRanges] = useState<Record<string, TimeRange>>({});
+  // EVOLVING.md CHART-006: analog timeRanges - Chart-Darstellung je Metrik-
+  // Chart, Schlüssel = metricKey, nur React-State, keine Persistenz.
+  const [chartTypes, setChartTypes] = useState<Record<string, ChartType>>({});
 
   const handlePriceUpdate = useCallback((symbol: string, result: LivePriceResult) => {
     setLivePrices((prev) => {
@@ -415,21 +427,46 @@ function ComparePage() {
             const range = timeRanges[group.metricKey] ?? "max";
             const bucketMode = frequency === "quarterly" ? "quarter" : "year";
             const filteredLayers = filterChartLayers(group.layers, range);
-            const hasEnoughData = mergeLayers(filteredLayers, bucketMode).length >= 2;
+            const mergedRows = mergeLayers(filteredLayers, bucketMode);
+            const hasEnoughData = mergedRows.length >= 2;
             // EVOLVING.md EV-051: dieselbe Bedingung wie die Currency-
             // Kennzeichnung aus EV-023 - Ratio-/Margen-Charts bekommen nie
             // eine %-Badge.
             const showPercentBadges = isPercentChangeEligibleUnit(getMetricConfig(group.metricKey)?.unit);
+            // EVOLVING.md CHART-006: Säulen nur bis 4 Firmen gleichzeitig
+            // (Betreiberentscheidung, testweise von 3 auf 4 angehoben) -
+            // supportedChartTypes fällt darüber automatisch auf ["line"]
+            // zurück, wodurch ChartTypeSelector sich selbst ausblendet
+            // (options.length < 2).
+            const chartTypeOptions = supportedChartTypes({
+              unit: getMetricConfig(group.metricKey)?.unit,
+              bucketMode,
+              companyCount: filteredLayers.length,
+              seriesLength: mergedRows.length,
+            });
+            const requestedChartType = chartTypes[group.metricKey] ?? "line";
+            // Fängt den Fall ab, dass eine 4. Firma hinzukommt, während
+            // dieser Chart bereits auf "bar" stand - Säulen werden dann
+            // sofort erzwungen zurück auf Linie, nicht erst beim nächsten
+            // manuellen Wechsel.
+            const chartType = chartTypeOptions.includes(requestedChartType) ? requestedChartType : "line";
 
             return (
               <section key={group.metricKey} style={resultsSection}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px", marginBottom: "18px" }}>
                   <div style={{ ...sectionEyebrow, marginBottom: 0 }}>{group.label}</div>
-                  <TimeRangeFilter
-                    value={range}
-                    onChange={(next) => setTimeRanges((prev) => ({ ...prev, [group.metricKey]: next }))}
-                    options={FUNDAMENTAL_RANGE_OPTIONS}
-                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                    <TimeRangeFilter
+                      value={range}
+                      onChange={(next) => setTimeRanges((prev) => ({ ...prev, [group.metricKey]: next }))}
+                      options={FUNDAMENTAL_RANGE_OPTIONS}
+                    />
+                    <ChartTypeSelector
+                      value={chartType}
+                      onChange={(next) => setChartTypes((prev) => ({ ...prev, [group.metricKey]: next }))}
+                      options={chartTypeOptions}
+                    />
+                  </div>
                 </div>
                 {showPercentBadges ? (
                   <div style={percentBadgeRowStyle}>
@@ -439,7 +476,7 @@ function ComparePage() {
                   </div>
                 ) : null}
                 {hasEnoughData ? (
-                  <MultiLayerChart layers={filteredLayers} height={300} bucketMode={bucketMode} />
+                  <MultiLayerChart layers={filteredLayers} height={300} bucketMode={bucketMode} chartType={chartType} />
                 ) : (
                   <div style={emptyRangeStyle}>Für diesen Zeitraum liegen zu wenige Datenpunkte vor – Zeitraum vergrößern.</div>
                 )}

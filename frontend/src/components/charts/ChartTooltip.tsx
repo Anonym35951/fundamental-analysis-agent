@@ -72,9 +72,15 @@ export default function ChartTooltip({ active, payload, layers, showCurrencyPerR
 const containerStyle: React.CSSProperties = {
   margin: 0,
   padding: "10px 12px",
-  background: theme.colors.panel,
+  // Bewusst `bgDeepAlt` (nahezu deckend) statt des sonst für Chart-Flächen
+  // üblichen `theme.colors.panel` (~72-78% Deckkraft) - der Tooltip schwebt
+  // über bewegten Linien/Balken, die bei der durchscheinenden Panel-Farbe
+  // die Werte schlechter lesbar machten. Derselbe Token wie bei anderen
+  // schwebenden Overlays (ChartTypeSelector-Popover, SymbolSuggestField).
+  background: theme.colors.bgDeepAlt,
   border: `1px solid ${theme.colors.border}`,
   borderRadius: theme.radius.sm,
+  boxShadow: theme.glass.elevated.shadow,
   color: theme.colors.textPrimary,
   fontSize: "0.8rem",
   minWidth: "160px",

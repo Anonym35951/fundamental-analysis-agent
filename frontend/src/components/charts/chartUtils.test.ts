@@ -15,6 +15,7 @@ import {
   localIsoDate,
   mergeLayers,
   normalizePriceSeries,
+  supportedChartTypes,
   type ChartLayer,
   type TimeRange,
 } from "./chartUtils";
@@ -728,5 +729,51 @@ describe("filterToLastDays (EVOLVING.md CH-007)", () => {
     ];
 
     expect(filterToLastDays(series, 30)).toEqual(series);
+  });
+});
+
+describe("supportedChartTypes (EVOLVING.md CHART-002)", () => {
+  it("offers line+bar for a currency metric bucketed by year with up to 4 companies", () => {
+    for (const companyCount of [1, 2, 3, 4]) {
+      expect(
+        supportedChartTypes({ unit: "currency", bucketMode: "year", companyCount, seriesLength: 3 })
+      ).toEqual(["line", "bar"]);
+    }
+  });
+
+  it("offers line+bar for a currency metric bucketed by quarter", () => {
+    expect(
+      supportedChartTypes({ unit: "currency", bucketMode: "quarter", companyCount: 1, seriesLength: 4 })
+    ).toEqual(["line", "bar"]);
+  });
+
+  it("falls back to line-only once more than 4 companies are shown", () => {
+    expect(
+      supportedChartTypes({ unit: "currency", bucketMode: "year", companyCount: 5, seriesLength: 3 })
+    ).toEqual(["line"]);
+  });
+
+  it("falls back to line-only for date-bucketed (quasi-continuous) series, e.g. stock price charts", () => {
+    expect(
+      supportedChartTypes({ unit: "currency", bucketMode: "date", companyCount: 1, seriesLength: 250 })
+    ).toEqual(["line"]);
+  });
+
+  it("falls back to line-only for non-currency units (ratio, percent) — Phase 2 candidate", () => {
+    expect(
+      supportedChartTypes({ unit: "ratio", bucketMode: "year", companyCount: 1, seriesLength: 3 })
+    ).toEqual(["line"]);
+    expect(
+      supportedChartTypes({ unit: "%", bucketMode: "year", companyCount: 1, seriesLength: 3 })
+    ).toEqual(["line"]);
+    expect(
+      supportedChartTypes({ unit: undefined, bucketMode: "year", companyCount: 1, seriesLength: 3 })
+    ).toEqual(["line"]);
+  });
+
+  it("falls back to line-only for an empty series", () => {
+    expect(
+      supportedChartTypes({ unit: "currency", bucketMode: "year", companyCount: 1, seriesLength: 0 })
+    ).toEqual(["line"]);
   });
 });
