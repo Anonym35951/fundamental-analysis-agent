@@ -2,7 +2,7 @@
 
 Alle nennenswerten Änderungen an ComAnalysis werden hier festgehalten.
 
-## [1.0.01] - 2026-07-22
+## [1.0.1] - 2026-07-22
 
 ### Hinzugefügt
 - **Umschaltbare Chart-Darstellung (Linie ↔ Säulen)** für fachlich geeignete Charts (Flow-Kennzahlen:
