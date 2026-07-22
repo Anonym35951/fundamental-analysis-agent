@@ -218,3 +218,54 @@ dahinter blieben dadurch sichtbar und beeinträchtigten die Lesbarkeit der Werte
 Abhebung umgestellt. Betrifft **nur** den Chart-Tooltip, nicht `theme.colors.panel` global (Cards,
 Modals etc. unverändert). Im Browser in Dark- und Light-Mode verifiziert (computed style: `rgb(8,8,10)`
 dunkel / `rgb(250,250,250)` hell, korrekt themenreaktiv).
+
+---
+
+# Dichte historische Marktkapitalisierung (kleine Zeiträume)
+
+Stand: 2026-07-22 (Plan genehmigt). Backend-only; Frontend unverändert (clientseitiger Range-Filter).
+
+## 1. Problem
+`calculate_historical_market_cap` berechnete Marktkap nur an quartalsweisen SEC-Stichtagen (Kurs auf
+`fiscalDateEnding` reindiziert). „Max" ~80 Punkte (gut), aber 1y nur ~2 Punkte → nur Start/Ende sichtbar,
+kein Verlauf im Zeitraum.
+
+## 2. Lösung
+Täglichen Kurs × forward-gefüllte Aktienanzahl (Shares ändern sich quartalsweise, Kurs täglich), danach
+altersgestuftes Downsampling: täglich ≤2 J., wöchentlich 2–5 J., monatlich >5 J.
+
+## 3. Datenquelle
+AlphaVantage `TIME_SERIES_DAILY_ADJUSTED` (`"5. adjusted close"`, `outputsize=full`) primär — der
+Betreiber hat einen **Premium-Key**, der Endpoint ist verfügbar. Yahoo-`interval="1d"` als reiner
+Resilienz-Fallback (transiente AV-Fehler/Rate-Limits), produktiv bewährt (Kurschart). Einmaliger,
+lange gecachter Call pro Symbol; kein `sleep(12)` nötig.
+
+## 4. Umfang & Grenzen
+Nur Marktkapitalisierung. EV bleibt quartalsweise (Inner-Join auf balance_sheet) — Folgeaufgabe.
+Preis-Multiples ebenfalls Folgeaufgabe. Dividenden-Adjustierung: vorbestehende Vereinfachung, unverändert.
+
+## 5. Umsetzung (MC-001…005)
+DataLoader `get_daily_price_series` (AV primär/Yahoo-Fallback, versionierter Cache) · Model
+`calculate_historical_market_cap` (Cache-Key-Bump, ffill-Shares, altersgestuftes Downsampling,
+3-Spalten-Contract erhalten) · Unit-Tests + EV-Regression + Golden-Master regeneriert (Tages-Cache der
+4 Golden-Symbole vorher seeden) · Browser-Verifikation.
+
+## 6. Nicht verhandelbar
+Marktkap-Werte an Report-Stichtagen bleiben rechnerisch identisch (Kurs×Shares) · EV unverändert
+quartalsweise · Standalone-Route `/historical-market-cap` (`rows`) unverändert · kein Zusatz-Request
+beim Range-Wechsel · Feature funktioniert auch ohne AV-Premium (Yahoo-Fallback).
+
+## 7. Status
+- **[MC-001]** EVOLVING.md-Abschnitt angelegt. ✅ (2026-07-22)
+- **[MC-002]** `DataLoader.get_daily_price_series` + `_fetch_alpha_vantage_daily_series` (AV `TIME_SERIES_DAILY_ADJUSTED` primär, Yahoo-Fallback, versionierter `historical_`-Cache-Key). ✅ (2026-07-22) — live gegen die echte Alpha-Vantage-API verifiziert: AAPL/AMD/KO je 6719 Tagespunkte (1999–2026), BABA 2975 Punkte (2014–2026), Quelle bei allen 4 „alpha_vantage" (Premium-Entitlement bestätigt funktionsfähig).
+- **[MC-003]** `calculate_historical_market_cap` auf tägliche Kurse × forward-gefüllte Aktienanzahl umgestellt, `_age_tiered_downsample` (täglich ≤2J/wöchentlich 2-5J/monatlich >5J), Cache-Key auf `historical_market_cap_v2_{symbol}` gebumpt, 3-Spalten-Contract erhalten. **Zusätzlich behobene Regression (nicht im ursprünglichen Plan-Scope, aber notwendig):** `calculate_historical_ev` nutzte einen exakten Index-Join gegen die vormals quartalsweise ausgerichtete Marktkap-Serie — mit der neuen täglichen/dichten Serie hätte dieser Join fast immer leer laufen lassen. Umgestellt auf `reindex(..., method="ffill")` (nächster vorheriger Wert je Bilanzstichtag) — EV bleibt dadurch weiterhin quartalsweise, exakt wie zuvor. ✅ (2026-07-22)
+- **[MC-004]** Tests: neue Datei `agent/tests/test_market_cap_density.py` (14 Tests: AV/Yahoo-Fallback, Downsampling-Segmente, ffill-Multiplikation, EV-Regression inkl. Nicht-Handelstag-Grenzfall) — alle grün. Volle Backend-Suite (`agent/tests` + `api/tests`, 342 Tests) grün. Golden-Master (`agent/tests/golden/catalog_{AAPL,AMD,BABA,KO}.json`) mit live gesäter Cache-Basis regeneriert und deterministisch bestätigt (zweiter Lauf ohne Netzwerk grün). Effekt im neuen Snapshot verifiziert: **AAPL-Marktkap-Serie jetzt 852 Punkte gesamt statt ~80, davon 265 Punkte im letzten Jahr statt ~2**. ✅ (2026-07-22)
+- **[MC-005]** Browser-Verifikation & Doku-Abschluss. ✅ (2026-07-22) — im Browser mit AAPL bestätigt:
+  „Historische Marktkapitalisierung" zeigt auf **1J** jetzt eine vollständige tägliche Kurve mit
+  echter Volatilität (+54,9 % im Jahr) statt zwei verbundener Punkte; **2J** ebenso vollständig
+  täglich; **5J** mit sichtbar feinerer (täglicher) Auflösung im jüngeren und gröberer
+  (wöchentlicher) Auflösung im älteren Teil, inkl. korrekt abgebildetem Markteinbruch Anfang 2025;
+  **Max** unverändert glatt/schlank (4899 Mrd. aktuell, 852 Punkte seit 2005). Zusätzlich
+  „Historischer Enterprise Value" geprüft — durchgehende, ungebrochene Quartalskurve 2005–2025
+  bestätigt den EV-ffill-Fix (ohne ihn wäre dieser Chart mit der neuen dichten Marktkap-Serie
+  praktisch leer geblieben).

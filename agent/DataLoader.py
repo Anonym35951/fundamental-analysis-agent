@@ -1076,6 +1076,107 @@ class DataLoader:
             self.logger.warning(f"Alpha-Vantage-Fallback für {symbol} fehlgeschlagen: {e}")
             return None
 
+    def _fetch_alpha_vantage_daily_series(self, symbol: str) -> Optional[pd.Series]:
+        """EVOLVING.md „Dichte historische Marktkapitalisierung": primäre
+        Tageskursquelle für `get_daily_price_series` - Premium-Endpoint
+        (Account hat einen Alpha-Vantage-Premium-Key). `outputsize=full`
+        liefert die komplette verfügbare Historie in einem Call (kein
+        Pagination-Bedarf, Ergebnis wird lange gecacht). Kein `@retry` -
+        dieselbe Begründung wie `_fetch_alpha_vantage_price`: AV-Rate-Limits
+        erholen sich nicht innerhalb von Sekunden, ein Retry würde nur unnötig
+        Latenz addieren, bevor der Yahoo-Fallback (der selbst schon 3x
+        retried) greift. `"5. adjusted close"` (dividenden-/split-bereinigt)
+        - dieselbe Adjustierungs-Konvention wie `get_max_historical_stock_data`
+        (yfinance `auto_adjust=True`), damit Fallback und Primärquelle
+        vergleichbare Werte liefern."""
+        try:
+            response = requests.get(
+                self.base_url,
+                params={
+                    "function": "TIME_SERIES_DAILY_ADJUSTED",
+                    "symbol": symbol,
+                    "outputsize": "full",
+                    "apikey": self.api_key,
+                },
+                headers={"User-Agent": self.user_agent},
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+            if "Note" in data or "Information" in data or "Error Message" in data:
+                self.logger.warning(f"Alpha-Vantage DAILY_ADJUSTED für {symbol} nicht verfügbar: {data}")
+                return None
+
+            daily_series = data.get("Time Series (Daily)")
+            if not daily_series:
+                self.logger.warning(f"Alpha-Vantage DAILY_ADJUSTED für {symbol} liefert keine Zeitreihe: {data}")
+                return None
+
+            closes = {date: float(fields["5. adjusted close"]) for date, fields in daily_series.items()}
+            series = pd.Series(closes, dtype="float64")
+            series.index = pd.to_datetime(series.index)
+            return series.sort_index()
+        except Exception as e:
+            self.logger.warning(f"Alpha-Vantage DAILY_ADJUSTED für {symbol} fehlgeschlagen: {e}")
+            return None
+
+    def get_daily_price_series(self, symbol: str, use_cache: bool = True) -> Optional[pd.Series]:
+        """EVOLVING.md „Dichte historische Marktkapitalisierung": tägliche
+        Close-Kursserie (aufsteigend sortierter DatetimeIndex) für
+        `Model.calculate_historical_market_cap` - ersetzt dort den bisherigen
+        monatlichen Kurs-Reindex auf die SEC-Berichtsstichtage.
+
+        Quelle: Alpha Vantage `TIME_SERIES_DAILY_ADJUSTED` primär (Premium-
+        Endpoint, Account-Key vorhanden). Bei Fehler/Rate-Limit/leerer
+        Antwort automatischer Fallback auf die bereits produktiv genutzte
+        Yahoo-Tagesquelle (`get_max_historical_stock_data(interval="1d")`,
+        die selbst schon 3x retried) - reine Resilienz gegen transiente
+        AV-Ausfälle, nicht wegen eines Entitlement-Zweifels.
+
+        Cache-Key mit "historical_"-Präfix -> lange TTL (`_cache_duration_for`,
+        600 Tage) statt der kurzen "market_cap"-Live-TTL; ein `full`-Call
+        deckt bereits die komplette Historie ab, spätere Aufrufe kommen aus
+        dem Cache."""
+        cache_key = f"historical_daily_price_series_{symbol}"
+
+        if use_cache:
+            cached = self._load_cached_data(symbol, cache_key)
+            if cached is not None:
+                if isinstance(cached, dict) and "Close" in cached:
+                    series = pd.Series(cached["Close"], dtype="float64")
+                    series.index = pd.to_datetime(series.index)
+                    return series.sort_index()
+                self.logger.warning(
+                    f"Unerwartetes Cache-Format für {cache_key} von {symbol} - ignoriere Cache."
+                )
+
+        close = self._fetch_alpha_vantage_daily_series(symbol)
+        source = "alpha_vantage"
+
+        if close is None or close.empty:
+            source = "yahoo_fallback"
+            try:
+                df = self.get_max_historical_stock_data(symbol, use_cache=use_cache, interval="1d")
+            except Exception as e:
+                self.logger.warning(f"Yahoo-Fallback für tägliche Kurse von {symbol} fehlgeschlagen: {e}")
+                df = None
+            close = df["Close"].dropna() if df is not None and "Close" in df.columns else None
+
+        if close is None or close.empty:
+            self.logger.error(
+                f"Keine täglichen Kursdaten für {symbol} verfügbar (Alpha Vantage und Yahoo-Fallback gescheitert)."
+            )
+            return None
+
+        close = close.sort_index()
+        self.logger.info(f"Tägliche Kursserie für {symbol}: {len(close)} Punkte (Quelle: {source}).")
+
+        if use_cache:
+            cache_data = {"Close": {date.strftime("%Y-%m-%d"): float(value) for date, value in close.items()}}
+            self._cache_data(cache_data, symbol, cache_key)
+
+        return close
+
     def get_current_price_per_share(self, symbol):
         """Gibt den aktuellen Preis einer Aktie in US-Dollar zurück. Yahoo
         ist primäre Quelle (mit Retry, siehe _fetch_yahoo_price); scheitert

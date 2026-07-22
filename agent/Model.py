@@ -1954,9 +1954,60 @@ class Model:
         except Exception as e:
             return {"error": f"Fehler bei NetCurrentAssets für {symbol} ({frequency}): {str(e)}", "symbol": symbol}
 
+    def _age_tiered_downsample(self, df: pd.DataFrame) -> pd.DataFrame:
+        """EVOLVING.md „Dichte historische Marktkapitalisierung": dünnt eine
+        täglich indizierte DataFrame altersgestuft aus, statt sie komplett zu
+        belassen (Punktzahl über 20+ Jahre wäre unnötig groß) oder komplett auf
+        einen groben Raster zu reduzieren (das würde genau das ursprüngliche
+        1y/2y-Problem wieder einführen - siehe Kontext dieses Abschnitts).
+
+        Anker ist das NEUESTE Datum im DataFrame (nicht "heute" - analog
+        `filterSeriesByRange`/`_fetch_price_history_payload`, vermeidet eine
+        leere/verkürzte Serie bei Datenverzug):
+        - <= 2 Jahre alt: täglich (unverändert) - genau das Fenster, in dem die
+          fehlende Auflösung ursprünglich bemängelt wurde (1y/2y).
+        - 2-5 Jahre alt: wöchentlich (`resample("W").last()`).
+        - > 5 Jahre alt: monatlich (`resample("ME").last()`) - dasselbe Muster
+          wie die "Max"-Downsampling-Stufe für Kurscharts
+          (`api/routes/metric_routes.py::_fetch_price_history_payload`).
+
+        Alle 3 Spalten (MarketCap/Shares/Close) teilen sich einen Index, daher
+        genügt ein DataFrame-weites Resampling (keine Drift zwischen den
+        Spalten). Segmente werden einzeln resampled, dann verkettet, sortiert
+        und auf eindeutige Zeitstempel dedupliziert (rein defensiv - die
+        Segmentgrenzen sind disjunkt, ein Kollisionsfall wäre nur ein
+        theoretisches Randdatum)."""
+        if df.empty:
+            return df
+
+        df = df.sort_index()
+        anchor = df.index.max()
+        two_years_ago = anchor - relativedelta(years=2)
+        five_years_ago = anchor - relativedelta(years=5)
+
+        recent = df[df.index > two_years_ago]
+        mid = df[(df.index > five_years_ago) & (df.index <= two_years_ago)]
+        old = df[df.index <= five_years_ago]
+
+        mid_downsampled = mid.resample("W").last().dropna() if not mid.empty else mid
+        old_downsampled = old.resample("ME").last().dropna() if not old.empty else old
+
+        combined = pd.concat([old_downsampled, mid_downsampled, recent]).sort_index()
+        return combined[~combined.index.duplicated(keep="last")]
+
     def calculate_historical_market_cap(self, symbol: str, start_date: Optional[str] = None, end_date: Optional[str] = None, use_cache: bool = True) -> Optional[pd.DataFrame]:
         """
-        Berechnet die historische Marktkapitalisierung für ein Aktiensymbol basierend auf den exakten fiscalDateEnding-Daten.
+        Berechnet die historische Marktkapitalisierung für ein Aktiensymbol.
+
+        EVOLVING.md „Dichte historische Marktkapitalisierung" (2026-07-22):
+        früher wurde der Kurs auf die quartalsweisen SEC-Berichtsstichtage
+        (fiscalDateEnding) reindiziert - über "Max" (~20 Jahre) ergab das ~80
+        Punkte (sah gut aus), aber kleine Zeiträume wie 1y hatten nur ~2
+        Punkte (nur Start/Ende sichtbar, kein Verlauf innerhalb des
+        Zeitraums). Jetzt: täglicher Kurs (`DataLoader.get_daily_price_series`,
+        Alpha-Vantage-Premium primär mit Yahoo-Fallback) × forward-gefüllte
+        Aktienanzahl (ändert sich nur quartalsweise), danach altersgestuft
+        ausgedünnt (`_age_tiered_downsample`).
 
         Args:
             symbol (str): Aktiensymbol (z. B. 'ILMN').
@@ -1965,9 +2016,13 @@ class Model:
             use_cache (bool): Ob Cache-Daten verwendet werden sollen (Default: True).
 
         Returns:
-            Optional[pd.DataFrame]: DataFrame mit Spalten 'MarketCap', 'commonStockSharesOutstanding', 'Close', indiziert nach fiscalDateEnding, oder None bei Fehler.
+            Optional[pd.DataFrame]: DataFrame mit Spalten 'MarketCap', 'commonStockSharesOutstanding', 'Close', indiziert nach Datum, oder None bei Fehler.
         """
-        cache_key = f"historical_market_cap_{symbol}"
+        # v2: Cache-Key gebumpt, damit bestehende (nur-quartalsweise) Caches
+        # nicht als scheinbar gültige, aber veraltete/grobe Serie ausgeliefert
+        # werden - die Dict-Serialisierung (MarketCap/Shares/Close/index)
+        # bleibt unverändert, nur die zugrunde liegende Berechnung ist dichter.
+        cache_key = f"historical_market_cap_v2_{symbol}"
 
         # 1. Cache prüfen
         if use_cache:
@@ -1985,7 +2040,7 @@ class Model:
                 return cached_data
 
         try:
-            # 2. Fundamentaldaten (für commonStockSharesOutstanding und fiscalDateEnding) abrufen
+            # 2. Fundamentaldaten (für commonStockSharesOutstanding) abrufen
             fundamentals = self.dataloader.get_fundamental_data(symbol, frequency="quarterly", use_cache=True)
             if "error" in fundamentals:
                 self.logger.error(f"Fehler bei Fundamentaldaten für {symbol}: {fundamentals['error']}")
@@ -1996,38 +2051,55 @@ class Model:
                 self.logger.error(f"Keine Balance Sheet-Daten oder commonStockSharesOutstanding für {symbol} verfügbar.")
                 return None
 
-            # Zeitraum einschränken
-            df_shares = balance_sheet[["commonStockSharesOutstanding"]].copy()
-            if start_date:
-                df_shares = df_shares[df_shares.index >= pd.to_datetime(start_date)]
-            if end_date:
-                df_shares = df_shares[df_shares.index <= pd.to_datetime(end_date)]
-            if df_shares.empty:
-                self.logger.error(f"Keine commonStockSharesOutstanding-Daten für {symbol} im angegebenen Zeitraum.")
+            shares = balance_sheet["commonStockSharesOutstanding"].dropna().sort_index()
+            if shares.empty:
+                self.logger.error(f"Keine gültigen commonStockSharesOutstanding-Daten für {symbol}.")
                 return None
 
-            # 3. Historische Kursdaten abrufen
-            stock_data = self.dataloader.get_max_historical_stock_data(symbol, use_cache=True)
-            if stock_data is None or "Close" not in stock_data.columns:
-                self.logger.error(f"Keine historischen Kursdaten oder Close-Spalte für {symbol} verfügbar.")
+            # 3. Tägliche Kursdaten abrufen (Alpha-Vantage primär, Yahoo-Fallback)
+            daily_close = self.dataloader.get_daily_price_series(symbol, use_cache=use_cache)
+            if daily_close is None or daily_close.empty:
+                self.logger.error(f"Keine täglichen Kursdaten für {symbol} verfügbar.")
                 return None
 
-            # 4. Kursdaten für exakte fiscalDateEnding-Daten auswählen
-            df_prices = stock_data[["Close"]].reindex(df_shares.index, method="ffill")
-            if df_prices.isna().all().any():
-                self.logger.error(f"Keine gültigen Kursdaten für fiscalDateEnding-Daten von {symbol}.")
+            # 4. Aktienanzahl auf den täglichen Kurs-Index forward-füllen - die
+            # Anzahl ändert sich nur quartalsweise, der Kurs täglich. Tage VOR
+            # dem ersten Berichtsstichtag (ffill liefert dort NaN) fallen beim
+            # anschließenden dropna() raus.
+            shares_daily = shares.reindex(daily_close.index, method="ffill")
+
+            df = pd.DataFrame({"Close": daily_close, "commonStockSharesOutstanding": shares_daily}).dropna()
+            if df.empty:
+                self.logger.error(f"Keine überlappenden Kurs-/Aktienanzahl-Daten für {symbol}.")
                 return None
 
             # 5. Marktkapitalisierung berechnen
-            df = df_shares.join(df_prices, how="inner")
             df["MarketCap"] = df["commonStockSharesOutstanding"] * df["Close"]
-            df = df[["MarketCap", "commonStockSharesOutstanding", "Close"]].dropna()
+            df = df[["MarketCap", "commonStockSharesOutstanding", "Close"]]
 
+            # 6. Altersgestuft ausdünnen (täglich <=2J / wöchentlich 2-5J / monatlich >5J)
+            df = self._age_tiered_downsample(df)
             if df.empty:
-                self.logger.error(f"Keine gültigen Marktkapitalisierungs-Daten für {symbol} nach Berechnung.")
+                self.logger.error(f"Keine gültigen Marktkapitalisierungs-Daten für {symbol} nach Downsampling.")
                 return None
 
-            # 6. Cache als Dictionary speichern (Index als String)
+            # 7. Zeitraum einschränken (falls angefordert) - NACH dem
+            # Downsampling, damit ein optionaler enger start_date/end_date
+            # nicht versehentlich nur den unausgedünnten täglichen Bereich
+            # isoliert. Die öffentliche Route (/historical-market-cap)
+            # übergibt heute ohnehin keine start_date/end_date; das Frontend
+            # filtert Zeiträume clientseitig (EV-040) über die volle Serie.
+            if start_date:
+                df = df[df.index >= pd.to_datetime(start_date)]
+            if end_date:
+                df = df[df.index <= pd.to_datetime(end_date)]
+
+            if df.empty:
+                self.logger.error(f"Keine gültigen Marktkapitalisierungs-Daten für {symbol} im angegebenen Zeitraum.")
+                return None
+
+            # 8. Cache als Dictionary speichern (Index als String) - Format
+            # unverändert, nur mit dichteren/anderen Zeitpunkten befüllt.
             cache_data = {
                 "MarketCap": {date.strftime("%Y-%m-%d"): value for date, value in df["MarketCap"].items()},
                 "commonStockSharesOutstanding": {date.strftime("%Y-%m-%d"): value for date, value in df["commonStockSharesOutstanding"].items()},
@@ -2035,7 +2107,7 @@ class Model:
                 "index": df.index.strftime("%Y-%m-%d").tolist()
             }
             self.dataloader._cache_data(cache_data, symbol, cache_key)
-            self.logger.info(f"Marktkapitalisierungs-Daten für {symbol} erfolgreich berechnet und gecacht.")
+            self.logger.info(f"Marktkapitalisierungs-Daten für {symbol} erfolgreich berechnet und gecacht ({len(df)} Punkte).")
             return df
 
         except Exception as e:
@@ -2094,9 +2166,21 @@ class Model:
                 self.logger.error(f"Keine Marktkapitalisierungs-Daten für {symbol} verfügbar.")
                 return None
 
-            # 4. Daten zusammenführen
+            # 4. Daten zusammenführen. EVOLVING.md „Dichte historische
+            # Marktkapitalisierung": `calculate_historical_market_cap` liefert
+            # seit der Umstellung auf tägliche Kurse KEINEN exakt auf die
+            # quartalsweisen fiscalDateEnding-Daten ausgerichteten Index mehr
+            # (echte Handelstage bzw. wochen-/monatsweise Downsampling-Labels
+            # bei älteren Daten) - ein exakter `join(how="inner")` würde hier
+            # fast immer leer laufen. Stattdessen wie zuvor intern in
+            # `calculate_historical_market_cap` (dort: Kurs auf Bilanzdaten
+            # geffillt) den zeitlich nächsten VORHERGEHENDEN MarketCap-Wert je
+            # Bilanzstichtag übernehmen - EV bleibt dadurch weiterhin
+            # quartalsweise (ein Wert pro Bilanzstichtag), nur die
+            # zugrundeliegende Marktkap-Quelle ist jetzt dichter/genauer.
             df = balance_sheet[list(required_columns)].copy()
-            df = df.join(market_cap_df[["MarketCap"]], how="inner")  # Nur gemeinsame Zeitpunkte
+            df["MarketCap"] = market_cap_df["MarketCap"].reindex(df.index, method="ffill")
+            df = df.dropna(subset=["MarketCap"])
             if df.empty:
                 self.logger.error(f"Keine übereinstimmenden Daten für {symbol} nach Join.")
                 return None
