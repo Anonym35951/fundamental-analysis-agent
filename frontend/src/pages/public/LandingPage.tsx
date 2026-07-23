@@ -6,9 +6,15 @@ import {
   CheckCircle2,
   Coins,
   Database,
+  Eye,
+  History,
   LayoutGrid,
+  ListChecks,
+  Save,
   ShieldCheck,
+  Sigma,
   SlidersHorizontal,
+  Star,
   TrendingUp,
   Wrench,
 } from "lucide-react";
@@ -146,13 +152,13 @@ function LandingPage() {
             style={{ textAlign: "center" }}
           >
             <div style={isMobile ? { ...heroEyebrow, marginBottom: "16px" } : heroEyebrow}>
-              Fundamentalanalyse · neu gedacht
+              Für Anleger, die selbst analysieren
             </div>
 
             <h1 style={isMobile ? { ...heroHeadline, marginBottom: "14px" } : heroHeadline}>
-              ALLE FUNDAMENTALDATEN.
+              ANALYSIERE UNTERNEHMEN
               <br />
-              EINE QUELLE.
+              SELBST.
               <br />
               <span
                 style={{
@@ -162,7 +168,7 @@ function LandingPage() {
                   color: "transparent",
                 }}
               >
-                JEDE ZAHL NACHVOLLZIEHBAR.
+                STRUKTURIERT STATT IM DATENCHAOS.
               </span>
             </h1>
 
@@ -173,10 +179,10 @@ function LandingPage() {
                   : heroSubtext
               }
             >
-              ComAnalysis bündelt SEC-Originaldaten und transparent berechnete
-              Kennzahlen in einem Werkzeug. Zu jeder Zahl siehst du, woher sie
-              stammt und wie sie berechnet wurde. Die Interpretation — und
-              jede Entscheidung — bleibt bei dir.
+              ComAnalysis führt dich mit vordefinierten Methoden und einem
+              eigenen Logik-Builder durch einen strukturierten Analyseprozess —
+              von den Fundamentaldaten bis zur eigenen Einschätzung. Jede
+              Kennzahl mit Quelle und Rechenweg. Die Entscheidung bleibt bei dir.
             </p>
 
             <div style={isMobile ? { ...heroCtaRow, marginBottom: "16px" } : heroCtaRow}>
@@ -290,7 +296,7 @@ function LandingPage() {
             </div>
 
             <div style={statReadoutRow}>
-              <StatReadout label="Methoden" value="8 vordefiniert" />
+              <StatReadout label="Methoden" value="7 Methoden" />
               <StatReadout label="Builder" value="Eigene Logik inklusive" />
               <StatReadout label="Vergleich" value="Mehrere Unternehmen parallel" />
             </div>
@@ -303,24 +309,51 @@ function LandingPage() {
         <SectionHeading
           eyebrow="Warum ComAnalysis"
           title="Eine Plattform statt drei Werkzeuge"
-          subtitle="Vordefinierte Methoden, ein eigener Logik-Builder und echte Produktinfrastruktur — kombiniert, damit du schneller zu belastbaren Entscheidungsgrundlagen kommst."
+          subtitle="Bewährte Methoden, ein eigener Logik-Builder und direkter Unternehmensvergleich — kombiniert, damit du selbst schneller zu belastbaren Entscheidungsgrundlagen kommst."
         />
 
         <StaggerGroup>
           <FeatureCard
             icon={<LayoutGrid size={20} />}
-            title="Vordefinierte Methoden"
-            text="Acht etablierte Analysemodi — von Wachstumswerten bis Turnarounds — ersetzen den manuellen Aufbau jeder einzelnen Auswertung."
+            title="Bewährte Analysemethoden, sofort einsatzbereit"
+            text="Sieben etablierte Denkmodelle — von Wachstum bis Turnaround — statt jede Auswertung manuell aufzubauen."
           />
           <FeatureCard
             icon={<SlidersHorizontal size={20} />}
-            title="Eigene Logik bauen"
-            text="Kombiniere eigene Kennzahlen zu individuellen Analysebausteinen und nutze sie wiederholt für jedes Unternehmen."
+            title="Deine eigene Analyse-Logik"
+            text="Kombiniere die Kennzahlen, die für dich zählen, zu einer wiederverwendbaren Analyse — und speichere sie."
           />
           <FeatureCard
             icon={<ShieldCheck size={20} />}
-            title="Vergleich statt Tabellen-Jonglage"
-            text="Mehrere Unternehmen nebeneinander vergleichen und Kennzahlen über historische Zeiträume einordnen — ohne zwischen Tools zu wechseln."
+            title="Unternehmen direkt vergleichen"
+            text="Mehrere Unternehmen nebeneinander und über die Zeit einordnen — ohne zwischen Tools zu wechseln."
+          />
+        </StaggerGroup>
+      </section>
+
+      {/* Own Analysis — Säule 3: eigene Analyse erstellen & speichern */}
+      <section style={sectionWrapper}>
+        <SectionHeading
+          eyebrow="Deine Analyse"
+          title="Deine Analyse. Deine Einschätzung. Gespeichert an einem Ort."
+          subtitle="Konsumiere kein fertiges Urteil — baue deine eigene Sicht auf ein Unternehmen auf. Stelle deine eigene Kennzahlen-Logik zusammen, speichere sie und wende sie auf jedes Unternehmen wieder an. Deine Analyse-Historie und Favoriten wachsen mit."
+        />
+
+        <StaggerGroup>
+          <FeatureCard
+            icon={<Save size={20} />}
+            title="Eigene Kennzahlen-Logik speichern"
+            text="Definiere einmal deine eigene Kombination aus Kennzahlen, speichere sie und wende sie auf jedes Unternehmen wieder an."
+          />
+          <FeatureCard
+            icon={<History size={20} />}
+            title="Deine Analyse-Historie"
+            text="Deine gestarteten Analysen bleiben erhalten — so baust du dir mit der Zeit deine eigene Research-Historie auf."
+          />
+          <FeatureCard
+            icon={<Star size={20} />}
+            title="Favoriten für schnellen Zugriff"
+            text="Markiere die Unternehmen, die du im Blick behalten willst, und komm jederzeit direkt zu ihnen zurück."
           />
         </StaggerGroup>
       </section>
@@ -331,8 +364,8 @@ function LandingPage() {
           <SectionHeading
             align="left"
             eyebrow="So funktioniert die App"
-            title="Vom Login zur strukturierten Analyse"
-            subtitle="Nutzer werden von der LandingPage über Login und Registrierung in das Analyse-Dashboard geführt. Dort werden Analysen gestartet, eigene Methoden erstellt und das Abo verwaltet."
+            title="Vom Unternehmen zur eigenen Einschätzung"
+            subtitle="In wenigen Schritten von der Unternehmenssuche zu deiner eigenen, strukturierten Einschätzung — jede Kennzahl mit Quelle und Rechenweg."
           />
 
           <div style={stepRowWrapper}>
@@ -351,6 +384,39 @@ function LandingPage() {
         </div>
       </section>
 
+      {/* Understand the numbers — Säule 4: Transparenz (ehrlich, nur Vorhandenes) */}
+      <section style={sectionWrapper}>
+        <SectionHeading
+          eyebrow="Nachvollziehbarkeit"
+          title="Verstehe die Zahlen, statt einem Ergebnis zu vertrauen."
+          subtitle="Zu jeder Kennzahl siehst du die Quelle und den Stand der Daten sowie die zugrunde liegende Formel. Jede Analyse zeigt ihre einzelnen Kriterien offen — kein einzelner Black-Box-Score."
+        />
+
+        <StaggerGroup>
+          <FeatureCard
+            icon={<Eye size={20} />}
+            title="Quelle und Stand pro Zahl"
+            text="Neben jedem Analyseergebnis siehst du, aus welcher Quelle die Fundamentaldaten stammen und wie aktuell sie sind."
+          />
+          <FeatureCard
+            icon={<Sigma size={20} />}
+            title="Offene Formeln"
+            text="Jede Kennzahl ist mit ihrer Berechnung hinterlegt — im Kennzahlen-Glossar kannst du jede Formel nachlesen."
+          />
+          <FeatureCard
+            icon={<ListChecks size={20} />}
+            title="Kriterien statt Black-Box"
+            text="Statt einem einzelnen Urteil zeigt jede Analyse die einzelnen erfüllten und nicht erfüllten Kriterien offen an."
+          />
+        </StaggerGroup>
+
+        <div style={glossaryLinkRow}>
+          <a href="/glossar" style={glossaryLink}>
+            Alle Kennzahlen im Glossar ansehen →
+          </a>
+        </div>
+      </section>
+
       {/* Final CTA */}
       <section style={sectionWrapper}>
         <motion.div
@@ -362,7 +428,7 @@ function LandingPage() {
         >
           <div aria-hidden="true" style={finalCtaGlow} />
 
-          <h2 style={finalCtaTitle}>Bereit für deine erste strukturierte Analyse?</h2>
+          <h2 style={finalCtaTitle}>Bereit, dein erstes Unternehmen selbst zu analysieren?</h2>
 
           <p style={finalCtaText}>
             Registriere dich und starte deine erste Analyse mit 50
@@ -719,6 +785,18 @@ const sectionWrapper: React.CSSProperties = {
   maxWidth: "1280px",
   margin: "0 auto",
   padding: "48px 24px",
+};
+
+const glossaryLinkRow: React.CSSProperties = {
+  marginTop: "28px",
+  textAlign: "center",
+};
+
+const glossaryLink: React.CSSProperties = {
+  color: theme.colors.chrome,
+  fontSize: "0.98rem",
+  fontWeight: 700,
+  textDecoration: "none",
 };
 
 const howItWorksPanel: React.CSSProperties = {

@@ -22,7 +22,7 @@ function PricingPage() {
       <SectionHeading
         eyebrow="Preise"
         title="Ein fairer Einstieg, ein klarer Umstieg"
-        subtitle="Starte kostenlos mit 50 Analyse-Einheiten im Monat. Wechsle zu Pro, sobald du regelmäßiger und ohne Limit analysieren willst."
+        subtitle="Starte kostenlos und analysiere Unternehmen selbst. Wechsle zu Pro, sobald du regelmäßig analysierst und dir eine wachsende eigene Analyse-Bibliothek aufbauen willst."
       />
 
       <div style={toggleRow}>

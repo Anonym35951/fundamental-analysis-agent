@@ -10,7 +10,7 @@ export const FREE_PLAN = {
   tag: "Einstieg",
   priceLabel: "0 €",
   description:
-    "Für den Einstieg in die Plattform und erste strukturierte Analysen.",
+    "Zum Einstieg: Unternehmen selbst analysieren und den strukturierten Prozess kennenlernen.",
   features: [
     "50 Analyse-Einheiten pro Monat",
     "Alle Kennzahlen und Analysemodi verfügbar",
@@ -30,7 +30,7 @@ export const PRO_PLAN = {
   yearlySelectionNote: "Jährlich · Spare 16,7 %",
   monthlyHint: "Monatlich flexibel kündbar",
   description:
-    "Für Nutzer, die professioneller, regelmäßiger und mit mehr Freiheit analysieren möchten.",
+    "Für alle, die regelmäßig selbst analysieren und sich eine unbegrenzte Bibliothek eigener Analyse-Logiken aufbauen wollen.",
   features: [
     "Unbegrenzte Analysen — kein Monatslimit",
     "Alle Kennzahlen und Analysemodi verfügbar",
